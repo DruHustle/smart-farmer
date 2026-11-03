@@ -1,11 +1,12 @@
 import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createReadStream,createWriteStream} from 'node:fs';
-import {appendFile,cp,lstat,mkdir,mkdtemp,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
+import {appendFile,lstat,mkdir,mkdtemp,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {basename,join,resolve} from 'node:path';
 import {pipeline} from 'node:stream/promises';
 import pg from 'pg';
+import {copyIntoEmptyMediaDirectory} from './backup-media.mjs';
 
 const magic=Buffer.from('SFBK1');
 const [action,...args]=process.argv.slice(2);
@@ -113,7 +114,7 @@ try{
     await execute(process.env.PG_RESTORE_BIN||'pg_restore',['--exit-on-error','--single-transaction','--no-owner','--no-privileges','--dbname',targetUrl.pathname.slice(1)],childEnv(target),{input:join(working,'db.dump')});
     const restored=new pg.Pool({connectionString:target});let verifiedMediaFiles;
     try{verifiedMediaFiles=await verifyReferencedMedia(restored,stagedMedia);}finally{await restored.end();}
-    await mkdir(media,{recursive:true,mode:0o700});await cp(stagedMedia,media,{recursive:true,errorOnExist:true,force:false});
+    await copyIntoEmptyMediaDirectory(stagedMedia,media);
     console.log(JSON.stringify({status:'restored_to_isolated_target',mediaDirectory:media,verifiedMediaFiles,productionCutover:false}));
   }
 }finally{key.fill(0);await rm(working,{recursive:true,force:true});}

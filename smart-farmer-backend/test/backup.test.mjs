@@ -2,11 +2,29 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,readdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import pg from 'pg';
 import {buildApp} from '../src/app.ts';
+import {copyIntoEmptyMediaDirectory} from '../scripts/backup-media.mjs';
+
+test('restore media copy accepts missing or empty directories and refuses existing content',async()=>{
+  const temporary=await mkdtemp(join(tmpdir(),'smart-farmer-media-copy-'));
+  try{
+    const source=join(temporary,'source');await mkdir(join(source,'farm'),{recursive:true});
+    await writeFile(join(source,'farm','object'),'immutable attachment');
+    for(const name of ['missing','empty']){
+      const destination=join(temporary,name);if(name==='empty')await mkdir(destination);
+      await copyIntoEmptyMediaDirectory(source,destination);
+      assert.equal(await readFile(join(destination,'farm','object'),'utf8'),'immutable attachment');
+    }
+    const occupied=join(temporary,'occupied');await mkdir(occupied);await writeFile(join(occupied,'existing'),'preserve me');
+    await assert.rejects(copyIntoEmptyMediaDirectory(source,occupied),/must be empty/);
+    assert.deepEqual(await readdir(occupied),['existing']);
+    assert.equal(await readFile(join(occupied,'existing'),'utf8'),'preserve me');
+  }finally{await rm(temporary,{recursive:true,force:true});}
+});
 
 test('encrypted PostgreSQL and private media backup restores to an empty isolated database; tampering cannot restore',async()=>{
   assert.ok(process.env.TEST_DATABASE_URL,'TEST_DATABASE_URL required');
