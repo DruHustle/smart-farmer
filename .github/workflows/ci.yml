@@ -23,5 +23,7 @@ jobs:
           node-version: 24
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
-      - run: npm run build
-      - run: npm test
+      - run: npm run build --prefix smart-farmer-backend
+      - run: npm run build --prefix smart-farmer-frontend/web
+      - run: npm test --prefix smart-farmer-backend
+      - run: npm test --prefix smart-farmer-frontend/web

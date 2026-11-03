@@ -1,9 +1,0 @@
-{
-  "name": "smart-farmer",
-  "private": true,
-  "engines": {"node": ">=24 <25"},
-  "scripts": {
-    "build": "npm run build --prefix smart-farmer-backend && npm run build --prefix smart-farmer-frontend/web",
-    "test": "npm test --prefix smart-farmer-backend && npm test --prefix smart-farmer-frontend/web"
-  }
-}
