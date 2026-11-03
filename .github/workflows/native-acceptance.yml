@@ -44,12 +44,25 @@ jobs:
         with: {distribution: temurin, java-version: 17}
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Cache Android compiler dependencies for this native configuration
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: native-gradle-${{ runner.os }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
       - name: Compile native SQLCipher Android debug application
         working-directory: smart-farmer-frontend/mobile
         run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 10000
+          fi
           npx expo prebuild --no-install --platform android
           cd android
-          ./gradlew assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2
+          ./gradlew assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 2>&1 | tee "$RUNNER_TEMP/native-evidence/android-build.log"
       - name: Start isolated API and Metro
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
       - name: Install pinned Maestro CLI
@@ -104,10 +117,12 @@ jobs:
       - name: Compile native SQLCipher iOS simulator application
         working-directory: smart-farmer-frontend/mobile
         run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
           npx expo prebuild --no-install --platform ios
           cd ios
-          pod install
-          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=NO build
+          pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
+          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
           ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
       - name: Start isolated API and Metro
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh

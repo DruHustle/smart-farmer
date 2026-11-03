@@ -30,6 +30,8 @@ appId: eu.onesa.smartfarmer
     direction: DOWN
 - tapOn:
     id: media-camera
-- scroll
-- assertVisible: '.*Mvumo haina kupiwa.*'
+- scrollUntilVisible:
+    element:
+      text: '.*Mvumo haina kupiwa.*'
+    direction: UP
 - takeScreenshot: camera-permission-denied-recording-remains-available
