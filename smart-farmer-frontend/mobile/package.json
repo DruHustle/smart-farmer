@@ -1,0 +1,48 @@
+{
+  "name": "smart-farmer-mobile",
+  "version": "0.2.0",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": ">=24.3 <25"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "native:generate": "expo prebuild --no-install",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "build": "npm run typecheck && expo export --platform ios --output-dir dist/ios && expo export --platform android --output-dir dist/android"
+  },
+  "dependencies": {
+    "expo": "58.0.23",
+    "expo-audio": "~58.0.11",
+    "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.18",
+    "expo-file-system": "~58.0.13",
+    "expo-image-manipulator": "~58.0.16",
+    "expo-image-picker": "~58.0.10",
+    "expo-local-authentication": "~58.0.2",
+    "expo-network": "~58.0.4",
+    "expo-notifications": "~58.1.8",
+    "expo-screen-capture": "~58.0.6",
+    "expo-secure-store": "~58.0.2",
+    "expo-sqlite": "~58.0.15",
+    "expo-system-ui": "~58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1"
+  },
+  "overrides": {
+    "@expo/cli": { "glob": "14.0.2" },
+    "@expo/fingerprint": { "glob": "14.0.2", "minimatch": "11.0.1" },
+    "glob@14.0.2": { "minimatch": "11.0.1" }
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.3.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
