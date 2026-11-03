@@ -1,0 +1,442 @@
+SMART FARMER — COMPLETE CODEX BUILD PROMPT
+Requirements consolidated on 3 November 2026
+
+ROLE AND OUTCOME
+
+Act as the senior engineer responsible for building Smart Farmer, a usable farm management, connected-equipment, security and agricultural trading application. Create or continue the GitHub repository named smart-farmer and implement the application. Carry work through implementation, meaningful verification, documentation and available release preparation. Produce working workflows, not only screens, scaffolding or a plan.
+
+This prompt is self-contained. Do not rely on another conversation for requirements.
+
+1. CONFIRMED PRODUCT REQUIREMENTS
+
+- The initial operating farm is Lawfield Farm in Goromonzi, Zimbabwe.
+- Maize is already growing under irrigation. Support onboarding an active crop immediately.
+- The application will be used by the farm owner, managers, workers and other authorised farm participants.
+- Required initial user-facing languages are Shona and Zimbabwean Ndebele (isiNdebele / Northern Ndebele).
+- Support Android phones, iPhones, iPads, and a responsive website designed for phones first.
+- The equipment scope includes boreholes, pumps, pivots, irrigation systems, cameras, and other farm equipment. Exact makes, models, controllers and protocols will be supplied later.
+- Complete all the animal workflows discussed: chickens (broilers, layers, breeding and hatching), rabbits (breeding and grow-out), and fish production. These are committed product scope, not a backlog restricted to one chosen species.
+- Include Marketplace and Machinery & Services, linked to farm projects, stock, costs and production where appropriate.
+- The product must provide practical value to one farm before a large marketplace develops.
+
+Do not invent current planted area, planting date, maize variety, crop objective, animal counts, existing cameras, sensor measurements, equipment capabilities, network topology or farm financial balances. Older plans must not become actual records automatically. Unknown values must be represented as unknown, with optional completion later.
+
+Interpret all animal workflows as complete workflows for the animal categories listed above. Make additional species extensible without silently expanding this build to unrelated enterprises.
+
+2. REPOSITORY AND REQUIRED SEPARATION
+
+Use this exact repository root and these directories:
+
+smart-farmer/
+smart-farmer/smart-farmer-frontend/web/
+smart-farmer/smart-farmer-frontend/mobile/
+smart-farmer/smart-farmer-frontend/mobile/ios/
+smart-farmer/smart-farmer-frontend/mobile/android/
+smart-farmer/smart-farmer-backend/
+smart-farmer/smart-farmer-backend/edge/
+smart-farmer/docs/
+
+The ios project serves both iPhone and iPad. Implement responsive tablet layouts within that application; do not create a duplicate ipad application or folder.
+
+Keep all backend business rules, persistence, integration credentials, AI calls, workers and edge services under smart-farmer-backend. Keep web and mobile application implementations in their respective frontend directories. Do not introduce a root shared application package or import backend implementation into either frontend. Do not make web and mobile depend on each other's UI components. Communicate through a versioned API contract. If generating API clients, generate a separate client inside each frontend from the backend-owned specification.
+
+Root-level documentation, repository configuration and build orchestration are allowed. Build and deploy the web frontend, native mobile frontend, backend and necessary edge processes independently.
+
+Inspect workspace instructions, current files, Git status and existing remotes before changing anything. Preserve unrelated work. If smart-farmer already exists, review and extend it rather than replacing it. If it does not exist, create it under the verified intended GitHub account. Default a new repository to private unless an explicit repository-visibility instruction applies. Never publish secrets, private farm information or real camera footage.
+
+Do not stop all implementation because a GitHub credential, signing identity or hardware model is missing. Finish work that can be completed locally and report the exact remaining prerequisite.
+
+3. TECHNICAL BASELINE
+
+For a new repository, use a maintainable TypeScript baseline:
+
+- Web: React and TypeScript, with an installable PWA and tested offline field-record workflows. Vite is a reasonable default.
+- Mobile: React Native and Expo development builds, with real ios and android native projects and native camera, storage and notification integration.
+- Backend: a modular TypeScript HTTP API, with Fastify as a reasonable default, PostgreSQL, versioned migrations, a background worker, and explicit module boundaries.
+- Media: an object-storage interface for photographs, receipts, voice notes and event clips. Provide a working development implementation and a production adapter/configuration path.
+- Edge: independently runnable farm gateway services for equipment and camera integration, with local buffering and an outbound authenticated connection.
+- API: documented, versioned endpoints and schemas, including errors, permissions, pagination, synchronisation, units and timestamps.
+
+Check current official documentation and compatibility before selecting versions. Commit lockfiles and record runtime requirements. Avoid unnecessary service proliferation. Separate a process where its operational needs justify it, such as media handling, asynchronous jobs or farm connectivity.
+
+Use containers for backend deployment and provide local development orchestration with persistent database volumes. Prepare a sensible deployment path without assuming a production domain, available VM capacity or already commissioned Kubernetes environment. Do not provision chargeable services or alter unrelated Onesa deployments as part of this build.
+
+4. PRODUCT AREAS AND NAVIGATION
+
+Provide these functional areas:
+
+- Today: urgent issues, today's work, upcoming preparation, recent activity and quick recording.
+- My Farm: farms, locations, people, crop seasons, animal projects and records.
+- Farm Companion: contextual planning, explanations, follow-up and next actions inside each project.
+- Equipment & Irrigation: assets, usage, maintenance, telemetry and verified controls.
+- Farm Security: cameras, detections, incidents and authorised live/event viewing.
+- Marketplace: produce, inputs, animals, equipment, buying requests, enquiries and sales.
+- Machinery & Services: service discovery, quote requests, availability, booking and completion.
+- Records & Reports: stock, costs, production, sales, payments and exports.
+
+Use compact mobile navigation, such as Today, My Farm, Market, Services and More. Surface urgent equipment and security events on Today. Keep the Companion reachable from the current project. Give the primary Record activity action easy thumb access.
+
+Avoid oversized dashboard panels, decorative graphs without data, large unused spaces and unnecessary repeated summaries. Use progressive disclosure and clearly distinguish empty, unknown, loading, stale, error and offline states.
+
+5. FARM, USER AND PERMISSION MODEL
+
+Support multiple farms and farm-scoped memberships from the start. A user may be an owner on one farm, a worker on another, and a buyer or supplier in the marketplace through one account.
+
+Provide owner, manager, worker and explicitly invited adviser/veterinarian roles, with configurable permissions where justified. Everyone on the farm must be able to participate without every person having administrative or financial access.
+
+Workers need simple task lists, instructions, observations, photographs, input-use records and incident reporting. Managers need scheduling, allocation, stock and project oversight. Owners need membership management, financial oversight, reports and sensitive approvals.
+
+Build registration/invitation, sign-in, sign-out, recovery, session/device management and appropriate protection for privileged actions. Workers should not need to manage a mailbox as part of daily farm work; support manager-issued invitations and recovery arrangements without shared administrator credentials. If an existing approved Onesa identity provider is available, integrate through its documented interface while retaining farm-specific permissions. Do not invent live SMS/email functionality where provider credentials are absent.
+
+Enforce permissions and farm isolation on the server, including media, exports, equipment and camera events. Public marketplace participation must not reveal private farm records, exact private locations or security feeds.
+
+Provide practical shared-device behaviour: visible current user, account switching, local data protection and prevention of one user seeing another farm's cached private information.
+
+6. SHONA AND NDEBELE THROUGHOUT
+
+Implement complete user-facing localisation for Shona and Zimbabwean Northern Ndebele. Use standard language identifiers sn and nd, with Zimbabwe region information where appropriate. Do not substitute Southern Ndebele nr.
+
+Include onboarding, navigation, forms, validation, task templates, notification text, equipment states, reports, errors and Companion interaction. Store the preference per user and honour it on web, Android and iOS. Make an explicit language selector available, including offline. English may be maintained as developer/source text, but it must not substitute for the two required language experiences. Keep the initial user language choices to Shona and Ndebele.
+
+Keep language-independent identifiers, quantities, units and event types in storage. Preserve original user notes and label any translated rendering. Never translate a numeric value into a different quantity or silently change units.
+
+Provide complete translation catalogues, translation-key coverage checks, an agriculture glossary, and a record of what has and has not received native-speaker review. Do not claim that machine-generated translations have been reviewed by a fluent speaker.
+
+Allow voice-note capture and later upload. Treat speech recognition and text-to-speech as separately verified capabilities for each language; do not promise them from unsupported services. Text, photographs and ordinary form entry must remain fully usable.
+
+Use the farm's timezone for operational schedules; initially Africa/Harare for Lawfield. Store timestamps consistently and retain observation time, entry time, source and relevant timezone. Owner-device timezone changes must not shift farm work into the wrong day.
+
+7. OFFLINE FIELD WORK AND SYNCHRONISATION
+
+After an initial authenticated synchronisation, users must be able to read downloaded tasks, project context and saved guidance; record work, rain, irrigation, costs, input use, animal observations and harvests; and capture photographs or voice notes without internet.
+
+Use persistent local storage and an explicit outbox. Entries must survive application restart. Synchronise metadata independently from large media uploads so a failed photo does not lose a completed activity. Compress media sensibly, show upload progress, retry with limits and support data-saving settings.
+
+Use stable client-generated identifiers and server-side idempotency. Retrying an event must not duplicate stock deductions, livestock transfers, expenses or sales. Track versions and surface material conflicts rather than silently overwriting another worker's record.
+
+Show last successful sync, pending items, stale cached content and conflicts needing attention. Preserve audit history when records are corrected.
+
+Do not treat offline purchase or hire requests as confirmed availability. Remote equipment commands must not be kept in the ordinary offline outbox for execution at an unknown later time. Require an online authorised flow with command expiry and fresh state.
+
+Handle expired or revoked access explicitly on reconnection. Retain recoverable drafts securely without bypassing current server permissions.
+
+8. ACTIVE IRRIGATED MAIZE AND GENERAL CROP WORKFLOWS
+
+Provide both Start a new season and I have already planted entry paths. Lawfield onboarding should offer an active irrigated-maize project while leaving unprovided planting date, variety, objective, area and growth stage unknown.
+
+Support the full crop lifecycle:
+
+Farm/plot assessment; crop comparison; project choice; preparation; input planning and purchasing; planting; germination and establishment observations; irrigation; fertilisation records; scouting; weed/pest/disease observations; authorised interventions; harvest; grading/storage/losses; sale/consumption; project review and next-season planning.
+
+For crop suggestions, consider location, usable area, objective, soil information, water availability, past crops, budget, labour, equipment and market assumptions. Produce an explainable shortlist with unknowns and editable assumptions. Avoid unsupported precision or guaranteed yield/profit claims.
+
+Record soil pH and nutrient data from measurements or reports, with date, sample location and source. Photos can support visual observations; never fabricate measured pH, nutrient levels or laboratory certainty from an ordinary photograph.
+
+Support manual rainfall, irrigation sessions, pump runtime, fuel, flow/pressure observations where available, labour, inputs and problems. Keep measured rainfall separate from forecasts and remote estimates. Show data source and freshness.
+
+Distinguish planned, due, started, completed and observed events. Generate tasks from configurable, versioned templates and the actual crop timeline. Rescheduling must retain its reason and show the impact before consequential changes are accepted.
+
+Store structured records alongside photographs and notes. A single confirmed input-use event should update the activity, inventory and project cost consistently, with duplicate protection.
+
+Harvest records must support partial harvests, different grades, saleable stock, household use, losses and storage. Keep production separate from the quantities sold and money received. Close the season with an evidence-based comparison to the plan and clearly identified missing data.
+
+9. ALL CHICKEN WORKFLOWS
+
+Implement working broiler, layer, breeder and hatchery flows, connected through traceable transfers.
+
+Broilers:
+- Prepare house and readiness checklist; receive or hatch chicks; record batch origin, date and count.
+- Assign feeding, water, observation and husbandry tasks.
+- Record feed use, water observations, sampled weights with sample size, losses, care and unusual events.
+- Plan and record partial/final sales or other dispositions; reconcile remaining birds and project costs.
+- Close the batch and retain its performance review.
+
+Layers:
+- Acquire or rear a flock; record origin, age when known, location, counts and transfers.
+- Track feed, water, weights where sampled, observations, losses and approved care.
+- Record egg collection by date and relevant grade, rejects, breakage, consumption, stock and sales.
+- Track production issues and follow-up; support continuous production and partial sales.
+- Record removals and end-of-production outcomes without forcing closure at the first egg sale.
+
+Chicken breeding and hatching:
+- Maintain breeder-flock records and egg sources.
+- Allocate eggs between sale and incubation without duplicating inventory.
+- Create incubation batches, schedule checks using configurable verified templates, and record actual findings.
+- Record hatch results and other egg dispositions.
+- Transfer traceable chicks into broiler, layer-rearing or breeder batches with the relevant cost allocation.
+
+The system must reconcile physical quantities and distinguish unknown or estimated counts from verified counts. Derive metrics only when required inputs and their meaning are available.
+
+10. COMPLETE RABBIT WORKFLOWS
+
+Support individual breeding-animal records and batch/group records for grow-out.
+
+Implement:
+- Acquisition/registration, identification, sex where recorded, lineage, location and history.
+- Mating records and provisional follow-up tasks.
+- Pregnancy observations and actual kindling records.
+- Live/stillborn counts, litter membership, fostering, losses and corrections with reasons.
+- Weaning and transfers into grow-out groups.
+- Feed, sampled weights, care, incidents, mortality and housing changes.
+- Breeding-stock retention, sales and other recorded dispositions.
+- Reviews of litters, breeding animals and grow-out projects.
+
+Fostering and transfers must preserve animal/litter history and must not duplicate counts or costs. Expected dates remain provisional until an actual event is recorded.
+
+11. COMPLETE FISH WORKFLOWS
+
+Support ponds and tanks, stocking batches, and species-specific configurable records.
+
+Implement:
+- Facility preparation and readiness checks.
+- Stocking with species, source, count or estimate, date, sampled size and measurement basis.
+- Feeding schedules and actual feed consumption.
+- Manual or integrated water observations, including temperature, dissolved oxygen, pH and relevant tests where available. Preserve units, test type, calibration/source and freshness.
+- Growth sampling with sample size, grading, transfers, observed losses and interventions.
+- Partial and final harvest, grades, weights/counts, disposition, sales and payments.
+- Stock reconciliation that explicitly recognises estimated fish counts and biomass.
+- End-of-cycle review and facility preparation for reuse.
+
+Include a configurable breeding/hatchery/nursery path where the farmer carries out those activities: broodstock, spawning/hatch observations, fry/fingerling groups and traceable transfers to grow-out. Keep it optional in farm setup rather than inventing an operating hatchery at Lawfield.
+
+Do not invent universal water-quality, stocking-density or feeding thresholds. Use configurable, sourced guidance appropriate to species, system and measurement, and label unconfigured thresholds honestly.
+
+12. COMMON LIVESTOCK CAPABILITIES
+
+Use common infrastructure for tasks, photographs, costs, stock, sales, notifications and incidents while keeping species-specific forms and lifecycle rules.
+
+Provide an Already operating entry path for an existing flock, breeding group, litter, grow-out group or stocked pond. Record an as-of date, current stage, current counts or estimates, their basis, and documented opening stock/cost balances. Historical events may be added when known; never manufacture acquisition, hatch, mating or stocking events to establish the opening state.
+
+Support births/hatches, purchases, transfers, deaths, sales and adjustments through auditable events. Preserve origin and destination for transfers. Correct records with traceable adjustments rather than silently deleting history.
+
+Feed use should deduct stock once and allocate costs to the correct project. Production should create the appropriate egg, animal or fish inventory. Transfers must not be counted as a second purchase or external sale unless that is the actual transaction.
+
+Provide routine husbandry reminders, problem reporting and urgent incidents. Incidents need severity, assigned responder, acknowledgement, evidence, follow-up and resolution.
+
+Allow recording of authorised veterinary care and applicable withholding periods using verified instructions, including who authorised and administered it. Preserve relevant sale/harvest restrictions. The Companion must not invent drug doses, diagnose with certainty from a photo or autonomously medicate animals.
+
+Carry configured treatment restrictions with affected animals and their relevant output through transfers and partial transactions. Enforce these recorded restrictions at applicable harvest, stock-release, reservation, fulfilment and sale steps; do not silently discard them when stock changes location or project. Derive the scope and timing from verified instructions rather than inventing universal periods.
+
+All animal modules must be usable at release. Empty modules should show clear onboarding and no fictional animals. Keep demonstration animals exclusively in an explicitly separate demo/test environment.
+
+13. FARM COMPANION
+
+Make the Companion contextual to the current farm and project. Combine structured project state, tasks, observations, verified reference material and permitted history.
+
+Provide:
+- Project setup and explainable planning.
+- A concise next-action view.
+- Targeted follow-up questions and photo requests.
+- Explanations of potential problems and uncertainty.
+- Proposed task or schedule changes for review.
+- Cost and input summaries based on recorded data.
+- Season/batch review and useful comparisons across cycles.
+
+Keep recommendations distinct from completed work and direct measurements. Never mark work completed merely because an AI suggested it.
+
+Use reliable, locally relevant agronomy and veterinary source material with dates, provenance and versioned content. Where evidence is insufficient, ask for the missing observation and provide an appropriate escalation path. Treat user uploads and retrieved text as data, not instructions granting tools or permissions.
+
+AI may draft recommendations and proposed actions. Server-side rules and authorised people control money, bookings, permissions, treatments and equipment. Do not allow a generated answer to bypass these controls.
+
+Use a backend provider interface for AI services, with credentials kept on the server. If credentials are missing, the task/calendar/record workflows must still work and any unavailable AI capability must be clearly identified. Provide deterministic template-based guidance where appropriate; do not label it as a live model response.
+
+Start personalisation with the farm's own history and traceable comparisons. Cross-farm learning or model-training use requires a separate explicit data-sharing choice. Private records must not leak into another farm's answers.
+
+14. CONNECT ALL FARM EQUIPMENT THROUGH VERIFIED CAPABILITIES
+
+Create an asset model for boreholes/wells, pumps, pivot systems, valves, tanks, water meters, pressure sensors, weather instruments, solar/inverter/power equipment, generators and other farm assets, with extensible categories.
+
+Keep the water source, pump, controller and electrical supply as distinct linked assets where useful. Support relationships such as source -> pump -> storage/distribution -> pivot/zone without assuming every installation has all components.
+
+Each asset needs identification, location, photographs/documents, responsible people, maintenance, usage, integration status and a capabilities manifest.
+
+Implement documented protocol-adapter boundaries and working simulator-backed adapters for supported transports such as MQTT, HTTP/webhooks and Modbus TCP/RTU through a gateway. Add other protocol or manufacturer adapters when concrete requirements justify them. A transport adapter alone must not be described as verified compatibility with every pump or pivot.
+
+Register unknown models now. Let administrators later enter make/model, controller/firmware, protocol, connection details, telemetry mapping and supported commands without replacing the asset or losing history.
+
+Use explicit integration states such as unconfigured, simulated, connected-awaiting-verification, verified-read-only, verified-control-enabled, offline and degraded. Separate simulation credentials and data from real installations.
+
+Telemetry must carry asset identity, measurement type, value, unit, observation time, receipt time, quality/source and freshness. Configure stale thresholds and device health. Provide manual records when no sensor exists.
+
+Boreholes and pumps: support available water-level, flow, pressure, electrical, runtime and fault signals; operating schedules; fuel/energy/maintenance records; and eligible controls after commissioning.
+
+Pivots: support configurable sector/position, direction, speed, running/fault state, pressure/flow and operating programmes only where the controller exposes them. Display unsupported or unverified capabilities accurately.
+
+Use per-device or per-gateway credentials, encrypted transport where supported, least-privilege access and secret rotation. Keep gateway credentials out of browser/mobile code, public listings, logs and repository fixtures.
+
+15. EQUIPMENT COMMANDS AND LOCAL OPERATION
+
+Implement an audited command lifecycle: requested, authorised, dispatched, acknowledged, confirmed by feedback, failed, rejected, expired or outcome-unknown as appropriate.
+
+Require appropriate permissions, valid device capabilities, explicit confirmation for consequential operations, command expiry, replay protection and fresh enough device state. An acknowledgement is not proof that physical equipment completed the action.
+
+Enforce local interlocks and operating limits in the appropriate controller/gateway. Preserve manual override and define loss-of-network behaviour for each commissioned device. Never assume an app notification or cloud connection is a physical safety system.
+
+Do not provide an unrestricted arbitrary-register write interface to ordinary users. Map approved commands to validated controller operations. Do not enable remote starting or movement for an unknown model.
+
+The edge service should buffer observations and synchronise them after an outage without repeating old actuator commands. Implement diagnostic logs and a commissioning checklist for each asset. Do not automatically scan or control unknown networks.
+
+Hardware models arriving later must not block the rest of the software. Deliver working simulators, contract tests, configuration screens, documentation and a precise commissioning checklist. State honestly which integrations have been tested on physical hardware.
+
+16. FARM SECURITY AND CAMERAS
+
+Implement camera/recorder onboarding and a capability matrix for live viewing, snapshots, motion, person detections, recorded events and PTZ where supported.
+
+Support ONVIF/RTSP-compatible integration paths where appropriate and explicit manufacturer adapters where needed. Do not claim that every IP camera supplies person detection or supports every feature.
+
+Use a secure media path compatible with the website and native clients. Prefer existing camera/recorder analytics when available. Additional detection should be a resource-bounded optional component with documented hardware requirements.
+
+Provide detection zones, active schedules, duplicate suppression, notification preferences, event thumbnails/clips, acknowledgements, escalation and incident history. Distinguish motion from person detections and show the event time and source.
+
+Protect camera credentials and stream access. Restrict integration URLs and network access appropriately to prevent user-supplied camera endpoints being used for unauthorised internal access. Public marketplace users must have no route to private feeds.
+
+Define configurable recording/clip retention, storage limits and access logs. Do not store video blobs in the relational database or upload continuous full-resolution footage by default.
+
+Explain offline states accurately. Local detection/recording depends on powered local equipment; remote viewing and notifications depend on connectivity. Do not label delayed events as happening now.
+
+17. MARKETPLACE
+
+Support sell listings and buyer requests for produce, inputs, animals, equipment and parts.
+
+Listings need product, quantity, unit, grade/condition, price basis, currency, availability, collection area, delivery/collection terms, photographs and expiry/stock status.
+
+Distinguish available stock from provisional expected harvest. Never promise delivery from an estimated harvest without an explicit commercial commitment.
+
+Implement browse/search/filter, listing create/edit/archive, shareable links, enquiries/offers, acceptance/reservation, order status, fulfilment/collection, cancellations and completion. Enforce stock reservation atomically to prevent overselling.
+
+Link a private farm's saleable output to a listing only through a deliberate publish action. Use an appropriate public location instead of exposing exact private equipment/animal locations.
+
+Record prices and user-entered payments with provenance. Keep manual payment status distinct from provider-confirmed settlement. Provide a payment-provider boundary for later integration; do not pretend a sandbox payment or unconfigured provider is live.
+
+Support reporting/moderation and reviews associated with completed interactions. Keep public test listings out of production. Provide useful empty states for a small initial network.
+
+18. MACHINERY & SERVICES
+
+Support equipment hire and completed-job services such as ploughing, planting, transport, harvesting, repairs and soil testing.
+
+Listings need capability, service area, availability, rate basis, operator inclusion, fuel inclusion, transport/mobilisation costs, minimum booking and cancellation terms.
+
+Implement request -> quote -> acceptance -> confirmed booking -> work/completion -> review, with cancellations and revisions recorded. A request must not appear as a confirmed booking. Prevent overlapping confirmed resource bookings.
+
+Connect a booking to the relevant project and task. Track agreed versus actual work, charges and payments. Distinguish booking deposits, provider-confirmed payments and manually recorded amounts.
+
+19. INVENTORY, MONEY AND REPORTING
+
+Create auditable stock movements for purchases, use, production, transfers, reservation, sales, losses and adjustments. Include pack sizes and explicit unit conversions. Never mix weight, count, volume and area without a valid conversion.
+
+Support recorded costs for seed, fertiliser, feed, diesel, labour, equipment use, transport, care and other inputs. Link receipts and explain allocations of shared costs.
+
+Store the currency of every transaction. If converting for a report, show the selected exchange rate, source and date. Never silently sum different currencies.
+
+Separate budgets, actual expenditure, input consumption, sales revenue, cash received and unpaid amounts. Identify missing costs before presenting a full profit figure. Derive reports from operational records, not fabricated summary numbers.
+
+Provide daily work summaries, weekly owner reports, stock reports, crop/batch performance, irrigation/fuel usage, maintenance, production and sales summaries, and CSV/PDF exports where useful. Exports must respect permissions and language selection.
+
+20. WEATHER, TASKS AND NOTIFICATIONS
+
+Provide a weather-provider interface and manual rain-gauge entries. Keep forecasts, remote estimates and on-farm measurements distinct with timestamps, units and location/source.
+
+Tasks need assignee, project/location, planned/due dates, instructions, required observations where justified, status, completion evidence and reasons for delay.
+
+Provide in-app notifications and a provider interface for push and optional email/SMS. Honour per-user language and alert preferences. Support acknowledgements and escalation. Avoid repeated noisy alerts for the same unresolved event.
+
+Queue and retry notification delivery with deduplication and truthful delivery state. Test environments must not send real farm alerts or messages to actual buyers. A push notification must not be treated as guaranteed receipt.
+
+21. UI, ACCESSIBILITY AND TABLETS
+
+Design phone-first for real farm work: readable text, accessible contrast, clear touch targets, concise instructions, durable offline state and simple forms.
+
+Use compact information density without making controls hard to tap. Make common field activities quick to enter, with optional detail. Use labelled icons and do not rely on colour alone.
+
+Support small Android screens, iPhones, device font scaling, on-screen keyboards, safe areas, landscape where useful and iPad/tablet multi-column layouts. Avoid clipped controls and horizontal scrolling for routine workflows.
+
+Keep web, Android and iOS feature coverage explicit. A web page rendered at phone width is not evidence that a native application works.
+
+22. SECURITY, RELIABILITY AND OPERATIONS
+
+Implement server-side access enforcement, input validation, rate limiting where relevant, safe file handling, protected credentials, audit logging and controlled exports.
+
+Provide meaningful health/readiness checks, structured logs and diagnostics. Keep database migrations reviewed and reproducible. Back up database and media metadata/content through a documented independent recovery path and verify a restore in an isolated environment.
+
+Document storage retention, media quotas, recovery, device credential replacement and worker-device loss. Do not claim high availability from a single server or assume a container restart repairs every failure.
+
+Provide local setup, container builds, environment examples containing placeholders only, migration/seed commands, deployment and rollback instructions. Keep production records out of test fixtures and demonstration environments.
+
+23. END-TO-END ACCEPTANCE
+
+Write and execute meaningful checks for the real outcomes below. Use isolated fixtures and supported simulators where hardware/provider credentials are not yet available. Clearly label test scope and limitations.
+
+1. Invite a worker, select Shona or Ndebele, sign in, recover access and verify the correct permissions.
+2. Onboard already-growing irrigated maize with unknown optional facts; add confirmed facts later without inventing earlier events.
+3. Assign work; record it offline with photographs and inputs; restart the application; reconnect; confirm one activity, one stock movement and one cost allocation.
+4. Have two workers create conflicting or overlapping records; resolve conflicts without silent loss.
+5. Run crop work through irrigation, observations, a problem/follow-up, partial harvest, stock, sale, payment record and season review.
+6. Run a broiler batch from placement through feed, observations, losses, partial sales and closure.
+7. Run a layer flock through egg collection, rejects, stock, consumption, sales and continuing production.
+8. Incubate a recorded egg batch and transfer traceable chicks into a downstream project without duplicate eggs, chicks or costs.
+9. Run rabbit mating, kindling, fostering where used, weaning, grow-out, sale and lineage/history checks.
+10. Run fish stocking, water observations, feed, growth sampling, transfer, partial/final harvest and reconciliation of estimates.
+11. Exercise the optional fish nursery/hatchery-to-grow-out transfer path.
+12. Report an animal or crop incident; assign, acknowledge, follow up and resolve it.
+13. Register unknown hardware; attach a simulated adapter; verify telemetry, stale data, maintenance and accurate capability states.
+14. Exercise command success, rejection, timeout, expiry, duplicate delivery, lost acknowledgement, missing feedback and reconnection; confirm no unexpected delayed start.
+15. Exercise camera connection states, motion/person-event distinctions, retention, private stream access and delayed-event timestamps.
+16. Complete marketplace listing, enquiry/order, reservation, fulfilment and cancellation; verify concurrent attempts cannot oversell.
+17. Complete machinery quote and booking; reject conflicting confirmed dates; record completion and project cost.
+18. Reconcile stock, animal counts, production, costs and sales; test units, corrections, partial transactions and multiple currencies.
+19. Attempt cross-farm access to API records, media, exports, camera events and cached data; verify denial.
+20. Exercise language switching, translated validation/notifications, numeric/date formatting and offline localisation on web, Android and iOS.
+21. Test native journeys on Android and iOS, plus iPad layout and accessibility; verify browser mobile layouts separately.
+22. Restore an isolated database/media backup and verify essential records and attachments.
+23. Onboard an existing animal project from documented opening counts/estimates and balances without inventing historical events; reconcile later activity against that opening state.
+24. Record a configured treatment restriction and verify that relevant transfers, partial harvests, marketplace reservations, fulfilment and sales retain and enforce it.
+
+Use suitable API/integration, browser and native automation tools. Do not substitute passing type checks or mocked screenshots for end-to-end evidence. Tests must assert operational outcomes and meaningful failure cases.
+
+If native signing, a macOS build host, push credentials or physical equipment is unavailable, complete the relevant code and available checks, prepare reproducible build/test instructions, and report the exact unverified step. Do not claim native-device or live-hardware validation that did not occur.
+
+24. EXECUTION ORDER AND COMPLETION STANDARD
+
+Start by documenting the requirements, module boundaries, data model and acceptance matrix. Then implement in coherent vertical slices:
+
+A. Repository, independent clients/backend, identity, farm membership, localisation, offline foundations and Today.
+B. Active maize/crop workflow, tasks, irrigation records, inputs, costs and reports.
+C. All chicken, rabbit and fish workflows, including traceability and financial/stock reconciliation.
+D. Equipment/camera integration framework, working simulators, telemetry, commands, incidents and commissioning support.
+E. Marketplace, Machinery & Services and links to production/projects.
+F. End-to-end verification, fixes, release preparation, operations documentation and final review.
+
+This order is for execution, not permission to drop later sections. Continue until all implementable committed software scope is complete. Do not stop at the crop pilot or leave livestock as inert menus.
+
+Keep a requirements-to-implementation-and-test matrix. Replace mock-only production flows with real persistence, validation and errors. Features lacking external credentials must show an honest configured/unconfigured state and an exact activation procedure.
+
+Create logical commits, run relevant checks, fix failures and prepare or use the repository's review workflow. Respect branch protections. Follow any triggered CI through to a verified result. Deploy only to an authorised, identified target; do not invent a public deployment or change unrelated systems.
+
+Provide concise progress updates and maintain implementation-status documentation so work can resume reliably across sessions.
+
+Final delivery must include:
+- Repository location, branches/commits and CI result.
+- Working setup/build commands for web, Android, iOS/iPad, backend and edge.
+- Implemented workflow inventory and the acceptance matrix.
+- Honest results for automated, manual, simulator and physical-hardware checks.
+- Hardware compatibility and commissioning guide.
+- Language coverage and review status.
+- Deployment, migration, backup/restore and rollback instructions.
+- Remaining external inputs, each linked to the exact capability it affects.
+
+Do not describe the application as universally compatible, fully production-validated or bug-free without evidence. Report completed software and outstanding commissioning/build prerequisites separately.
+
+OFFICIAL REFERENCE STARTING POINTS
+
+Verify current documentation during implementation:
+
+- Expo native development: https://docs.expo.dev/workflow/overview/
+- Expo iOS/tablet app configuration: https://docs.expo.dev/versions/latest/config/app/
+- Expo localisation: https://docs.expo.dev/guides/localization/
+- Unicode Shona language data: https://www.unicode.org/cldr/charts/42/summary/sn.html
+- Unicode Northern Ndebele language data: https://www.unicode.org/cldr/charts/47/summary/nd.html
+- ONVIF Profile T: https://www.onvif.org/profiles/profile-t/
+- ONVIF Profile M: https://www.onvif.org/profiles/profile-m/
+- FAO visual soil and field assessment: https://www.fao.org/land-water/land/land-governance-and-planning/land-resources-planning-toolbox/detail/visual-soil--field-assessment-tool-(vs-fast)/en
+
+END OF PROMPT
