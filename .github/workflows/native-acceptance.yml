@@ -17,8 +17,8 @@ env:
   WEB_ORIGIN: http://127.0.0.1:3001
   LOG_LEVEL: silent
   NODE_ENV: test
-  NATIVE_FIXTURE_PATH: ${{ runner.temp }}/native-fixture.json
-  NATIVE_OFFLINE_FLAG: ${{ runner.temp }}/native-offline
+  NATIVE_FIXTURE_PATH: /tmp/smart-farmer-native-fixture.json
+  NATIVE_OFFLINE_FLAG: /tmp/smart-farmer-native-offline
 jobs:
   android:
     runs-on: ubuntu-24.04
