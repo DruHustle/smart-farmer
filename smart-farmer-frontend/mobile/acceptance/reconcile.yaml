@@ -1,0 +1,35 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: device-reauthenticate
+- extendedWaitUntil:
+    visible:
+      id: auth-username
+    timeout: 20000
+- tapOn:
+    id: auth-username
+- inputText: native_owner
+- tapOn:
+    id: auth-password
+- inputText: NativeAcceptanceOnly!2026
+- hideKeyboard
+- tapOn:
+    id: auth-submit
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+    timeout: 45000
+- tapOn:
+    id: tab-record
+- setPermissions:
+    permissions:
+      camera: deny
+- scrollUntilVisible:
+    element:
+      id: media-camera
+    direction: DOWN
+- tapOn:
+    id: media-camera
+- scroll
+- assertVisible: '.*Mvumo haina kupiwa.*'
+- takeScreenshot: camera-permission-denied-recording-remains-available

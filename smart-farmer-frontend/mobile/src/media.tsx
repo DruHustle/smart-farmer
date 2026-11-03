@@ -79,7 +79,7 @@ export function MediaCapture({ repository, farmId, activityId, language, onChang
   }
 
   return <View style={{ gap: 10 }}><Text style={styles.label}>{t.media}</Text><Text style={styles.caption}>{t.mediaHint}</Text>
-    <View style={styles.row}><Button secondary title={t.takePhoto} disabled={busy || recorderState.isRecording} onPress={() => { void photo(true); }} /><Button secondary title={t.choosePhoto} disabled={busy || recorderState.isRecording} onPress={() => { void photo(false); }} /></View>
+    <View style={styles.row}><Button testID="media-camera" secondary title={t.takePhoto} disabled={busy || recorderState.isRecording} onPress={() => { void photo(true); }} /><Button testID="media-library" secondary title={t.choosePhoto} disabled={busy || recorderState.isRecording} onPress={() => { void photo(false); }} /></View>
     <Button secondary title={recorderState.isRecording ? `${t.stopAudio} · ${Math.round(recorderState.durationMillis / 1000)} s` : t.recordAudio} busy={busy} onPress={() => { void (recorderState.isRecording ? persistRecording() : startRecording()); }} />
     {attachments.map(attachment => <View key={attachment.id} style={styles.item}>
       {attachment.mimeType.startsWith('image/') && attachment.dataBase64 ? <Image source={{ uri: `data:${attachment.mimeType};base64,${attachment.dataBase64}` }} style={{ width: '100%', height: 180, borderRadius: 12 }} resizeMode="contain" accessibilityLabel={t.photos} /> : <Text style={styles.text}>{t.voiceNote}</Text>}

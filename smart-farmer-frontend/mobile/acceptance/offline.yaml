@@ -1,0 +1,24 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: record-note
+- inputText: Native durable offline observation
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: record-save
+    direction: DOWN
+- tapOn:
+    id: record-save
+- assertVisible: '.*Zvachengetwa pamudziyo.*'
+- stopApp
+- launchApp:
+    stopApp: false
+- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081
+- extendedWaitUntil:
+    visible:
+      id: device-reauthenticate
+    timeout: 60000
+- assertVisible:
+    id: device-unlock
+- takeScreenshot: restart-keeps-private-workspace-locked

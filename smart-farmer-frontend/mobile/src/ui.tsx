@@ -40,7 +40,7 @@ export function Button({ title, onPress, secondary = false, danger = false, disa
 }
 
 export function Field({ label, hint, ...props }: TextInputProps & { label: string; hint?: string }) {
-  return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
+  return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} accessibilityHint={hint} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
 }
 
 export function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void }) {
@@ -70,7 +70,7 @@ export function Choice<T extends string>({ label, value, options, onChange, clos
   return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text>
     <Button testID={testID} secondary title={selected?.label || label} onPress={() => setOpen(true)} />
     <Sheet title={label} visible={open} onClose={() => setOpen(false)} closeLabel={closeLabel}>
-      {options.map(option => <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ selected: option.value === value }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
+      {options.map(option => <Pressable key={option.value} testID={testID ? `${testID}-option-${option.value}` : undefined} accessibilityRole="radio" accessibilityState={{ selected: option.value === value }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
     </Sheet>
   </View>;
 }

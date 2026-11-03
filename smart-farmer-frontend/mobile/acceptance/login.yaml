@@ -1,0 +1,30 @@
+appId: eu.onesa.smartfarmer
+---
+- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081
+- tapOn:
+    text: Continue
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: auth-username
+    timeout: 120000
+- tapOn:
+    id: auth-username
+- inputText: native_owner
+- tapOn:
+    id: auth-password
+- inputText: NativeAcceptanceOnly!2026
+- hideKeyboard
+- tapOn:
+    id: auth-submit
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+    timeout: 45000
+- tapOn:
+    id: tab-record
+- extendedWaitUntil:
+    visible:
+      id: record-note
+    timeout: 20000
+- takeScreenshot: signed-in-sqlcipher-workspace

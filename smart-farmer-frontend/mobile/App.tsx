@@ -115,8 +115,8 @@ function Root() {
     <Sheet title={t.locked} visible={locked} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
       <Text style={styles.heading}>{session.username}</Text><Text style={styles.text}>{expired ? t.sessionExpired : t.unlockHint}</Text>
       {error ? <Notice text={errorText(language, error)} error /> : null}
-      {!expired ? <Button title={t.unlock} busy={busy} onPress={() => { void unlock(); }} /> : null}
-      <Button secondary title={t.reauthenticate} onPress={() => { void signOut().catch(setError); }} />
+      {!expired ? <Button testID="device-unlock" title={t.unlock} busy={busy} onPress={() => { void unlock(); }} /> : null}
+      <Button testID="device-reauthenticate" secondary title={t.reauthenticate} onPress={() => { void signOut().catch(setError); }} />
       <Text style={styles.caption}>{t.localPrivacy}</Text>
     </Sheet>
     <Sheet title={t.recoveryCode} visible={Boolean(recoveryCode) && !locked} closeLabel={t.close} onClose={() => setRecoveryCode('')}>
