@@ -1,8 +1,14 @@
 name: CI
 on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: smart-farmer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  verify:
+  workflows:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -16,6 +22,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      LOG_LEVEL: silent
+      CI: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,7 +32,65 @@ jobs:
           node-version: 24
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
-      - run: npm run build --prefix smart-farmer-backend
-      - run: npm run build --prefix smart-farmer-frontend/web
-      - run: npm test --prefix smart-farmer-backend
-      - run: npm test --prefix smart-farmer-frontend/web
+      - name: API and concurrency workflows against PostgreSQL
+        run: npm test --prefix smart-farmer-backend
+      - name: Offline storage, language and farm-time rules
+        run: npm test --prefix smart-farmer-frontend/web
+      - name: Edge replay and interlock tests
+        run: npm test --prefix smart-farmer-backend/edge
+      - name: Install browser
+        working-directory: smart-farmer-frontend/web
+        run: npx playwright install --with-deps chromium
+      - name: Build both applications and exercise browser journeys
+        env:
+          TEST_ARTIFACTS_DIR: ${{ runner.temp }}/smart-farmer-browser
+        run: npm run test:e2e --prefix smart-farmer-frontend/web
+      - name: Retain browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-acceptance
+          path: ${{ runner.temp }}/smart-farmer-browser
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Validate local container configuration and build runtime image
+        run: |
+          POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
+          docker build --tag smart-farmer-api:ci smart-farmer-backend
+      - name: Use matching PostgreSQL 17 backup clients
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          cat > "$RUNNER_TEMP/pg_dump" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_dump "$@"
+          SH
+          cat > "$RUNNER_TEMP/pg_restore" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_restore "$@"
+          SH
+          chmod 700 "$RUNNER_TEMP/pg_dump" "$RUNNER_TEMP/pg_restore"
+          printf 'PG_DUMP_BIN=%s/pg_dump\nPG_RESTORE_BIN=%s/pg_restore\nPOSTGRES_CONTAINER_ID=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_ENV"
+      - name: Restore encrypted database and attachments into isolated target
+        run: npm run test:backup --prefix smart-farmer-backend
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      EXPO_NO_TELEMETRY: '1'
+    defaults:
+      run:
+        working-directory: smart-farmer-frontend/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Native business rules and durable repository
+        run: npm test
+      - name: Typecheck and export iOS and Android JavaScript bundles
+        run: npm run build
