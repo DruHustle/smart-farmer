@@ -43,7 +43,11 @@ const unique = Date.now().toString(36); const username = `web_owner_${unique}`; 
 const note = `Offline field evidence ${unique}`;
 const screenshot = async name => page.screenshot({path: resolve(artifacts, name), fullPage: true, timeout: 10000});
 async function expectVisible(locator, timeout = 10_000) {await locator.waitFor({state: 'visible', timeout});}
-async function expectText(locator, text) {await expectVisible(locator); assert.ok((await locator.textContent()).includes(text));}
+async function expectText(locator, text) {
+  // The row exists before its asynchronous command transition finishes.
+  await expectVisible(locator.filter({hasText: text}));
+  assert.ok((await locator.textContent()).includes(text));
+}
 async function navigate(target, text = sn[target]) {await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();}
 async function more(target, text = sn[target]) {await navigate('more'); await page.locator('.menu-panel').getByRole('button', {name: text, exact: true}).click();}
 async function waitProject(name) {await expectVisible(page.getByRole('button', {name: new RegExp(name)}));}
