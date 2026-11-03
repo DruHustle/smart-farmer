@@ -1,33 +1,25 @@
 # Smart Farmer
 
-Early development foundation for a farm-management application. **Not ready for production or farm operations.** The committed brief is in [docs/product-brief.txt](docs/product-brief.txt); the actual implementation and missing acceptance criteria are recorded in [docs/status.md](docs/status.md).
+Farm management for the phone-first web and native Android/iPhone/iPad applications, with an independently deployable TypeScript/Fastify API, PostgreSQL and farm gateway. The operating brief is for Lawfield Farm in Zimbabwe: active irrigated maize, chickens, rabbits and fish, Shona and Zimbabwean Northern Ndebele, and equipment models to be supplied later.
 
-This slice provides a TypeScript/Fastify API with PostgreSQL, owner registration and sign-in, farm-scoped project and activity endpoints, and a React web interface. It does not yet implement the rest of the product brief, including safe offline use, mobile apps, livestock, inventory, equipment or trading. Do not enter sensitive farm data into this prototype.
+The repository has been reviewed against the complete [Codex build prompt](docs/product-brief.txt). This development release adds persistent farm workflows, encrypted offline field recording, native projects, stock/cost reconciliation, equipment simulation, trading, booking and meaningful verification. It does not assert that every production or hardware requirement is complete. See the [acceptance matrix and remaining gaps](docs/status.md).
 
-## Local development
+## Where to start
 
-Requires Node 24, npm and Docker. Each deployable owns its dependencies and lockfile.
+- [Setup, independent builds, deployment, backup and rollback](docs/operations.md)
+- [Architecture and permission boundaries](docs/architecture.md)
+- [Core API and animal workflows](docs/core-api.md)
+- [Equipment, media and commerce API](docs/integrations-api.md)
+- [Hardware compatibility and commissioning](docs/hardware-and-commissioning.md)
+- [Native application instructions](../smart-farmer-frontend/mobile/README.md)
+- [Web application instructions](../smart-farmer-frontend/web/README.md)
 
-```sh
-# From smart-farmer-backend:
-nvm use
-cp .env.example .env
-# Set a local-only POSTGRES_PASSWORD in .env for Docker Compose.
-# Export DATABASE_URL in your shell using the same password and localhost:5432/smart_farmer.
-# Export WEB_ORIGIN=http://localhost:5173.
-npm ci
-npm ci --prefix ../smart-farmer-frontend/web
-docker compose up -d db
-npm run migrate
-npm run dev
-# In a second terminal, from smart-farmer-backend:
-npm run dev --prefix ../smart-farmer-frontend/web
-```
+## Local stack
 
-The web defaults to `http://localhost:3000`; set `VITE_API_URL` before starting Vite to use another API. Configuration examples contain placeholders and are not automatically loaded by Node. Never commit real credentials.
+From this directory, copy `.env.example` to a private `.env`, replace the local database password, and run `docker compose up --build -d`. This starts PostgreSQL, migration, API and maintenance-worker processes with persistent database/media volumes and localhost-bound ports. Then run `npm ci` and `npm run dev` in `../smart-farmer-frontend/web`.
 
-From `smart-farmer-backend`, run `npm run build` and `npm test`; run `npm run build --prefix ../smart-farmer-frontend/web` and `npm test --prefix ../smart-farmer-frontend/web` for the web app. To run the PostgreSQL integration test, set `TEST_DATABASE_URL` to an isolated test database on which the test user may create and drop schemas, then run `npm test` in `smart-farmer-backend`. The test creates and removes its own random schema. A skipped integration test is not a pass.
+Alternatively use Node 24 and an existing isolated PostgreSQL 17 database: export `DATABASE_URL` and `WEB_ORIGIN`, run `npm ci`, `npm run migrate`, `npm run dev`, and run `npm run worker` separately. Each frontend has its own dependency lockfile; neither imports backend implementation or the other frontend's UI.
 
-See [architecture and operations](docs/architecture.md) for API and deployment boundaries and [acceptance matrix](docs/status.md) for precise coverage. Native iOS/Android and edge directories are reserved, not runnable applications.
+Run backend tests with an explicit isolated `TEST_DATABASE_URL`. The integration suite fails if its database is missing rather than reporting skipped tests as success. The web/native READMEs and operations guide list their independent verification commands.
 
-GitHub Actions runs the backend and web builds and tests on pushes and pull requests.
+No real farm measurements, animal counts, balances, hardware credentials, payment-provider settlement or native signing identities are supplied as seed data. Unknown facts stay unknown. Demonstration/test fixtures are isolated and must not be published as real listings or farm data.

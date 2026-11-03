@@ -1,9 +1,20 @@
+# Local development stack. No public database or unconfigured production deployment.
+x-backend: &backend
+  build: .
+  environment:
+    PGHOST: db
+    PGPORT: 5432
+    PGUSER: smart_farmer
+    PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a private .env}
+    PGDATABASE: smart_farmer
+    WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+    MEDIA_ROOT: /data/media
 services:
   db:
     image: postgres:17
     environment:
       POSTGRES_USER: smart_farmer
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a private .env}
       POSTGRES_DB: smart_farmer
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
@@ -12,5 +23,32 @@ services:
       timeout: 3s
       retries: 10
     ports: ["127.0.0.1:5432:5432"]
+  migrate:
+    <<: *backend
+    command: ["node", "dist/migrate.js"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+  api:
+    <<: *backend
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: ["media_data:/data/media"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+  worker:
+    <<: *backend
+    command: ["node", "dist/worker.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/worker-health.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
 volumes:
   postgres_data:
+  media_data:

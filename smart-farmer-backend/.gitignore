@@ -9,3 +9,11 @@ coverage/
 .expo/
 
 *.tsbuildinfo
+.data/
+backups/
+*.backup
+*.dump
+*.tar.gz
+
+
+*.sfbak

@@ -1,6 +1,6 @@
 {
   "name": "smart-farmer-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,11 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "migrate": "node --import tsx src/migrate.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "worker": "node --import tsx src/worker.ts",
+    "worker:start": "node dist/worker.js",
+    "test:integration": "node --import tsx --test test/api.test.ts test/core.test.ts test/integrations.test.ts",
+    "test:backup": "node --import tsx --test test/backup.test.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
