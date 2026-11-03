@@ -2,7 +2,7 @@ import type {OutboxItem} from '../types';
 import type {Vault} from './vault';
 /** Field records only. Purchases, bookings, permissions and actuator commands never queue. */
 export function isQueueable(path: string, method: string): boolean {
-  return method === 'POST' && /^\/v1\/farms\/[^/]+\/(activities|projects\/[^/]+\/events|incidents|media)$/.test(path)
+  return method === 'POST' && /^\/v1\/farms\/[^/]+\/(activities|projects\/[^/]+\/(events|records)|weather\/observations|assets\/[^/]+\/usage|incidents|media)$/.test(path)
     || method === 'PATCH' && /^\/v1\/farms\/[^/]+\/tasks\/[^/]+$/.test(path);
 }
 export type PendingRecord = Omit<OutboxItem, 'status' | 'attempts' | 'createdAt'>;
@@ -28,7 +28,8 @@ export async function drainOutbox(vault: Vault, send: Send, includeMedia: boolea
       const status = Number((error as {status?: number}).status ?? 0);
       const code = error instanceof Error ? error.message : 'network_error';
       await vault.mutate(next => {const live = next.outbox.find(e => e.id === entry.id); if (!live) return; live.error = code; if (status === 401) next.requiresAuth = true;
-        live.status = status === 409 ? 'conflict' : status >= 400 && status < 500 && status !== 429 || live.attempts >= 5 ? 'failed' : 'pending';
+        live.status = status === 409 && code !== 'retry_transaction' ? 'conflict' : status >= 400 && status < 500 && status !== 429 && code !== 'retry_transaction' || live.attempts >= 5 ? 'failed' : 'pending';
+        const current = (error as {details?: {current?: Record<string, unknown>}}).details?.current; if (current && live.status === 'conflict') live.conflictCurrent = current;
         live.nextAttemptAt = new Date(now() + Math.min(300_000, 5_000 * 2 ** live.attempts)).toISOString();
       });
       if (status === 401 || status === 429 || status === 0) break;

@@ -4,9 +4,10 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     text: Open
     optional: true
-- tapOn:
-    text: Continue
-    optional: true
+- extendedWaitUntil:
+    visible: Continue
+    timeout: 120000
+- tapOn: Continue
 - extendedWaitUntil:
     visible:
       id: auth-username

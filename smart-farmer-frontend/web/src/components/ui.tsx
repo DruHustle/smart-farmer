@@ -40,10 +40,10 @@ export function Field({label: title, hint, children, className = ''}: {label: st
 export function Section({title, children, action, className = ''}: {title: string; children: ReactNode; action?: ReactNode; className?: string}) {return <section className={`panel ${className}`}><div className="section-head"><h2>{title}</h2>{action}</div>{children}</section>;}
 export function ExpandForm({title, children, open = false}: {title: string; children: ReactNode; open?: boolean}) {return <details className="form-disclosure" open={open || undefined}><summary><Icon name="plus"/><span>{title}</span></summary><div className="form-body">{children}</div></details>;}
 export function Modal({title, onClose, children}: {title: string; onClose: () => void; children: ReactNode}) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null); const titleId = useId();
   const {t} = useFarm();
   useEffect(() => {const d = dialog.current; if (d && !d.open) d.showModal(); return () => {d?.close();};}, []);
-  return <dialog ref={dialog} className="modal" onCancel={e => {e.preventDefault(); onClose();}} onClick={e => {if (e.target === dialog.current) onClose();}}><div className="modal-heading"><h2>{title}</h2><button type="button" className="icon-button" aria-label={t.close} onClick={onClose}><Icon name="close"/></button></div><div className="modal-content">{children}</div></dialog>;
+  return <dialog ref={dialog} aria-labelledby={titleId} className="modal" onCancel={e => {e.preventDefault(); onClose();}} onClick={e => {if (e.target === dialog.current) onClose();}}><div className="modal-heading"><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label={t.close} onClick={onClose}><Icon name="close"/></button></div><div className="modal-content">{children}</div></dialog>;
 }
 export const formValue = (data: FormData, name: string): string => String(data.get(name) ?? '').trim();
 export const formNumber = (data: FormData, name: string): number | null => formValue(data, name) === '' ? null : Number(formValue(data, name));

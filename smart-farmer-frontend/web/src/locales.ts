@@ -1,6 +1,8 @@
 import type {Lang} from './types';
+import {completionPhrases} from './completion-locales.ts';
 /** Preliminary translations; agricultural terminology requires native-speaker review. */
 export const phrases = {
+  ...completionPhrases,
   language: ['Mutauro', 'Ulimi'],
   previousPassword: ['Pasiwedhi yekare yezvakachengetwa', 'Igama elidala lokudlula lokugciniweyo'], recoverDrafts: ['Dzosa zvinyorwa zvakachengetwa', 'Buyisela imibhalo egciniweyo'], freshCache: ['Enderera nezvakachengetwa zvitsva', 'Qhubeka ngokugciniweyo okutsha'], recoveryArchiveHint: ['Pasiwedhi itsva yavhura akaundi. Shandisa pasiwwedhi yekare kudzosa zvinyorwa zvisati zvatumirwa, kana enderera. Zvinyorwa zvekare zvinoramba zvakavharirwa kuti zvidzoswe gare gare.', 'Igama elitsha lokudlula livule i-akhawunti. Sebenzisa elidala ukubuyisela imibhalo engakathunyelwa, kumbe uqhubeke. Imibhalo emidala ihlala ivikelwe ukuze ibuyiselwe kamuva.'], savedCode: ['Ndachengeta kodhi', 'Sengiyigcinile ikhodi'], live_animal_market_not_ready: ['Kutengesa zvipfuyo zvipenyu pamusika hakusati kwagadzirirwa. Nyora kutengeswa kwacho muchirongwa chezvipfuyo.', 'Ukuthengisa izifuyo eziphilayo emakethe akukalungiswa. Bhala ukuthengiswa ohlelweni lwezifuyo.'],
 

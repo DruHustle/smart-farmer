@@ -8,6 +8,10 @@ import { Button, Card, Choice, Field, Notice, Sheet, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
 import { AnimalEventForm, type AnimalIdentity } from './AnimalEventForm';
 import { ProjectForm } from './ProjectForm';
+import { ProjectWorkspace } from './ProjectWorkspace';
+import { StockMovements } from './FinancePanel';
+import { c, Form, numericField, textField, selectField, projectOptions, usePanel, farmPath } from '../completion-ui';
+import { allPages, string, type Row } from '../product';
 
 type Restriction = { id: string; starts_at: string; ends_at: string; scope: string; reason: string; authorized_by: string };
 type Details = { events: AnimalEvent[]; animals: AnimalIdentity[]; restrictions: Restriction[]; missingFields: string[] };
@@ -15,27 +19,8 @@ const emptyDetails: Details = { events: [], animals: [], restrictions: [], missi
 
 function StockForm({ work, language, onSaved }: { work: Workspace; language: Language; onSaved: () => void }) {
   const t = textFor(language);
-  const id = useRef(Crypto.randomUUID());
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState<Stock['unit']>('kg');
-  const [quantity, setQuantity] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const [unitCost, setUnitCost] = useState('');
-  const [currency, setCurrency] = useState('');
-  async function submit() {
-    const success = await work.onlineAction(async () => {
-      const count = optionalNumber(quantity), cost = optionalNumber(unitCost);
-      if (!name.trim() || count === null || cost !== null && !/^[A-Z]{3}$/.test(currency)) throw new Error('required');
-      await work.api.request(`/v1/farms/${work.farmId}/stock`, 'POST', { id: id.current, name: name.trim(), unit, quantity: count, ...(projectId ? { projectId } : {}), ...(cost !== null ? { unitCost: cost, currency } : {}) });
-    });
-    if (success) { onSaved(); await work.refresh(); }
-  }
-  return <><Text style={styles.muted}>{t.stockHint}</Text><Field label={t.stockName} value={name} onChangeText={setName} maxLength={120} />
-    <Field label={t.quantity} value={quantity} onChangeText={setQuantity} keyboardType="decimal-pad" />
-    <Choice label={t.unit} value={unit} onChange={setUnit} closeLabel={t.close} options={stockUnits.map(value => ({ value, label: value }))} />
-    <Choice label={t.project} value={projectId} onChange={setProjectId} closeLabel={t.close} options={[{ value: '', label: '—' }, ...(work.snapshot?.projects || []).map(project => ({ value: project.id, label: project.name }))]} />
-    <Field label={t.unitCost} value={unitCost} onChangeText={setUnitCost} keyboardType="decimal-pad" /><Field label={t.currency} value={currency} onChangeText={value => setCurrency(value.toUpperCase())} maxLength={3} autoCapitalize="characters" />
-    <Button title={t.save} busy={work.busy} onPress={() => { void submit(); }} /></>;
+  const locations = usePanel(work, 'locations', () => allPages<Row>(work.api, farmPath(work, '/locations')));
+  return <Form work={work} language={language} hint={t.stockHint} fields={[textField('name', true, { label: t.stockName }), numericField('quantity', true), selectField('unit', stockUnits.map(value => ({ value, label: value })), true), selectField('projectId', projectOptions(work)), numericField('unitCost'), textField('currency', false, { maxLength: 3 }), textField('grade'), selectField('locationId', (locations.value || []).map(item => ({ value: string(item.id), label: string(item.name) }))), numericField('packSize', false, { minimum: 0.000001 }), selectField('packUnit', stockUnits.map(value => ({ value, label: value })))]} initial={{ unit: 'kg' }} submit={body => work.api.request(farmPath(work, '/stock'), 'POST', body)} onSaved={async () => { onSaved(); await work.refresh(); }} />;
 }
 
 function IdentityForm({ work, language, project, animals, onSaved }: { work: Workspace; language: Language; project: Project; animals: AnimalIdentity[]; onSaved: () => void }) {
@@ -86,6 +71,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
   const [filter, setFilter] = useState<'crops' | 'animals' | 'stock'>('crops');
   const [create, setCreate] = useState(false);
   const [stockCreate, setStockCreate] = useState(false);
+  const [stockId, setStockId] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [mode, setMode] = useState<'detail' | 'edit' | 'event' | 'identity' | 'restriction'>('detail');
   const [details, setDetails] = useState<Details>(emptyDetails);
@@ -106,11 +92,11 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
       let value: Details = { ...emptyDetails, missingFields: companion.missingFields || [] };
       if (project.enterprise_type !== 'crop') {
         const [events, animals, restrictions] = await Promise.all([
-          work.api.request<{ items: AnimalEvent[] }>(`${base}/events`),
-          work.api.request<{ items: AnimalIdentity[] }>(`${base}/animals`),
-          work.api.request<{ items: Restriction[] }>(`${base}/restrictions`),
+          allPages<AnimalEvent>(work.api, `${base}/events`),
+          allPages<AnimalIdentity>(work.api, `${base}/animals`),
+          allPages<Restriction>(work.api, `${base}/restrictions`),
         ]);
-        value = { ...value, events: events.items, animals: animals.items, restrictions: restrictions.items };
+        value = { ...value, events, animals, restrictions };
       }
       if (epoch !== detailEpoch.current) return;
       await work.repository.setPreference(key, value);
@@ -118,7 +104,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
     } catch (error) { if (epoch === detailEpoch.current) work.setError(error); }
   }
   useEffect(() => { if (selected) void loadDetails(selected).catch(work.setError); return () => { detailEpoch.current++; }; }, [selectedId, snapshot?.syncedAt]);
-  useEffect(() => { detailEpoch.current++; setSelectedId(''); setCreate(false); setStockCreate(false); setDetails(emptyDetails); }, [work.farmId]);
+  useEffect(() => { detailEpoch.current++; setSelectedId(''); setStockId(''); setCreate(false); setStockCreate(false); setDetails(emptyDetails); }, [work.farmId]);
   if (!snapshot) return <Notice text={t.neverSynced} />;
   const projects = snapshot.projects.filter(project => filter === 'crops' ? project.enterprise_type === 'crop' : project.enterprise_type !== 'crop');
 
@@ -127,7 +113,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
     <View style={styles.row}>{(['crops', 'animals', 'stock'] as const).map(value => <Button key={value} title={t[value]} secondary={filter !== value} onPress={() => setFilter(value)} />)}</View>
     <Text style={styles.caption}>{t.recentWindow}</Text>
     <View style={styles.grid}>
-      {filter === 'stock' ? snapshot.stock.map(item => <Card key={item.id} title={item.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}><Text style={styles.heading}>{item.quantity} {item.unit}</Text><Text style={styles.caption}>{snapshot.projects.find(project => project.id === item.project_id)?.name || '—'}</Text>{item.unit_cost !== undefined && item.unit_cost !== null ? <Text style={styles.caption}>{t.unitCost}: {item.unit_cost} {item.currency}</Text> : null}</Card>) : projects.map(project => <Card key={project.id} title={project.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}>
+      {filter === 'stock' ? snapshot.stock.map(item => <Card key={item.id} title={item.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}><Text style={styles.heading}>{item.quantity} {item.unit}</Text><Text style={styles.caption}>{snapshot.projects.find(project => project.id === item.project_id)?.name || '—'}</Text>{item.unit_cost !== undefined && item.unit_cost !== null ? <Text style={styles.caption}>{t.unitCost}: {item.unit_cost} {item.currency}</Text> : null}<Button secondary title={c(language, 'movements')} onPress={() => setStockId(item.id)} /></Card>) : projects.map(project => <Card key={project.id} title={project.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}>
         <Text style={styles.muted}>{label(language, project.enterprise_type)} · {label(language, project.status || 'active')}</Text>
         {project.enterprise_type === 'crop' ? <Text style={styles.text}>{t.plantingDate}: {project.planting_date?.slice(0, 10) || t.unknown}{'\n'}{t.area}: {project.area_ha || t.unknown}</Text> : <Text style={styles.text}>{t.currentCount}: {project.current_count ?? t.unknown} · {label(language, project.count_basis || 'unknown')}</Text>}
         <Button secondary title={t.project} onPress={() => { setSelectedId(project.id); setMode('detail'); work.setError(null); }} />
@@ -140,6 +126,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
     <Sheet title={t.newStock} visible={stockCreate} onClose={() => setStockCreate(false)} closeLabel={t.close}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}{stockCreate ? <StockForm work={work} language={language} onSaved={() => setStockCreate(false)} /> : null}
     </Sheet>
+    <Sheet title={snapshot.stock.find(item => item.id === stockId)?.name || t.stock} visible={Boolean(stockId)} onClose={() => setStockId('')} closeLabel={t.close}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{snapshot.stock.find(item => item.id === stockId) ? <StockMovements key={stockId} work={work} language={language} item={snapshot.stock.find(item => item.id === stockId)!} /> : null}</Sheet>
     <Sheet title={selected?.name || t.project} visible={Boolean(selected)} onClose={() => setSelectedId('')} closeLabel={t.close}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {selected && mode !== 'detail' ? <Button secondary title={t.back} onPress={() => { work.setError(null); setMode('detail'); }} /> : null}
@@ -151,7 +138,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
         <Text style={styles.muted}>{label(language, selected.enterprise_type)} · {label(language, selected.status || 'active')}</Text>
         {selected.enterprise_type === 'crop' ? <Text style={styles.text}>{t.plantingDate}: {selected.planting_date?.slice(0, 10) || t.unknown}{'\n'}{t.variety}: {selected.variety || t.unknown}{'\n'}{t.area}: {selected.area_ha || t.unknown}{'\n'}{t.objective}: {selected.objective || t.unknown}</Text> : <Text style={styles.heading}>{t.currentCount}: {selected.current_count ?? t.unknown} · {label(language, selected.count_basis || 'unknown')}</Text>}
         <View style={styles.row}>{work.canManage ? <Button secondary title={t.edit} onPress={() => setMode('edit')} /> : null}{selected.enterprise_type !== 'crop' && selected.status !== 'closed' && snapshot.farm.role !== 'adviser' ? <Button title={t.animalEvent} onPress={() => setMode('event')} /> : null}</View>
-        <Card title={t.companion}><Text style={styles.muted}>{t.guidanceHint}</Text>{details.missingFields.length ? details.missingFields.map(field => <Text style={styles.text} key={field}>{label(language, field)}: {t.unknown}</Text>) : <Text style={styles.caption}>{t.tasks}: {snapshot.tasks.filter(task => task.project_id === selected.id && !['completed', 'cancelled'].includes(task.status)).length}</Text>}</Card>
+        <ProjectWorkspace key={selected.id} work={work} language={language} project={selected} animals={details.animals} />
         {selected.enterprise_type !== 'crop' ? <>
           <Card title={t.identities}>{details.animals.map(animal => <Text key={animal.id} style={styles.text}>{animal.identifier} · {label(language, animal.sex)}{animal.dam_id ? ` · ${t.dam}: ${details.animals.find(item => item.id === animal.dam_id)?.identifier || animal.dam_id.slice(0, 8)}` : ''}</Text>)}{!details.animals.length ? <Text style={styles.muted}>{t.empty}</Text> : null}{work.canManage ? <Button secondary title={t.record} onPress={() => setMode('identity')} /> : null}</Card>
           <Card title={t.restrictions}>{details.restrictions.map(restriction => <View key={restriction.id} style={styles.item}><Text style={styles.text}>{restriction.reason}</Text><Text style={styles.caption}>{label(language, restriction.scope)} · {formatFarmTime(restriction.starts_at, snapshot.farm.timezone, language)} → {formatFarmTime(restriction.ends_at, snapshot.farm.timezone, language)}</Text></View>)}{!details.restrictions.length ? <Text style={styles.muted}>{t.empty}</Text> : null}{work.canManage ? <Button secondary title={t.record} onPress={() => setMode('restriction')} /> : null}</Card>

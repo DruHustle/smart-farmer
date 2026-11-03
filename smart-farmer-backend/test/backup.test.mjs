@@ -1,88 +1,364 @@
-import {test} from 'node:test';
-import assert from 'node:assert/strict';
-import {randomBytes,createHash} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
-import {mkdir,mkdtemp,readFile,readdir,writeFile,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import pg from 'pg';
-import {buildApp} from '../src/app.ts';
-import {copyIntoEmptyMediaDirectory} from '../scripts/backup-media.mjs';
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { randomBytes, createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+  rm,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import pg from "pg";
+import { buildApp } from "../src/app.ts";
+import { copyIntoEmptyMediaDirectory } from "../scripts/backup-media.mjs";
 
-test('restore media copy accepts missing or empty directories and refuses existing content',async()=>{
-  const temporary=await mkdtemp(join(tmpdir(),'smart-farmer-media-copy-'));
-  try{
-    const source=join(temporary,'source');await mkdir(join(source,'farm'),{recursive:true});
-    await writeFile(join(source,'farm','object'),'immutable attachment');
-    for(const name of ['missing','empty']){
-      const destination=join(temporary,name);if(name==='empty')await mkdir(destination);
-      await copyIntoEmptyMediaDirectory(source,destination);
-      assert.equal(await readFile(join(destination,'farm','object'),'utf8'),'immutable attachment');
+test("restore media copy accepts missing or empty directories and refuses existing content", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "smart-farmer-media-copy-"));
+  try {
+    const source = join(temporary, "source");
+    await mkdir(join(source, "farm"), { recursive: true });
+    await writeFile(join(source, "farm", "object"), "immutable attachment");
+    for (const name of ["missing", "empty"]) {
+      const destination = join(temporary, name);
+      if (name === "empty") await mkdir(destination);
+      await copyIntoEmptyMediaDirectory(source, destination);
+      assert.equal(
+        await readFile(join(destination, "farm", "object"), "utf8"),
+        "immutable attachment",
+      );
     }
-    const occupied=join(temporary,'occupied');await mkdir(occupied);await writeFile(join(occupied,'existing'),'preserve me');
-    await assert.rejects(copyIntoEmptyMediaDirectory(source,occupied),/must be empty/);
-    assert.deepEqual(await readdir(occupied),['existing']);
-    assert.equal(await readFile(join(occupied,'existing'),'utf8'),'preserve me');
-  }finally{await rm(temporary,{recursive:true,force:true});}
+    const occupied = join(temporary, "occupied");
+    await mkdir(occupied);
+    await writeFile(join(occupied, "existing"), "preserve me");
+    await assert.rejects(
+      copyIntoEmptyMediaDirectory(source, occupied),
+      /must be empty/,
+    );
+    assert.deepEqual(await readdir(occupied), ["existing"]);
+    assert.equal(
+      await readFile(join(occupied, "existing"), "utf8"),
+      "preserve me",
+    );
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 });
 
-test('encrypted PostgreSQL and private media backup restores to an empty isolated database; tampering cannot restore',async()=>{
-  assert.ok(process.env.TEST_DATABASE_URL,'TEST_DATABASE_URL required');
-  const base=process.env.TEST_DATABASE_URL;
-  const suffix=randomBytes(5).toString('hex');
-  const names=[`smart_farmer_backup_test_${suffix}`,`smart_farmer_restore_${suffix}`,`smart_farmer_restore_bad_${suffix}`];
-  const connection=name=>{const value=new URL(base);value.pathname='/'+name;return value.href;};
-  const admin=new pg.Pool({connectionString:base});
-  const temporary=await mkdtemp(join(tmpdir(),'smart-farmer-restore-test-'));
-  const key=join(temporary,'backup.key');await writeFile(key,randomBytes(32),{mode:0o600});
-  const sourceMedia=join(temporary,'source-media'),restoredMedia=join(temporary,'restored-media');
-  const backup=join(temporary,'test.sfbak');
+test("encrypted PostgreSQL and private media backup restores to an empty isolated database; tampering cannot restore", async () => {
+  assert.ok(process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL required");
+  const base = process.env.TEST_DATABASE_URL;
+  const suffix = randomBytes(5).toString("hex");
+  const names = [
+    `smart_farmer_backup_test_${suffix}`,
+    `smart_farmer_restore_${suffix}`,
+    `smart_farmer_restore_bad_${suffix}`,
+  ];
+  const connection = (name) => {
+    const value = new URL(base);
+    value.pathname = "/" + name;
+    return value.href;
+  };
+  const admin = new pg.Pool({ connectionString: base });
+  const temporary = await mkdtemp(join(tmpdir(), "smart-farmer-restore-test-"));
+  const key = join(temporary, "backup.key");
+  await writeFile(key, randomBytes(32), { mode: 0o600 });
+  const sourceMedia = join(temporary, "source-media"),
+    restoredMedia = join(temporary, "restored-media");
+  const backup = join(temporary, "test.sfbak");
   let source;
-  const run=(argv,env={})=>spawnSync(process.execPath,argv,{env:{...process.env,LOG_LEVEL:'silent',...env},encoding:'utf8'});
-  try{
-    for(const name of names)await admin.query('CREATE DATABASE '+name);
-    const env={DATABASE_URL:connection(names[0]),MEDIA_ROOT:sourceMedia,BACKUP_KEY_FILE:key};
-    let result=run(['--import','tsx','src/migrate.ts'],env);assert.equal(result.status,0,result.stderr);
-    process.env.MEDIA_ROOT=sourceMedia;source=new pg.Pool({connectionString:env.DATABASE_URL});
-    const app=buildApp(source,'http://localhost:5173');app.log.level='silent';
-    let mediaId,objectKey;
-    try{
-      const register=await app.inject({method:'POST',url:'/v1/register',payload:{username:'backup_fixture',password:'fixture-restore-password',language:'sn',farmName:'Restore fixture'}});assert.equal(register.statusCode,201,register.body);
-      const sign=await app.inject({method:'POST',url:'/v1/sessions',payload:{username:'backup_fixture',password:'fixture-restore-password'}});assert.equal(sign.statusCode,200);
-      const headers={authorization:`Bearer ${sign.json().token}`},prefix=`/v1/farms/${register.json().farmId}`;
-      const project=await app.inject({method:'POST',url:prefix+'/projects',headers,payload:{name:'Recorded maize',crop:'maize',irrigation:true}});assert.equal(project.statusCode,201);
-      const id=crypto.randomUUID();await app.inject({method:'POST',url:prefix+'/activities',headers,payload:{id,projectId:project.json().id,kind:'observation',observedAt:new Date().toISOString(),note:'Restore evidence'}});
-      mediaId=crypto.randomUUID();const dataBase64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD0cAAAAASUVORK5CYII=';
-      const media=await app.inject({method:'POST',url:prefix+'/media',headers,payload:{id:mediaId,activityId:id,mimeType:'image/png',filename:'field.png',dataBase64}});assert.equal(media.statusCode,201,media.body);
-    }finally{await app.close();await source.end();source=undefined;}
-    result=run(['scripts/backup.mjs','create','--output',backup],env);assert.equal(result.status,0,result.stderr);
-    const restoreEnv={...env,RESTORE_DATABASE_URL:connection(names[1])};
-    result=run(['scripts/backup.mjs','restore','--archive',backup,'--media-dir',restoredMedia,'--confirm-empty-target'],restoreEnv);assert.equal(result.status,0,result.stderr);
-    assert.equal(JSON.parse(result.stdout.trim()).verifiedMediaFiles,1);
-    const restored=new pg.Pool({connectionString:restoreEnv.RESTORE_DATABASE_URL});
-    try{
-      for(const table of ['farms','users','projects','activities','private_media'])assert.equal((await restored.query(`SELECT count(*) AS n FROM ${table}`)).rows[0].n,'1');
-      const media=(await restored.query('SELECT object_key,content_hash FROM private_media WHERE id=$1',[mediaId])).rows[0];
-      objectKey=media.object_key;
-      assert.equal(createHash('sha256').update(await readFile(join(restoredMedia,media.object_key))).digest('hex'),media.content_hash);
-      assert.equal((await restored.query('SELECT count(*) AS n FROM schema_migrations')).rows[0].n,'4');
-    }finally{await restored.end();}
-    result=run(['scripts/backup.mjs','restore','--archive',backup,'--media-dir',join(temporary,'second'),'--confirm-empty-target'],restoreEnv);assert.notEqual(result.status,0,'nonempty target must not be overwritten');
-    const corrupt=await readFile(backup);corrupt[24]^=0xff;const tampered=join(temporary,'tampered.sfbak');await writeFile(tampered,corrupt);
-    result=run(['scripts/backup.mjs','restore','--archive',tampered,'--media-dir',join(temporary,'tampered-media'),'--confirm-empty-target'],{...env,RESTORE_DATABASE_URL:connection(names[2])});assert.notEqual(result.status,0);
-    const empty=new pg.Pool({connectionString:connection(names[2])});
-    try{
-      assert.equal((await empty.query("SELECT count(*) AS n FROM information_schema.tables WHERE table_schema='public'")).rows[0].n,'0');
-      await empty.query('CREATE SEQUENCE existing_state');
-      result=run(['scripts/backup.mjs','restore','--archive',backup,'--media-dir',join(temporary,'sequence-target'),'--confirm-empty-target'],{...env,RESTORE_DATABASE_URL:connection(names[2])});
-      assert.notEqual(result.status,0,'a sequence-only target is not empty');
-      assert.equal((await empty.query("SELECT count(*) AS n FROM information_schema.tables WHERE table_schema='public'")).rows[0].n,'0');
-      assert.equal((await empty.query("SELECT count(*) AS n FROM pg_class WHERE relname='existing_state' AND relkind='S'")).rows[0].n,'1');
-    }finally{await empty.end();}
-    await writeFile(join(sourceMedia,objectKey),Buffer.from('corrupted source object'));
-    result=run(['scripts/backup.mjs','create','--output',join(temporary,'corrupt-source.sfbak')],env);
-    assert.notEqual(result.status,0,'corrupt referenced source media must not produce a successful backup');
-  }finally{
-    if(source)await source.end();for(const name of names)await admin.query('DROP DATABASE IF EXISTS '+name+' WITH (FORCE)');await admin.end();await rm(temporary,{recursive:true,force:true});
+  const run = (argv, env = {}) =>
+    spawnSync(process.execPath, argv, {
+      env: { ...process.env, LOG_LEVEL: "silent", ...env },
+      encoding: "utf8",
+    });
+  try {
+    for (const name of names) await admin.query("CREATE DATABASE " + name);
+    const env = {
+      DATABASE_URL: connection(names[0]),
+      MEDIA_ROOT: sourceMedia,
+      BACKUP_KEY_FILE: key,
+    };
+    let result = run(["--import", "tsx", "src/migrate.ts"], env);
+    assert.equal(result.status, 0, result.stderr);
+    process.env.MEDIA_ROOT = sourceMedia;
+    source = new pg.Pool({ connectionString: env.DATABASE_URL });
+    const app = buildApp(source, "http://localhost:5173");
+    app.log.level = "silent";
+    let mediaId, objectKey;
+    try {
+      const register = await app.inject({
+        method: "POST",
+        url: "/v1/register",
+        payload: {
+          username: "backup_fixture",
+          password: "fixture-restore-password",
+          language: "sn",
+          farmName: "Restore fixture",
+        },
+      });
+      assert.equal(register.statusCode, 201, register.body);
+      const sign = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        payload: {
+          username: "backup_fixture",
+          password: "fixture-restore-password",
+        },
+      });
+      assert.equal(sign.statusCode, 200);
+      const headers = { authorization: `Bearer ${sign.json().token}` },
+        prefix = `/v1/farms/${register.json().farmId}`;
+      const project = await app.inject({
+        method: "POST",
+        url: prefix + "/projects",
+        headers,
+        payload: { name: "Recorded maize", crop: "maize", irrigation: true },
+      });
+      assert.equal(project.statusCode, 201);
+      const id = crypto.randomUUID();
+      await app.inject({
+        method: "POST",
+        url: prefix + "/activities",
+        headers,
+        payload: {
+          id,
+          projectId: project.json().id,
+          kind: "observation",
+          observedAt: new Date().toISOString(),
+          note: "Restore evidence",
+        },
+      });
+      mediaId = crypto.randomUUID();
+      const dataBase64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD0cAAAAASUVORK5CYII=";
+      const media = await app.inject({
+        method: "POST",
+        url: prefix + "/media",
+        headers,
+        payload: {
+          id: mediaId,
+          activityId: id,
+          mimeType: "image/png",
+          filename: "field.png",
+          dataBase64,
+        },
+      });
+      assert.equal(media.statusCode, 201, media.body);
+      const cameraId = crypto.randomUUID();
+      const camera = await app.inject({
+        method: "POST",
+        url: prefix + "/assets",
+        headers,
+        payload: {
+          id: cameraId,
+          name: "Backup camera fixture",
+          category: "camera",
+          protocol: "simulator",
+        },
+      });
+      assert.equal(camera.statusCode, 201, camera.body);
+      const configure = await app.inject({
+        method: "POST",
+        url: prefix + "/cameras/" + cameraId + "/configure",
+        headers,
+        payload: {
+          version: 1,
+          provider: "simulator",
+          retentionDays: 7,
+          eventsEnabled: true,
+          liveEnabled: true,
+        },
+      });
+      assert.equal(configure.statusCode, 200, configure.body);
+      const event = await app.inject({
+        method: "POST",
+        url: prefix + "/camera-events",
+        headers,
+        payload: {
+          id: crypto.randomUUID(),
+          assetId: cameraId,
+          kind: "motion",
+          observedAt: new Date().toISOString(),
+        },
+      });
+      assert.equal(event.statusCode, 201, event.body);
+    } finally {
+      await app.close();
+      await source.end();
+      source = undefined;
+    }
+    result = run(["scripts/backup.mjs", "create", "--output", backup], env);
+    assert.equal(result.status, 0, result.stderr);
+    const restoreEnv = { ...env, RESTORE_DATABASE_URL: connection(names[1]) };
+    result = run(
+      [
+        "scripts/backup.mjs",
+        "restore",
+        "--archive",
+        backup,
+        "--media-dir",
+        restoredMedia,
+        "--confirm-empty-target",
+      ],
+      restoreEnv,
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout.trim()).verifiedMediaFiles, 2);
+    const restored = new pg.Pool({
+      connectionString: restoreEnv.RESTORE_DATABASE_URL,
+    });
+    try {
+      for (const table of [
+        "farms",
+        "users",
+        "projects",
+        "activities",
+        "private_media",
+        "camera_segments",
+        "camera_events",
+      ])
+        assert.equal(
+          (await restored.query(`SELECT count(*) AS n FROM ${table}`)).rows[0]
+            .n,
+          "1",
+        );
+      const media = (
+        await restored.query(
+          "SELECT object_key,content_hash FROM private_media WHERE id=$1",
+          [mediaId],
+        )
+      ).rows[0];
+      const segment = (await restored.query("SELECT * FROM camera_segments"))
+        .rows[0];
+      assert.equal(
+        createHash("sha256")
+          .update(await readFile(join(restoredMedia, segment.object_key)))
+          .digest("hex"),
+        segment.content_hash,
+      );
+      objectKey = media.object_key;
+      assert.equal(
+        createHash("sha256")
+          .update(await readFile(join(restoredMedia, media.object_key)))
+          .digest("hex"),
+        media.content_hash,
+      );
+      assert.equal(
+        (await restored.query("SELECT count(*) AS n FROM schema_migrations"))
+          .rows[0].n,
+        String(
+          (await readdir(new URL("../migrations", import.meta.url))).filter(
+            (n) => n.endsWith(".sql"),
+          ).length,
+        ),
+      );
+    } finally {
+      await restored.end();
+    }
+    result = run(
+      [
+        "scripts/backup.mjs",
+        "restore",
+        "--archive",
+        backup,
+        "--media-dir",
+        join(temporary, "second"),
+        "--confirm-empty-target",
+      ],
+      restoreEnv,
+    );
+    assert.notEqual(
+      result.status,
+      0,
+      "nonempty target must not be overwritten",
+    );
+    const corrupt = await readFile(backup);
+    corrupt[24] ^= 0xff;
+    const tampered = join(temporary, "tampered.sfbak");
+    await writeFile(tampered, corrupt);
+    result = run(
+      [
+        "scripts/backup.mjs",
+        "restore",
+        "--archive",
+        tampered,
+        "--media-dir",
+        join(temporary, "tampered-media"),
+        "--confirm-empty-target",
+      ],
+      { ...env, RESTORE_DATABASE_URL: connection(names[2]) },
+    );
+    assert.notEqual(result.status, 0);
+    const empty = new pg.Pool({ connectionString: connection(names[2]) });
+    try {
+      assert.equal(
+        (
+          await empty.query(
+            "SELECT count(*) AS n FROM information_schema.tables WHERE table_schema='public'",
+          )
+        ).rows[0].n,
+        "0",
+      );
+      await empty.query("CREATE SEQUENCE existing_state");
+      result = run(
+        [
+          "scripts/backup.mjs",
+          "restore",
+          "--archive",
+          backup,
+          "--media-dir",
+          join(temporary, "sequence-target"),
+          "--confirm-empty-target",
+        ],
+        { ...env, RESTORE_DATABASE_URL: connection(names[2]) },
+      );
+      assert.notEqual(result.status, 0, "a sequence-only target is not empty");
+      assert.equal(
+        (
+          await empty.query(
+            "SELECT count(*) AS n FROM information_schema.tables WHERE table_schema='public'",
+          )
+        ).rows[0].n,
+        "0",
+      );
+      assert.equal(
+        (
+          await empty.query(
+            "SELECT count(*) AS n FROM pg_class WHERE relname='existing_state' AND relkind='S'",
+          )
+        ).rows[0].n,
+        "1",
+      );
+    } finally {
+      await empty.end();
+    }
+    await writeFile(
+      join(sourceMedia, objectKey),
+      Buffer.from("corrupted source object"),
+    );
+    result = run(
+      [
+        "scripts/backup.mjs",
+        "create",
+        "--output",
+        join(temporary, "corrupt-source.sfbak"),
+      ],
+      env,
+    );
+    assert.notEqual(
+      result.status,
+      0,
+      "corrupt referenced source media must not produce a successful backup",
+    );
+  } finally {
+    if (source) await source.end();
+    for (const name of names)
+      await admin.query("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)");
+    await admin.end();
+    await rm(temporary, { recursive: true, force: true });
   }
 });

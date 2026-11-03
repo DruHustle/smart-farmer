@@ -7,9 +7,9 @@
 | Responsive web / PWA | `smart-farmer-frontend/web` | Shona/Ndebele UI, encrypted browser vault, field-record outbox, forms and rendering |
 | Native Android / iPhone / iPad | `smart-farmer-frontend/mobile` | Independent React Native UI, native permissions, SecureStore, SQLCipher repository and durable sync |
 | API | `smart-farmer-backend/src` | Authentication, farm-scoped permissions, validation, business transactions and versioned API |
-| Maintenance worker | `src/worker.ts` | Command deadlines, expired camera events/sessions and worker heartbeat |
-| Farm gateway | `edge` | Outgoing authenticated transport, durable telemetry buffer, simulator interlocks and replay journal |
-| Private object storage | `src/integrations/media.ts` | `ObjectStore` interface and private filesystem/persistent-volume implementation |
+| Maintenance worker | `src/worker.ts` | Command/commerce expiry, queued notifications and provider receipts, bounded retention/orphan cleanup, worker heartbeat |
+| Farm gateway | `edge` | Outgoing authenticated HTTP/MQTT/Modbus and ONVIF/RTSP bridges, durable observation/event buffers, verified controls and replay journal |
+| Private object storage | `src/integrations/object-store.ts` | Immutable private filesystem/S3 objects, checksums, quotas and authenticated media/HLS access |
 
 Backend and frontends communicate through the documented `/v1` API. The web and mobile applications do not import backend implementation or each other's UI. There is no root shared runtime application package. Native iOS serves iPhone and iPad within one project.
 
@@ -19,7 +19,7 @@ A user has one account and a separate role on each farm. The initial roles are o
 
 Passwords use salted scrypt hashes. Session and recovery secrets are random and stored hashed on the server. Sessions expire after seven days and can be individually revoked. Recovery is a single-use offline code, not a claimed email/SMS integration. Login/recovery locking prevents an old-password verification from leaving a valid new session after concurrent password reset. Changing the last owner's role/removing the last owner is denied.
 
-Financial activities/reports/valuations and financial receipts require management permission. Media endpoints join their activity and recheck financial access. Private camera events also require management access. Public commerce returns deliberate listing details and collection/service area, not private farm location, equipment, camera or project records. Database foreign keys pair farm and entity IDs to prevent cross-farm references as well as route-level access checks.
+Financial activities/reports/valuations and financial receipts require management permission. Media endpoints join their activity and recheck financial access. Private camera events require current management permission or an explicit camera grant. Revocation is rechecked on every session playlist/segment request. Public commerce returns deliberate listing details and collection/service area, not private farm location, equipment, camera or project records. Database foreign keys pair farm and entity IDs to prevent cross-farm references as well as route-level access checks.
 
 The currently implemented username/password identity is independent of other Onesa applications. An approved Onesa identity-provider contract has not been connected. Adding such integration must preserve farm-specific membership and local worker recovery behavior.
 
@@ -33,7 +33,7 @@ Project/task edits use versions. Concurrent edits return conflicts instead of si
 
 Treatment restrictions are recorded from supplied authorization and timing. They use server time to prevent backdated releases, propagate with affected project transfers/egg-to-chick flow, and are checked at applicable harvest, transfer, sale, reservation and fulfillment steps. They currently conservatively apply at project/batch level. This is not a medication-advice or automatically verified veterinary-prescription service.
 
-Financial entries retain currency and source. Reports aggregate by currency and distinguish expenses, consumed inputs, revenue and manually recorded receipts. Shared-project cost transfers are explicit reallocations, not a new external purchase/sale. The application does not fabricate a complete profit number when inputs are missing.
+Financial entries retain currency and source. Reports aggregate by currency and distinguish expenses, consumed inputs, recorded losses, revenue, matched receivables and manually recorded receipts. Budgets, explicit valuations, shared allocations, PDF/CSV summaries and source timelines preserve assumptions and missing inputs. Shared-project cost transfers are explicit reallocations, not a new external purchase/sale. The application does not fabricate a complete profit number when inputs are missing.
 
 ## Offline and shared devices
 
@@ -47,15 +47,15 @@ Purchases, bookings, permissions and equipment commands require online server au
 
 ## Equipment and privacy
 
-Real hardware remains unconfigured. Explicit simulator assets have narrowly defined capabilities and telemetry provenance. A command must be authorized, current, supported and unexpired, with fresh device state and local interlocks. Dispatch occurs once; acknowledgement and feedback confirmation remain distinct. The gateway rechecks deadlines locally, persists its replay journal and buffers observations only. Pending commands become expired or outcome-unknown as appropriate, never silently retried.
+New real hardware starts unconfigured. Owners record exact identities and mappings, then commission verified read-only or control capabilities against fresh real feedback and local checks. Simulation cannot establish real commissioning. Generic MQTT, HTTP, Modbus TCP and RTU transports execute only mapped operations; ONVIF/RTSP capture is outbound through a separately scoped camera gateway. A command must be authorized, current, supported and unexpired, with fresh device state and local interlocks. Dispatch occurs once; acknowledgement and feedback confirmation remain distinct. The gateway rechecks deadlines locally, persists its replay journal and buffers observations only. Pending commands become expired or outcome-unknown as appropriate, never silently retried.
 
-Private media is stored outside the relational database under server-generated UUID/hash keys. MIME signatures, canonical encoding, size, quota and actor/farm checks protect uploads. Authenticated downloads check content hashes and write access audit records. The public web server never mounts the media directory. Unknown camera URLs are not fetched by the backend; a future camera adapter needs a separately reviewed destination policy.
+Private media is stored outside the relational database under server-generated UUID/hash keys. MIME signatures, canonical encoding, size, quota and actor/farm checks protect uploads. Authenticated downloads check content hashes and write access audit records. The public web server never mounts the media directory. Camera credentials remain on the gateway; ONVIF-returned URLs must match the private hostname allowlist. The backend serves only stored, bounded, authenticated HLS segments and snapshots. It does not proxy arbitrary client-supplied URLs. Camera schedules and mapped zones are checked locally during outages and again on receipt; motion does not imply person recognition.
 
 ## Limits and production state
 
-The repository contains no production seed records and no external provider secrets. AI Companion guidance is deterministic and explicitly identified; live model inference, speech services, weather feeds, remote notification delivery and payment settlement are not configured. Physical adapters, ONVIF/RTSP video, native device acceptance, language review and actual hosting recovery must be completed before representing the system as production-validated.
+The repository contains no production seed records and no external provider secrets. Companion supports sourced record-based guidance and an optional server-side read-only model adapter. Weather forecasts require configuration and farm consent; observed rainfall stays separate. Notification channels require ownership verification, user opt-in and configured providers; acceptance, provider delivery and human acknowledgement have distinct states. Ordinary push alerts keep farm record content inside the authenticated inbox. Payment entries remain explicit manual records and do not claim external settlement. Speech recognition/text-to-speech have no supported-language claim. Physical commissioning, fluent language review, provider activation and recovery on the selected hosting target remain external verification gates.
 
-The local container topology is one API/database/worker installation with durable volumes; it is not high availability. Independent encrypted backup/restore tooling and CI coverage are documented in [operations.md](operations.md). The [acceptance matrix](status.md) identifies remaining software scope as well as external prerequisites.
+The local container topology is one API/database/worker installation with durable volumes; it is not high availability. Independent encrypted backup/restore tooling and CI coverage are documented in [operations.md](operations.md). The [acceptance matrix](status.md) maps implemented workflows and available test evidence to every required outcome, separately identifying external prerequisites.
 
 ## Reference basis
 

@@ -12,6 +12,7 @@ coverage/
 .data/
 backups/
 *.backup
+!Dockerfile.backup
 *.dump
 *.tar.gz
 

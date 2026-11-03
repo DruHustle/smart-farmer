@@ -30,7 +30,9 @@ export function farmTimeToIso(value: string, timeZone: string): string {
 export function formatFarmTime(instant: string, timeZone: string, language: 'sn' | 'nd'): string {
   const date = new Date(instant);
   if (!Number.isFinite(date.valueOf())) return '—';
-  return new Intl.DateTimeFormat(`${language}-ZW`, { timeZone, dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  // Numeric farm dates avoid an English month-name fallback on devices without sn/nd ICU data.
+  const parts = localParts(date, timeZone);
+  return `${parts.slice(8, 10)}/${parts.slice(5, 7)}/${parts.slice(0, 4)} ${parts.slice(11)}`;
 }
 
 export function optionalNumber(value: string, minimum = 0): number | null {

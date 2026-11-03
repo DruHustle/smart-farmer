@@ -2,7 +2,7 @@
 
 Farm management for the phone-first web and native Android/iPhone/iPad applications, with an independently deployable TypeScript/Fastify API, PostgreSQL and farm gateway. The operating brief is for Lawfield Farm in Zimbabwe: active irrigated maize, chickens, rabbits and fish, Shona and Zimbabwean Northern Ndebele, and equipment models to be supplied later.
 
-The repository has been reviewed against the complete [Codex build prompt](docs/product-brief.txt). This development release adds persistent farm workflows, encrypted offline field recording, native projects, stock/cost reconciliation, equipment simulation, trading, booking and meaningful verification. It does not assert that every production or hardware requirement is complete. See the [acceptance matrix and remaining gaps](docs/status.md).
+The repository has been reviewed against the complete [Codex build prompt](docs/product-brief.txt). This development release adds complete crop and listed-livestock workflows, planning, encrypted offline field recording, native projects, stock/cost reconciliation, verified equipment adapters, private camera playback, trading, booking, provider adapters and recovery tooling. See the [acceptance matrix and verification record](docs/status.md) for exact software evidence and external commissioning prerequisites.
 
 ## Where to start
 

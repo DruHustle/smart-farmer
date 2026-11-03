@@ -6,6 +6,8 @@ import { optionalNumber } from '../time';
 import { enterpriseTypes, type EnterpriseType, type Language, type Project } from '../types';
 import { Button, Choice, Field, Toggle, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
+import { c, usePanel, farmPath } from '../completion-ui';
+import { allPages, string, type Row } from '../product';
 
 export function ProjectForm({ work, language, project, onSaved }: { work: Workspace; language: Language; project?: Project; onSaved: () => void }) {
   const t = textFor(language);
@@ -23,11 +25,14 @@ export function ProjectForm({ work, language, project, onSaved }: { work: Worksp
   const [openingCount, setOpeningCount] = useState('');
   const [countBasis, setCountBasis] = useState<'unknown' | 'verified' | 'estimated'>('unknown');
   const [reason, setReason] = useState('');
+  const [locationId, setLocationId] = useState(string((project as unknown as Row | undefined)?.location_id));
+  const [onboardingMode, setOnboardingMode] = useState('existing');
+  const locations = usePanel(work, 'locations', () => allPages<Row>(work.api, farmPath(work, '/locations')));
 
   async function save() {
     const success = await work.onlineAction(async () => {
       if (!name.trim() || enterprise === 'crop' && !crop.trim() || project && !reason.trim()) throw new Error('required');
-      const body: Record<string, unknown> = { name: name.trim(), stage: stage.trim() || null };
+      const body: Record<string, unknown> = { name: name.trim(), stage: stage.trim() || null, locationId: locationId || null };
       if (enterprise === 'crop') {
         const size = optionalNumber(area);
         if (size === 0) throw new Error('invalid_number');
@@ -35,6 +40,7 @@ export function ProjectForm({ work, language, project, onSaved }: { work: Worksp
       }
       if (!project) {
         body.enterpriseType = enterprise;
+        body.onboardingMode = onboardingMode;
         body.id = clientId.current;
         if (enterprise !== 'crop' && openingCount.trim()) {
           const count = optionalNumber(openingCount);
@@ -56,6 +62,8 @@ export function ProjectForm({ work, language, project, onSaved }: { work: Worksp
       <Choice label={t.kind} value={enterprise} onChange={setEnterprise} closeLabel={t.close} options={enterpriseTypes.map(value => ({ value, label: label(language, value) }))} />
     </> : null}
     <Field testID="project-name" label={t.projectName} value={name} onChangeText={setName} maxLength={100} />
+    <Choice label={c(language, 'locationId')} value={locationId} onChange={setLocationId} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...(locations.value || []).map(item => ({ value: string(item.id), label: string(item.name) }))]} />
+    {!project ? <Choice label={c(language, 'onboardingMode')} value={onboardingMode} onChange={setOnboardingMode} closeLabel={t.close} options={[{ value: 'new', label: c(language, 'newProject') }, { value: 'existing', label: t.alreadyOperating }]} /> : null}
     {enterprise === 'crop' ? <>
       <Field label={t.crop} value={crop} onChangeText={setCrop} maxLength={80} />
       <Toggle label={t.irrigated} value={irrigation} onChange={setIrrigation} />

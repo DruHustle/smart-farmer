@@ -5,7 +5,7 @@ Core identity, project, inventory and animal contracts are in [core-api.md](core
 ## Equipment
 
 - `GET /v1/farms/:farmId/assets`: all farm members; returns `items` and optional `nextCursor`. Readings include `integration_state`, `capabilities`, `last_observed_at`, `latest_telemetry`, and `fresh`.
-- `POST /v1/farms/:farmId/assets`: manager/owner. Fields: `id`, `name`, `category` (`borehole|pump|pivot|valve|tank|sensor|power|camera|other`), optional nullable `model`, `protocol` (`unconfigured|simulator|mqtt|http|modbus`), `parentAssetId`, and `staleAfterSeconds` (10–3600). Non-simulator transports remain unconfigured.
+- `POST /v1/farms/:farmId/assets`: manager/owner. Fields: `id`, `name`, `category` (`borehole|pump|pivot|valve|tank|sensor|power|camera|other`), optional nullable `model`, `protocol` (`unconfigured|simulator|mqtt|http|modbus`), `parentAssetId`, and `staleAfterSeconds` (10–3600). Non-simulator transports start unconfigured; configuration, commissioning and actual transport adapters are documented in [operations-api.md](operations-api.md) and [hardware-and-commissioning.md](hardware-and-commissioning.md).
 - `POST .../assets/:assetId/simulate`: manager/owner; `{running, interlockOk}` supplies visibly simulated state.
 - `POST .../assets/:assetId/gateway-token`: owner only; returns one private asset-scoped simulation token and expiry. Reissuing invalidates the old token.
 - `GET .../assets/:assetId/commands`: managers; current command history.
@@ -23,7 +23,7 @@ Telemetry body: `{id,observedAt,measurements:{running,interlock_ok,flow_l_min?,p
 
 ## Cameras
 
-`GET/POST /v1/farms/:farmId/camera-events` and `POST .../camera-events/:eventId/acknowledge` require owner/manager access. Create body: `{id,assetId,kind:motion|person,observedAt,retentionDays?}` (1–90 days). The camera must be explicitly simulated. Responses retain event and receipt times, distinguish delayed observations, and preserve the detection type. The maintenance worker purges expired events. No public stream endpoint exists.
+`GET /v1/farms/:farmId/camera-events` and `POST .../camera-events/:eventId/acknowledge` require current management permission or an explicit camera grant; simulator event creation requires manager permission. Create body: `{id,assetId,kind:motion|person,observedAt,retentionDays?}` (1–90 days). The camera must be explicitly simulated. Responses retain event and receipt times, distinguish delayed observations, and preserve the detection type. The maintenance worker purges expired events. Private expiring live/event HLS sessions, camera grants, snapshots, gateway uploads, zones, schedules, retention and incident follow-up are documented in [operations-api.md](operations-api.md). No public stream endpoint exists.
 
 ## Marketplace
 

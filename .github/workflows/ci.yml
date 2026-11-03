@@ -8,7 +8,7 @@ concurrency:
 jobs:
   workflows:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:17
@@ -32,6 +32,7 @@ jobs:
           node-version: 24
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
+      - run: npm ci --prefix smart-farmer-backend/edge
       - name: API and concurrency workflows against PostgreSQL
         run: npm test --prefix smart-farmer-backend
       - name: Offline storage, language and farm-time rules
@@ -57,6 +58,7 @@ jobs:
         run: |
           POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
           docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
       - name: Use matching PostgreSQL 17 backup clients
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}

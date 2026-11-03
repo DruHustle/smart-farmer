@@ -9,6 +9,10 @@ export function mutationRequest(mutation: Mutation): { path: string; method: str
     case 'activity': return { path: `${base}/activities`, method: 'POST' };
     case 'animal-event': return { path: `${base}/projects/${mutation.resourceId}/events`, method: 'POST' };
     case 'task-status': return { path: `${base}/tasks/${mutation.resourceId}`, method: 'PATCH' };
+    case 'project-record': return { path: `${base}/projects/${mutation.resourceId}/records`, method: 'POST' };
+    case 'weather-observation': return { path: `${base}/weather/observations`, method: 'POST' };
+    case 'asset-usage': return { path: `${base}/assets/${mutation.resourceId}/usage`, method: 'POST' };
+    case 'incident-create': return { path: `${base}/incidents`, method: 'POST' };
     default: throw new Error('unsafe_offline_action');
   }
 }

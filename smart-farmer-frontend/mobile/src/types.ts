@@ -2,7 +2,7 @@ export type Language = 'sn' | 'nd';
 export type Role = 'owner' | 'manager' | 'worker' | 'adviser' | 'veterinarian';
 export type Session = { token: string; userId: string; username: string; language: Language; expiresAt: string; origin: string };
 export type Farm = { id: string; name: string; timezone: string; role: Role };
-export const enterpriseTypes = ['crop', 'broiler', 'layer', 'breeder', 'hatchery', 'rabbit_breeding', 'rabbit_growout', 'fish', 'fish_nursery'] as const;
+export const enterpriseTypes = ['crop', 'broiler', 'layer', 'breeder', 'hatchery', 'rabbit_breeding', 'rabbit_growout', 'fish', 'fish_nursery', 'fish_breeder', 'fish_hatchery'] as const;
 export type EnterpriseType = typeof enterpriseTypes[number];
 export type Project = {
   id: string; name: string; crop: string; enterprise_type: EnterpriseType; irrigation: boolean;
@@ -28,7 +28,7 @@ export type Task = {
 export const stockUnits = ['kg', 'g', 'l', 'ml', 'count', 'egg', 'bird', 'rabbit', 'fish'] as const;
 export type Stock = { id: string; name: string; unit: typeof stockUnits[number]; quantity: string; project_id: string | null; unit_cost?: string | null; currency?: string | null };
 export type Member = { id: string; username: string; role: Role };
-export const animalEventTypes = ['acquisition', 'mortality', 'transfer', 'sale', 'egg_collection', 'egg_consumption', 'egg_loss', 'egg_sale', 'incubation', 'hatch', 'mating', 'kindling', 'fostering', 'weaning', 'stocking', 'water_observation', 'growth_sample', 'harvest', 'feed', 'observation', 'care', 'adjustment', 'close'] as const;
+export const animalEventTypes = ['acquisition', 'mortality', 'transfer', 'sale', 'egg_collection', 'egg_consumption', 'egg_loss', 'egg_sale', 'incubation', 'hatch', 'mating', 'kindling', 'fostering', 'weaning', 'stocking', 'water_observation', 'growth_sample', 'harvest', 'feed', 'observation', 'care', 'adjustment', 'close', 'spawning', 'fish_hatch', 'egg_disposition'] as const;
 export type AnimalEventType = typeof animalEventTypes[number];
 export type AnimalEvent = {
   id: string; type: AnimalEventType; observed_at: string; count: string | null; quantity: string | null;
@@ -48,7 +48,7 @@ export type RecordDraft = {
   quantity: string; unit: string; stockItemId: string; amount: string; currency: string; taskId: string;
 };
 export type OutboxState = 'pending' | 'conflict' | 'blocked' | 'resolved';
-export type MutationKind = 'activity' | 'animal-event' | 'task-status';
+export type MutationKind = 'activity' | 'animal-event' | 'task-status' | 'project-record' | 'weather-observation' | 'asset-usage' | 'incident-create';
 export type Mutation = {
   id: string; farmId: string; kind: MutationKind; resourceId?: string;
   body: Record<string, unknown>; state: OutboxState; attempts: number; lastError: string | null; createdAt: string;

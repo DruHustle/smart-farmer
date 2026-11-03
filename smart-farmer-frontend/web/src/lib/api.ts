@@ -12,3 +12,14 @@ export async function request<T = Record<string, unknown>>(path: string, token: 
   return body as T;
 }
 export function jsonBody(value: unknown, method = 'POST'): RequestInit {return {method, body: JSON.stringify(value)};}
+/** XMLHttpRequest exposes actual upload bytes; metadata and evidence remain separate queue entries. */
+export function uploadRecord(path: string, token: string, body: unknown, progress: (percent: number) => void): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest(); xhr.open('POST', apiOrigin + path); xhr.timeout = 30000;
+    xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json'); xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = event => {if (event.lengthComputable) progress(Math.round(event.loaded / event.total * 100));};
+    xhr.onerror = () => reject(new ApiError('network_error', 0)); xhr.ontimeout = () => reject(new ApiError('network_error', 0));
+    xhr.onload = () => {let response: Record<string, unknown> = {}; try {response = JSON.parse(xhr.responseText);} catch {} if (xhr.status >= 200 && xhr.status < 300) {progress(100); resolve(response);} else reject(new ApiError(typeof response.error === 'string' ? response.error : 'error', xhr.status, response));};
+    xhr.send(JSON.stringify(body));
+  });
+}

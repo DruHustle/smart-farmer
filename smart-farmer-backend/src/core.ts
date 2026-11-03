@@ -13,7 +13,7 @@ export const units=z.enum(['kg','g','l','ml','count','egg','bird','rabbit','fish
 export const quantity=z.number().finite().min(0).max(1_000_000_000).multipleOf(0.000001);
 export const money=z.number().finite().nonnegative().max(1_000_000_000).multipleOf(0.01);
 export const currency=z.string().regex(/^[A-Z]{3}$/);
-export const enterpriseTypes=z.enum(['crop','broiler','layer','breeder','hatchery','rabbit_breeding','rabbit_growout','fish','fish_nursery']);
+export const enterpriseTypes=z.enum(['crop','broiler','layer','breeder','hatchery','rabbit_breeding','rabbit_growout','fish','fish_nursery','fish_breeder','fish_hatchery']);
 const projectInput=z.object({
   id:uuid.optional(),
   name:z.string().trim().min(1).max(100),enterpriseType:enterpriseTypes.default('crop'),
@@ -22,6 +22,7 @@ const projectInput=z.object({
   objective:z.string().trim().max(200).nullable().default(null),areaHa:z.number().finite().positive().max(1e8).nullable().default(null),
   stage:z.string().trim().max(100).nullable().default(null),asOfDate:z.iso.date().nullable().default(null),
   openingCount:z.number().int().min(0).max(1e9).nullable().default(null),countBasis:z.enum(['unknown','verified','estimated']).default('unknown'),
+  locationId:uuid.nullable().default(null),onboardingMode:z.enum(['new','existing']).default('existing'),
   details:z.record(z.string().max(80),z.union([z.string().max(1000),z.number().finite(),z.boolean(),z.null()])).default({})
 }).strict().superRefine((p,c)=>{
   if(p.enterpriseType==='crop'&&!p.crop)c.addIssue({code:'custom',path:['crop'],message:'crop_required'});
@@ -57,7 +58,7 @@ export async function assertReleaseAllowed(client:pg.PoolClient,farmId:string,pr
   // NO KEY UPDATE serializes restriction changes without conflicting with FK key-share locks.
   const p=await client.query('SELECT id FROM projects WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[farmId,projectId]);
   if(!p.rowCount)throw new ApiError('project_not_found',404);
-  const r=await client.query("SELECT id,ends_at FROM treatment_restrictions WHERE farm_id=$1 AND project_id=$2 AND starts_at<=now() AND ends_at>now() AND (scope='all' OR scope=$3) LIMIT 1",[farmId,projectId,scope]);
+  const r=await client.query("SELECT id,ends_at FROM treatment_restrictions WHERE farm_id=$1 AND project_id=$2 AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() AND (scope='all' OR scope=$3) LIMIT 1",[farmId,projectId,scope]);
   if(r.rowCount)throw new ApiError('treatment_restriction',409,{until:r.rows[0].ends_at});
 }
 export async function stockMovement(client:pg.PoolClient,o:{farmId:string,itemId:string,projectId:string|null,actorId:string,kind:string,quantity:number,unit:string,sourceType:string,sourceId:string,observedAt:string,note?:string,requireProject?:boolean}) {
@@ -71,7 +72,7 @@ export async function stockMovement(client:pg.PoolClient,o:{farmId:string,itemId
   await client.query('INSERT INTO stock_movements(id,farm_id,stock_item_id,project_id,actor_id,kind,quantity,unit,source_type,source_id,observed_at,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[randomUUID(),o.farmId,o.itemId,o.projectId,o.actorId,o.kind,delta,item.unit,o.sourceType,o.sourceId,o.observedAt,o.note??'']);
   return {...item,delta};
 }
-export async function finance(client:pg.PoolClient,o:{farmId:string,projectId:string|null,actorId:string,kind:'expense'|'input_consumption'|'revenue'|'payment',amount:number,currency:string,sourceType:string,sourceId:string,observedAt:string,note?:string}) {
+export async function finance(client:pg.PoolClient,o:{farmId:string,projectId:string|null,actorId:string,kind:'expense'|'input_consumption'|'revenue'|'payment'|'cash_out',amount:number,currency:string,sourceType:string,sourceId:string,observedAt:string,note?:string}) {
   await client.query('INSERT INTO financial_entries(id,farm_id,project_id,actor_id,kind,amount,currency,source_type,source_id,observed_at,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[randomUUID(),o.farmId,o.projectId,o.actorId,o.kind,o.amount,o.currency,o.sourceType,o.sourceId,o.observedAt,o.note??'']);
 }
 const pageQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(100),cursor:uuid.optional()});
@@ -85,18 +86,18 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.post('/v1/farms/:farmId/projects',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);const p=projectInput.parse(req.body);const id=p.id??randomUUID(),hash=sha256(JSON.stringify(p));
-    const inserted=await db.query('INSERT INTO projects(id,farm_id,name,crop,irrigation,planting_date,variety,objective,area_ha,stage,enterprise_type,as_of_date,opening_count,current_count,count_basis,details,created_by,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15,$16,$17) ON CONFLICT(id) DO NOTHING RETURNING id,version',[id,farmId,p.name,p.crop,p.irrigation,p.plantingDate,p.variety,p.objective,p.areaHa,p.stage,p.enterpriseType,p.asOfDate,p.openingCount,p.countBasis,JSON.stringify(p.details),actor,hash]);
+    const inserted=await db.query('INSERT INTO projects(id,farm_id,name,crop,irrigation,planting_date,variety,objective,area_ha,stage,enterprise_type,as_of_date,opening_count,current_count,count_basis,details,created_by,payload_hash,location_id,onboarding_mode) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15,$16,$17,$18,$19) ON CONFLICT(id) DO NOTHING RETURNING id,version',[id,farmId,p.name,p.crop,p.irrigation,p.plantingDate,p.variety,p.objective,p.areaHa,p.stage,p.enterpriseType,p.asOfDate,p.openingCount,p.countBasis,JSON.stringify(p.details),actor,hash,p.locationId,p.onboardingMode]);
     if(inserted.rowCount)return reply.code(201).send(inserted.rows[0]);
     const previous=await db.query('SELECT payload_hash,created_by,version FROM projects WHERE farm_id=$1 AND id=$2',[farmId,id]);if(!previous.rowCount)throw new ApiError('idempotency_conflict',409);checkReplay(previous.rows[0],hash,actor);return {id,version:previous.rows[0].version};
   });
   app.patch('/v1/farms/:farmId/projects/:projectId',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=projectParams.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
-    const p=z.object({version:z.number().int().positive(),reason:z.string().trim().min(1).max(1000),name:z.string().trim().min(1).max(100).optional(),crop:z.string().trim().min(1).max(80).optional(),irrigation:z.boolean().optional(),plantingDate:z.iso.date().nullable().optional(),variety:z.string().max(100).nullable().optional(),objective:z.string().max(200).nullable().optional(),areaHa:z.number().finite().positive().max(1e8).nullable().optional(),stage:z.string().max(100).nullable().optional(),status:z.enum(['active','closed']).optional()}).strict().parse(req.body);
+    const p=z.object({version:z.number().int().positive(),reason:z.string().trim().min(1).max(1000),name:z.string().trim().min(1).max(100).optional(),crop:z.string().trim().min(1).max(80).optional(),irrigation:z.boolean().optional(),plantingDate:z.iso.date().nullable().optional(),variety:z.string().max(100).nullable().optional(),objective:z.string().max(200).nullable().optional(),areaHa:z.number().finite().positive().max(1e8).nullable().optional(),stage:z.string().max(100).nullable().optional(),locationId:uuid.nullable().optional(),details:z.record(z.string().max(80),z.union([z.string().max(1000),z.number().finite(),z.boolean(),z.null()])).optional(),status:z.enum(['active','closed']).optional()}).strict().parse(req.body);
     return transaction(async c=>{
       const r=await c.query('SELECT * FROM projects WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[farmId,projectId]);if(!r.rowCount)throw new ApiError('project_not_found',404);const old=r.rows[0];
       if(old.version!==p.version)throw new ApiError('version_conflict',409,{current:old});
       if(p.status==='closed'&&old.enterprise_type!=='crop')throw new ApiError('animal_close_event_required',409);
-      const mapping:Record<string,string>={name:'name',crop:'crop',irrigation:'irrigation',plantingDate:'planting_date',variety:'variety',objective:'objective',areaHa:'area_ha',stage:'stage',status:'status'};
+      const mapping:Record<string,string>={name:'name',crop:'crop',irrigation:'irrigation',plantingDate:'planting_date',variety:'variety',objective:'objective',areaHa:'area_ha',stage:'stage',status:'status',locationId:'location_id',details:'details'};
       const values:unknown[]=[farmId,projectId];const assignments:string[]=[];
       for(const [key,col]of Object.entries(mapping))if(key in p){values.push(p[key as keyof typeof p]);assignments.push(`${col}=$${values.length}`);}
       if(!assignments.length)throw new ApiError('no_changes');
@@ -133,19 +134,19 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/farms/:farmId/stock',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const financial=await member(farmId,actor,manageRoles);
-    const r=await db.query(`SELECT id,project_id,name,unit,quantity,reserved_quantity,version${financial?',unit_cost,currency':''} FROM stock_items WHERE farm_id=$1 ORDER BY name,id LIMIT 500`,[farmId]);return {items:r.rows};
+    const q=pageQuery.parse(req.query);const r=await db.query(`SELECT id,project_id,name,unit,quantity,reserved_quantity,version,grade,location_id,pack_size,pack_unit${financial?',unit_cost,currency':''} FROM stock_items WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3`,[farmId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);
   });
   app.post('/v1/farms/:farmId/stock',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
-    const b=z.object({id:uuid,name:z.string().trim().min(1).max(100),unit:units,quantity,projectId:uuid.nullable().default(null),unitCost:quantity.nullable().default(null),currency:currency.nullable().default(null)}).strict().refine(b=>(b.unitCost===null)===(b.currency===null),'amount_currency_pair_required').parse(req.body);const hash=sha256(JSON.stringify(b));
-    const created=await transaction(async c=>{
-      const ins=await c.query('INSERT INTO stock_items(id,farm_id,project_id,name,unit,quantity,unit_cost,currency,created_by,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO NOTHING RETURNING id',[b.id,farmId,b.projectId,b.name,b.unit,b.quantity,b.unitCost,b.currency,actor,hash]);
+    const b=z.object({id:uuid,name:z.string().trim().min(1).max(100),unit:units,quantity,projectId:uuid.nullable().default(null),unitCost:quantity.nullable().default(null),currency:currency.nullable().default(null),grade:z.string().max(100).default(''),locationId:uuid.nullable().default(null),packSize:quantity.refine(v=>v>0).nullable().default(null),packUnit:units.nullable().default(null)}).strict().refine(b=>(b.unitCost===null)===(b.currency===null),'amount_currency_pair_required').parse(req.body);const hash=sha256(JSON.stringify(b));
+    if((b.packSize===null)!==(b.packUnit===null))throw new ApiError('pack_pair_required');if(b.packSize!==null)convertQuantity(b.packSize,b.packUnit!,b.unit);if(!['kg','g','l','ml'].includes(b.unit)&&!Number.isInteger(b.quantity))throw new ApiError('whole_count_required');const created=await transaction(async c=>{
+      const ins=await c.query('INSERT INTO stock_items(id,farm_id,project_id,name,unit,quantity,unit_cost,currency,created_by,payload_hash,grade,location_id,pack_size,pack_unit) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(id) DO NOTHING RETURNING id',[b.id,farmId,b.projectId,b.name,b.unit,b.quantity,b.unitCost,b.currency,actor,hash,b.grade,b.locationId,b.packSize,b.packUnit]);
       if(!ins.rowCount){const old=await c.query('SELECT payload_hash,created_by FROM stock_items WHERE farm_id=$1 AND id=$2',[farmId,b.id]);if(!old.rowCount)throw new ApiError('idempotency_conflict',409);checkReplay(old.rows[0],hash,actor);return false;}
       await c.query("INSERT INTO stock_movements(id,farm_id,stock_item_id,project_id,actor_id,kind,quantity,unit,source_type,source_id,observed_at) VALUES($1,$2,$3,$4,$5,'opening',$6,$7,'stock_opening',$3,now())",[randomUUID(),farmId,b.id,b.projectId,actor,b.quantity,b.unit]);return true;
     });return reply.code(created?201:200).send({id:b.id});
   });
   app.get('/v1/farms/:farmId/stock/:itemId/movements',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId,itemId}=params.extend({itemId:uuid}).parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const r=await db.query('SELECT * FROM stock_movements WHERE farm_id=$1 AND stock_item_id=$2 ORDER BY recorded_at DESC LIMIT 100',[farmId,itemId]);return {items:r.rows};
+    const actor=await user(req,reply);if(!actor)return;const {farmId,itemId}=params.extend({itemId:uuid}).parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query('SELECT * FROM stock_movements WHERE farm_id=$1 AND stock_item_id=$2 AND ($3::uuid IS NULL OR (recorded_at,id)<(SELECT recorded_at,id FROM stock_movements WHERE farm_id=$1 AND stock_item_id=$2 AND id=$3)) ORDER BY recorded_at DESC,id DESC LIMIT $4',[farmId,itemId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);
   });
   app.post('/v1/farms/:farmId/stock/:itemId/movements',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId,itemId}=params.extend({itemId:uuid}).parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
@@ -157,11 +158,11 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
       const item=await c.query('SELECT project_id FROM stock_items WHERE farm_id=$1 AND id=$2',[farmId,itemId]);if(!item.rowCount)throw new ApiError('stock_not_found',404);const projectId=item.rows[0].project_id;
       if(projectId){await c.query('SELECT id FROM projects WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[farmId,projectId]);if(b.kind==='consumption')await assertReleaseAllowed(c,farmId,projectId,'sale');}
       const delta=['loss','consumption'].includes(b.kind)?-b.quantity:b.quantity;
-      await stockMovement(c,{farmId,itemId,projectId,actorId:actor,kind:b.kind,quantity:delta,unit:b.unit,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});
-      if(b.amount!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'expense',amount:b.amount,currency:b.currency!,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});return true;
+      const valuation=await stockMovement(c,{farmId,itemId,projectId,actorId:actor,kind:b.kind,quantity:delta,unit:b.unit,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});if(b.kind==='purchase'){const known=b.amount!==null&&(Number(valuation.quantity)===0||(valuation.unit_cost!==null&&valuation.currency===b.currency));const cost=known?(Number(valuation.quantity)*Number(valuation.unit_cost??0)+b.amount!)/(Number(valuation.quantity)+valuation.delta):null;await c.query('UPDATE stock_items SET unit_cost=$3,currency=$4 WHERE farm_id=$1 AND id=$2',[farmId,itemId,cost===null?null:Math.round(cost*1e6)/1e6,cost===null?null:b.currency]);}
+      if(b.amount!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'expense',amount:b.amount,currency:b.currency!,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});if(['consumption','loss'].includes(b.kind)&&valuation.unit_cost!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:Math.round(Math.abs(valuation.delta)*Number(valuation.unit_cost)*100)/100,currency:valuation.currency,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});return true;
     });return reply.code(created?201:200).send({id:b.id});
   });
-  app.get('/v1/farms/:farmId/tasks',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const r=await db.query('SELECT * FROM tasks WHERE farm_id=$1 ORDER BY due_at ASC NULLS LAST,created_at DESC LIMIT 500',[farmId]);return {items:r.rows};});
+  app.get('/v1/farms/:farmId/tasks',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query('SELECT * FROM tasks WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);});
   app.post('/v1/farms/:farmId/tasks',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
     const b=z.object({id:uuid,title:z.string().trim().min(1).max(200),projectId:uuid.nullable().default(null),assigneeId:uuid.nullable().default(null),dueAt:when.nullable().default(null),instructions:z.string().max(4000).default('')}).strict().parse(req.body);const hash=sha256(JSON.stringify(b));
@@ -181,7 +182,7 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
       await audit(c,farmId,actor,'task',taskId,'updated',b.reason??'task_progress',old,r2.rows[0]);return r2.rows[0];
     });
   });
-  app.get('/v1/farms/:farmId/incidents',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const r=await db.query('SELECT * FROM incidents WHERE farm_id=$1 ORDER BY created_at DESC LIMIT 200',[farmId]);return {items:r.rows};});
+  app.get('/v1/farms/:farmId/incidents',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query('SELECT * FROM incidents WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);});
   app.post('/v1/farms/:farmId/incidents',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,writeRoles))throw new ApiError('not_found',404);
     const b=z.object({id:uuid,projectId:uuid.nullable().default(null),title:z.string().trim().min(1).max(200),description:z.string().max(4000).default(''),severity:z.enum(['low','medium','high','urgent']),assigneeId:uuid.nullable().default(null)}).strict().parse(req.body);if(b.assigneeId&&!await member(farmId,actor,manageRoles))throw new ApiError('assignment_permission_required',403);const hash=sha256(JSON.stringify(b));
@@ -199,15 +200,10 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/farms/:farmId/reports',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
-    const q=z.object({projectId:uuid.optional()}).parse(req.query);
-    const totals=await db.query('SELECT currency,kind,sum(amount)::text AS amount FROM financial_entries WHERE farm_id=$1 AND ($2::uuid IS NULL OR project_id=$2) GROUP BY currency,kind ORDER BY currency,kind',[farmId,q.projectId??null]);
-    const stock=await db.query('SELECT id,name,quantity,reserved_quantity,unit,unit_cost,currency FROM stock_items WHERE farm_id=$1 AND ($2::uuid IS NULL OR project_id=$2) ORDER BY name',[farmId,q.projectId??null]);
-    const missing=await db.query("SELECT count(*)::int AS count FROM stock_movements m JOIN stock_items s ON s.farm_id=m.farm_id AND s.id=m.stock_item_id WHERE m.farm_id=$1 AND ($2::uuid IS NULL OR m.project_id=$2) AND m.kind IN ('input_use','feed') AND s.unit_cost IS NULL",[farmId,q.projectId??null]);
-    const allocations=await db.query('SELECT source_project_id,destination_project_id,currency,sum(amount)::text AS amount FROM project_cost_transfers WHERE farm_id=$1 AND ($2::uuid IS NULL OR source_project_id=$2 OR destination_project_id=$2) GROUP BY source_project_id,destination_project_id,currency',[farmId,q.projectId??null]);
-    return {totals:totals.rows,stock:stock.rows,costTransfers:allocations.rows,unpricedInputMovements:missing.rows[0].count,profit:null,completeness:'not_asserted',paymentProvider:'unconfigured',generatedAt:new Date().toISOString()};
+    const {reportSummary,reportQuery}=await import('./product/finance.js');const q=reportQuery.parse(req.query);return transaction(async c=>{await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const summary=await reportSummary(c,farmId,q);const allocations=await c.query('SELECT source_project_id,destination_project_id,currency,sum(amount)::text AS amount FROM project_cost_transfers WHERE farm_id=$1 AND ($2::uuid IS NULL OR source_project_id=$2 OR destination_project_id=$2) GROUP BY source_project_id,destination_project_id,currency',[farmId,q.projectId??null]);return {...summary,costTransfers:allocations.rows,unpricedInputMovements:summary.missing.unpricedInputs,paymentProvider:'manual'};});
   });
   app.get('/v1/farms/:farmId/projects/:projectId/ledger',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=projectParams.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);const r=await db.query('SELECT id,kind,amount,currency,source_type,source_id,observed_at,note FROM financial_entries WHERE farm_id=$1 AND project_id=$2 ORDER BY observed_at DESC LIMIT 500',[farmId,projectId]);return {items:r.rows};
+    const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=projectParams.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query(`SELECT f.id,f.kind,f.amount,f.currency,f.source_type,f.source_id,f.observed_at,f.note,f.category,CASE WHEN f.kind='revenue' THEN CASE f.source_type WHEN 'animal_event' THEN COALESCE((SELECT sum(amount) FROM manual_payment_records WHERE revenue_id=f.id),0) WHEN 'market_order' THEN COALESCE((SELECT sum(amount) FROM commerce_payments WHERE order_id=f.source_id),0) WHEN 'service_booking' THEN COALESCE((SELECT sum(CASE WHEN kind='refund' THEN -amount ELSE amount END) FROM service_payment_records WHERE booking_id=f.source_id AND status='recorded'),0) ELSE 0 END ELSE NULL END AS paid FROM financial_entries f WHERE farm_id=$1 AND project_id=$2 AND ($3::uuid IS NULL OR (observed_at,id)<(SELECT observed_at,id FROM financial_entries WHERE farm_id=$1 AND project_id=$2 AND id=$3)) ORDER BY observed_at DESC,id DESC LIMIT $4`,[farmId,projectId,q.cursor??null,q.limit+1]);return page(r.rows.map(r=>({...r,outstanding:r.kind==='revenue'?Math.max(0,Math.round((Number(r.amount)-Number(r.paid))*100)/100):null})),q.limit);
   });
   app.post('/v1/farms/:farmId/projects/:projectId/payments',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=projectParams.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);
@@ -221,14 +217,12 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/farms/:farmId/reports.csv',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,manageRoles))throw new ApiError('not_found',404);const lang=z.object({language:z.enum(['sn','nd']).default('sn')}).parse(req.query).language;
-    const r=await db.query('SELECT kind,amount,currency,observed_at,source_type FROM financial_entries WHERE farm_id=$1 ORDER BY observed_at LIMIT 10000',[farmId]);const escape=(v:unknown)=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+    const r=await db.query('SELECT kind,amount,currency,observed_at,source_type FROM financial_entries WHERE farm_id=$1 ORDER BY observed_at,id',[farmId]);const escape=(v:unknown)=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
     const headers=lang==='sn'?['Rudzi','Mari','Rudzi rwemari','Nguva yakaonekwa','Kwakabva']:['Uhlobo','Inani lemali','Uhlobo lwemali','Isikhathi sokubona','Umthombo'];
     const text=[headers.map(escape).join(','),...r.rows.map(a=>[a.kind,a.amount,a.currency,new Date(a.observed_at).toISOString(),a.source_type].map(escape).join(','))].join('\r\n');reply.header('Content-Type','text/csv; charset=utf-8').header('Content-Disposition','attachment; filename="smart-farmer-records.csv"').header('Cache-Control','no-store');return '\uFEFF'+text;
   });
   app.get('/v1/farms/:farmId/projects/:projectId/companion',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=projectParams.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const p=await db.query('SELECT * FROM projects WHERE farm_id=$1 AND id=$2',[farmId,projectId]);if(!p.rowCount)throw new ApiError('project_not_found',404);
-    const tasks=await db.query("SELECT id,title,due_at,status FROM tasks WHERE farm_id=$1 AND project_id=$2 AND status NOT IN ('completed','cancelled') ORDER BY due_at NULLS LAST LIMIT 10",[farmId,projectId]);
-    const missing=p.rows[0].enterprise_type==='crop'?['planting_date','variety','area_ha','stage'].filter(k=>p.rows[0][k]===null):['as_of_date','current_count'].filter(k=>p.rows[0][k]===null);
-    return {mode:'record_based',provider:'unconfigured',projectId,missingFields:missing,nextTasks:tasks.rows,ruleVersion:'record-review-1',recommendationsAreCompletedWork:false};
+    const {companionSnapshot}=await import('./product/companion.js');return companionSnapshot(ctx,farmId,actor,projectId);
   });
 }

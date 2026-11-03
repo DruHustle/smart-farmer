@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
+import {completionJourneys} from './browser-completion.mjs';
 import {catalog} from '../src/locales.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,11 +21,11 @@ const children = []; let browser; let page;
 const steps = []; const diagnostics = []; let stage = 'setup';
 function checkpoint(name) {stage = name; console.log(`STEP: ${name}`);}
 const watchdog = setTimeout(() => {
-  const failure = `Browser suite exceeded 240 seconds during: ${stage}`;
+  const failure = `Browser suite exceeded 720 seconds during: ${stage}`;
   writeFileSync(resolve(artifacts, 'results.json'), JSON.stringify({status: 'timed_out', stage, passed: steps, error: failure}, null, 2));
   writeFileSync(resolve(artifacts, 'failure-log.txt'), [failure, ...diagnostics, ...children.map(child => child.logs())].join('\n\n'));
   console.error(failure); for (const child of children) child.proc.kill('SIGTERM'); process.exit(1);
-}, 240_000); watchdog.unref();
+}, 720_000); watchdog.unref();
 async function command(cmd, args, cwd, extra = {}) {
   await new Promise((resolveCommand, reject) => {
     const proc = spawn(cmd, args, {cwd, env: {...env, ...extra}, stdio: ['ignore', 'pipe', 'pipe']}); let logs = '';
@@ -143,6 +144,8 @@ try {
   const assets = (await apiCall(`/v1/farms/${farm.id}/assets`, undefined, token)).items; const sim = assets.find(a => a.name === 'Pump simulator'); assert.equal(sim.latest_telemetry.running, true);
   assert.equal((await apiCall(`/v1/farms/${farm.id}/assets/${sim.id}/commands`, undefined, token)).items[0].status, 'confirmed');
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
+
+  await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts});
 
   checkpoint('Phone and desktop visual evidence');
   await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-equipment.png');

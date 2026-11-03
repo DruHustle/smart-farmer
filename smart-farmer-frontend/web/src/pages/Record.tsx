@@ -5,9 +5,9 @@ import {farmTimeToUtc, localDateTime} from '../lib/time';
 import {Field, Form, Modal, StockSelect, Submit, VoiceRecorder, formNumber, formValue, Icon} from '../components/ui';
 
 const mimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'audio/mp4', 'audio/mpeg', 'audio/webm', 'audio/wav']);
-async function prepareFile(file: File): Promise<{mimeType: string; dataBase64: string; filename: string}> {
+export async function prepareFile(file: File, compact = true): Promise<{mimeType: string; dataBase64: string; filename: string}> {
   let blob: Blob = file;
-  if (file.type.startsWith('image/') && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+  if (compact && file.type.startsWith('image/') && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     const image = await createImageBitmap(file); const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
     const canvas = document.createElement('canvas'); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
     const context = canvas.getContext('2d'); if (!context) throw new Error('attachment_type'); context.drawImage(image, 0, 0, canvas.width, canvas.height); image.close();
@@ -21,7 +21,7 @@ async function prepareFile(file: File): Promise<{mimeType: string; dataBase64: s
   return {mimeType: type, dataBase64: btoa(binary), filename: file.name};
 }
 export function RecordActivity({initialProject, onClose}: {initialProject: string; onClose: () => void}) {
-  const {data, t, farm, run, enqueue, vault, manager} = useFarm(); const [kind, setKind] = useState('work'); const [stockId, setStockId] = useState(''); const [files, setFiles] = useState<File[]>([]);
+  const {data, t, farm, run, enqueue, vault, manager, snapshot} = useFarm(); const [projectId, setProjectId] = useState(initialProject || data.projects[0]?.id || ''); const selectedProject = data.projects.find(p => p.id === projectId); const [kind, setKind] = useState('work'); const [stockId, setStockId] = useState(''); const [files, setFiles] = useState<File[]>([]);
   const stockKind = kind === 'input_use' || kind === 'harvest'; const stock = data.stock.find(s => s.id === stockId);
   return <Modal title={t.record} onClose={onClose}><p className="muted">{t.recordHint}</p><Form onSubmit={async f => {
     const success = await run(async () => {
@@ -29,9 +29,10 @@ export function RecordActivity({initialProject, onClose}: {initialProject: strin
       if ((quantity === null) !== (unit === null)) throw new Error('invalid_input');
       if (stockKind && (!stock || quantity === null || quantity <= 0)) throw new Error('stock_required');
       const payload: Record<string, unknown> = {id, projectId, kind, observedAt: farmTimeToUtc(formValue(f, 'observedAt'), farm.timezone), note: formValue(f, 'note'), quantity, unit};
+      const taskId = formValue(f, 'taskId'); if (taskId) {const task = data.tasks.find(row => row.id === taskId); if (!task || task.project_id !== projectId) throw new Error('invalid_input'); payload.taskId = taskId; payload.taskVersion = task.version;}
       if (stockKind) payload.stockItemId = stockId;
       if (kind === 'cost') {payload.amount = formNumber(f, 'amount'); payload.currency = formValue(f, 'currency').toUpperCase();}
-      const media = await Promise.all(files.map(async file => ({id: crypto.randomUUID(), file: await prepareFile(file)})));
+      const media = await Promise.all(files.map(async file => ({id: crypto.randomUUID(), file: await prepareFile(file, snapshot.preferences?.compactPhotos ?? true)})));
       for (const item of media) await vault.storeAttachment(item.id, item.file);
       // All queue entries commit together; uploads still run independently after metadata syncs.
       await enqueue([
@@ -41,8 +42,9 @@ export function RecordActivity({initialProject, onClose}: {initialProject: strin
     });
     if (success) onClose();
   }}>
-    <Field label={t.project}><select name="projectId" required defaultValue={initialProject || data.projects[0]?.id}>{data.projects.filter(p => p.status !== 'closed').map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
-    <Field label={t.kind}><select name="kind" value={kind} onChange={e => {setKind(e.target.value); setStockId('');}}>{['work', 'rain', 'irrigation', 'observation', 'harvest', 'input_use', ...(manager ? ['cost'] : [])].map(k => <option key={k} value={k}>{label(t, k)}</option>)}</select></Field>
+    <Field label={t.project}><select name="projectId" required value={projectId} onChange={e => {setProjectId(e.target.value); setKind('work'); setStockId('');}}>{data.projects.filter(p => p.status !== 'closed').map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
+    <Field label={t.kind}><select name="kind" value={kind} onChange={e => {setKind(e.target.value); setStockId('');}}>{['work', 'observation', ...(selectedProject?.enterprise_type === 'crop' ? ['rain', 'irrigation', 'harvest', 'input_use'] : []), ...(manager ? ['cost'] : [])].map(k => <option key={k} value={k}>{label(t, k)}</option>)}</select></Field>
+    <Field label={t.linkedTask}><select name="taskId"><option value="">{t.none}</option>{data.tasks.filter(task => task.project_id === projectId && !['completed', 'cancelled'].includes(task.status) && (manager || task.assignee_id === snapshot.identity.userId)).map(task => <option value={task.id} key={task.id}>{task.title}</option>)}</select></Field>
     <Field label={t.when} hint={`${t.farmTime}: ${farm.timezone}`}><input name="observedAt" type="datetime-local" required defaultValue={localDateTime(new Date(), farm.timezone)}/></Field>
     <Field label={t.note}><textarea name="note" rows={3} maxLength={4000}/></Field>
     {stockKind && <StockSelect required value={stockId} onChange={setStockId}/>}

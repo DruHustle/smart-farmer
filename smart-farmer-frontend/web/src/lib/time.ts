@@ -20,10 +20,21 @@ export function farmTimeToUtc(value: string, timeZone: string): string {
   return new Date(candidate).toISOString();
 }
 export function farmDate(value: Date | string, timeZone: string): string {return localDateTime(value, timeZone).slice(0, 10);}
-export function displayTime(value: string, language: 'sn' | 'nd', timeZone: string): string {
+/** Numeric dates avoid an English month-name fallback on browsers without nd/sn ICU data. */
+export function displayTime(value: string, _language: 'sn' | 'nd', timeZone: string): string {
   if (!Number.isFinite(new Date(value).getTime())) return '—';
-  return new Intl.DateTimeFormat(`${language}-ZW`, {timeZone, dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value));
+  const wall = localDateTime(value, timeZone);
+  return `${wall.slice(8, 10)}/${wall.slice(5, 7)}/${wall.slice(0, 4)} ${wall.slice(11, 16)}`;
 }
-export function displayDate(value: string, language: 'sn' | 'nd'): string {
-  return new Intl.DateTimeFormat(`${language}-ZW`, {timeZone: 'UTC', dateStyle: 'medium'}).format(new Date(`${value.slice(0, 10)}T12:00:00Z`));
+export function displayDate(value: string, _language: 'sn' | 'nd'): string {
+  const date = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return '—';
+  return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
+}
+export function displayNumber(value: unknown, language: 'sn' | 'nd', decimals = 3): string {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
+  return new Intl.NumberFormat(`${language}-ZW`, {maximumFractionDigits: decimals}).format(Number(value));
+}
+export function displayMoney(value: unknown, currency: string, language: 'sn' | 'nd'): string {
+  return `${currency} ${new Intl.NumberFormat(`${language}-ZW`, {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value))}`;
 }

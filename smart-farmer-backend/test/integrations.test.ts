@@ -164,7 +164,7 @@ test('services: request, quote, explicit version acceptance, concurrent overlap 
     const accepted=confirmed.find(x=>x.statusCode===200)!.json();
     assert.equal((await f.request('POST',`${f.prefix}/bookings/${accepted.id}/status`,{status:'completed',version:accepted.version})).statusCode,200);
     assert.equal((await f.request('POST',`${f.prefix}/bookings/${accepted.id}/status`,{status:'completed',version:accepted.version})).statusCode,409);
-    const expense=(await f.db.query("SELECT * FROM financial_entries WHERE source_type='service_booking'")).rows;assert.equal(expense.length,1);assert.equal(Number(expense[0].amount),25);assert.equal(expense[0].project_id,projectId);
+    const expense=(await f.db.query("SELECT * FROM financial_entries WHERE source_type='service_booking' AND kind='expense'")).rows;assert.equal(expense.length,1);assert.equal(Number(expense[0].amount),25);assert.equal(expense[0].project_id,projectId);assert.equal(expense[0].farm_id,f.owner.farmId);const revenue=(await f.db.query("SELECT * FROM financial_entries WHERE source_type='service_booking' AND kind='revenue'")).rows;assert.equal(revenue.length,1);assert.equal(revenue[0].farm_id,provider.farmId);assert.equal(Number(revenue[0].amount),25);
     assert.equal((await f.request('POST','/v1/reviews',{id:randomUUID(),bookingId:accepted.id,rating:4,note:'Completed fixture'})).statusCode,201);
   }finally{await f.close();}
 });
@@ -178,7 +178,7 @@ test('camera events stay private, preserve delayed event time, and expire throug
     const events=(await f.request('GET',`${f.prefix}/camera-events`)).json().items;assert.equal(events.length,1);assert.equal(events[0].kind,'motion');assert.equal(events[0].delayed,true);
     const outsider=await f.register('outsider');assert.equal((await f.request('GET',`${f.prefix}/camera-events`,undefined,outsider)).statusCode,404);
     await f.db.query('INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,$3)',[outsider.userId,f.owner.farmId,'worker']);
-    assert.equal((await f.request('GET',`${f.prefix}/camera-events`,undefined,outsider)).statusCode,404);
+    assert.deepEqual((await f.request('GET',`${f.prefix}/camera-events`,undefined,outsider)).json().items,[],'no events without an explicit camera grant');
     await f.db.query("UPDATE camera_events SET expires_at=now()-interval '1 second' WHERE id=$1",[event.id]);await runMaintenance(f.db);
     assert.equal((await f.request('GET',`${f.prefix}/camera-events`)).json().items.length,0);
     assert.equal((await f.db.query("SELECT count(*) AS n FROM worker_heartbeats WHERE name='maintenance'")).rows[0].n,'1');

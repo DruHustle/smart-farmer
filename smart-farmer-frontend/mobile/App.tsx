@@ -5,7 +5,7 @@ import * as ScreenCapture from 'expo-screen-capture';
 import { apiOrigin, createApi } from './src/api';
 import { errorText, textFor } from './src/i18n';
 import { deviceUnlock, forgetSession, openRepository, readLanguage, readSession, saveLanguage, saveSession } from './src/native-storage';
-import { clearReminders } from './src/reminders';
+import { clearReminders, endDeviceNotifications } from './src/reminders';
 import { LocalRepository } from './src/repository';
 import type { Language, Session } from './src/types';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -96,6 +96,7 @@ function Root() {
     try { await clearReminders(); } catch { /* Notification service failure must not prevent local sign-out. */ }
     setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode('');
     if (previous) {
+      void endDeviceNotifications(previous).catch(() => undefined);
       // Local access ends immediately; the server request is best-effort when a connection exists.
       void createApi(previous.origin, previous.token).request('/v1/sessions/current', 'DELETE').catch(() => undefined);
     }
@@ -111,7 +112,7 @@ function Root() {
   if (configurationError) return <ScrollView contentContainerStyle={styles.content}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} closeLabel={t.close} value={language} onChange={changeLanguage} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /><Notice text={errorText(language, configurationError)} error /></ScrollView>;
   if (!session) return <AuthScreen origin={origin} language={language} onLanguage={changeLanguage} onSession={authenticated} />;
   return <View style={styles.page}>
-    {repository ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
+    {repository && !locked ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
     <Sheet title={t.locked} visible={locked} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
       <Text style={styles.heading}>{session.username}</Text><Text style={styles.text}>{expired ? t.sessionExpired : t.unlockHint}</Text>
       {error ? <Notice text={errorText(language, error)} error /> : null}

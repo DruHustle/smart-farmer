@@ -13,8 +13,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 export function validateMutation(mutation: Mutation): void {
   if (!UUID.test(mutation.id) || !UUID.test(mutation.farmId)) throw new Error('invalid_record');
-  if (!['activity', 'animal-event', 'task-status'].includes(mutation.kind)) throw new Error('unsafe_offline_action');
-  if (mutation.kind !== 'activity' && (!mutation.resourceId || !UUID.test(mutation.resourceId))) throw new Error('invalid_record');
+  if (!['activity', 'animal-event', 'task-status', 'project-record', 'weather-observation', 'asset-usage', 'incident-create'].includes(mutation.kind)) throw new Error('unsafe_offline_action');
+  if (['animal-event', 'task-status', 'project-record', 'asset-usage'].includes(mutation.kind) && (!mutation.resourceId || !UUID.test(mutation.resourceId))) throw new Error('invalid_record');
   if (mutation.kind !== 'task-status' && mutation.body.id !== mutation.id) throw new Error('invalid_record');
 }
 

@@ -1,4 +1,5 @@
 import type { Language } from './types';
+import { completionText } from './completion-i18n';
 
 const sn = {
   language: 'Mutauro', today: 'Nhasi', farm: 'Purazi', record: 'Nyora', more: 'Zvimwe',
@@ -180,9 +181,9 @@ export function textFor(language: Language) { return catalogues[language]; }
 export function label(language: Language, value: string): string {
   const aliases: Record<string, TextKey> = { planting_date: 'plantingDate', area_ha: 'area', as_of_date: 'asOfDate', current_count: 'currentCount' };
   const key = aliases[value] || value.replaceAll('-', '_') as TextKey;
-  return catalogues[language][key] ?? catalogues[language].unknown;
+  return completionText(language, value) ?? catalogues[language][key] ?? catalogues[language].unknown;
 }
 export function errorText(language: Language, error: unknown): string {
   const key = (error instanceof Error ? error.message : 'request_failed') as TextKey;
-  return catalogues[language][key] ?? catalogues[language].request_failed;
+  return completionText(language, key) ?? catalogues[language][key] ?? catalogues[language].request_failed;
 }

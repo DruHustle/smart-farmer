@@ -1,45 +1,41 @@
 # Hardware compatibility and commissioning
 
-## Implemented capability boundary
+No physical Smart Farmer installation has been operated or commissioned during development. The tested transport paths below use synthetic protocol servers and serial fixtures. Registering a protocol or passing a fixture test does not certify a pump, pivot, inverter or camera model.
 
-No physical device has been commissioned. An asset can be registered before its make/model is known; this creates no invented readings or enabled controls. Water sources, pumps, storage, distribution and pivots may be separate linked assets. `parentAssetId` belongs to the same farm.
+| Capability | Implemented verification | Required installation evidence |
+| --- | --- | --- |
+| Simulator | Actual API/PostgreSQL gateway restart, offline buffer, interlock, expiry and feedback tests | No physical claim |
+| HTTP | Authenticated JSON reads, fixed operation paths, immutable command IDs, no redirects | Vendor endpoint schema, device acknowledgement and observed state |
+| MQTT | Local broker, explicit topics, QoS 1, nonretained commands, freshness rejection | Broker TLS/ACLs, controller message/expiry/replay behavior |
+| Modbus TCP | Actual protocol server with coils/register scaling and allowlisted writes | Register map, unit ID, electrical topology, signed/float word order |
+| Modbus RTU | Serial pseudo-terminal with real RTU frames and CRC | Serial/RS485 adapter, baud/parity/termination and controller map |
+| ONVIF | SOAP security, profiles, stream URI, pull-point events and host allowlist fixtures | Exact camera/recorder model, supported profile, topic and analytics mapping |
+| RTSP/private HLS | Bounded FFmpeg capture implementation, real MPEG-TS simulator playback through authenticated API | Actual camera codec/transport, edge capacity and live reconnect test |
+| PTZ and vendor-specific pivot programmes | Capability remains explicitly disabled until a supported control mapping is reviewed | Model-specific motion/programme commands, stop behavior and physical verification |
 
-| Interface | Implemented now | Hardware claim |
-|---|---|---|
-| Simulator over authenticated HTTPS | Persistent telemetry, expiring commands, interlocks, feedback, replay journal and outage buffer | Software simulator only |
-| MQTT | Protocol selection and explicit unconfigured capability manifest | No live driver or verified topic mapping yet |
-| HTTP vendor devices | Protocol selection and explicit unconfigured capability manifest | No vendor endpoint or capability claim |
-| Modbus TCP/RTU | Protocol selection and explicit unconfigured capability manifest | No arbitrary register-write interface; model-specific adapter remains |
-| Cameras | Private simulated motion/person events, original event time, acknowledgement, retention | No ONVIF/RTSP live video or analytics integration yet |
+## Asset lifecycle
 
-The edge gateway uses an outgoing HTTP(S) connection. In production mode it requires HTTPS. Its credentials are scoped to one simulated asset, expire after 30 days, and rotate through an owner-only endpoint. They never enter web or mobile application source. A protocol name is not evidence of compatibility.
+Assets can be registered with unknown models and no fabricated readings. Link source, pump, power, storage and pivot/zone assets when those relationships are actually known. Record location and responsible person. Usage, maintenance, history and manual observations work without a sensor.
 
-## Run the simulator
+Owner integration configuration records the selected transport, private connection reference, typed measurements and approved start/stop mappings. This produces a configuration hash and `connected-awaiting-verification`. Simulator configuration produces `simulated` and cannot be used as real commissioning evidence. Gateway tokens are scoped to one asset and rotate through the owner endpoint.
 
-1. Sign in as owner or manager and register a pump, pivot or valve with protocol `simulator`.
-2. As the owner, issue a gateway token with `POST /v1/farms/:farmId/assets/:assetId/gateway-token`. Copy it into a private environment variable, not a committed file.
-3. In `smart-farmer-backend/edge`, export `API_URL`, `ASSET_GATEWAY_TOKEN`, `GATEWAY_STATE_DIR` and `SIMULATOR_INTERLOCK_OK=true`, then run `npm start` with Node 24. A false/unset interlock prevents starting.
-4. Wait for fresh simulated telemetry. Submit an explicitly confirmed `start` or `stop` through the manager UI/API with an expiry at most 120 seconds away.
-5. Observe dispatched, acknowledged and feedback-confirmed states separately. Acknowledgement alone does not establish that the operation completed.
-6. Disconnect/reconnect the gateway. It buffers observations with original IDs/times and sends them after reconnection. Dispatched commands are never redelivered. Expired undispatched commands become `expired`; dispatched commands with no verified outcome become `outcome_unknown`.
+A real gateway must provide recent observations bound to the current hash. Read-only commissioning requires known model, identity/mapping/feedback checks, evidence and password reauthentication. Control commissioning additionally requires local interlocks, manual override and network-loss checks, actual command mappings and explicit owner confirmation. The state becomes `verified-read-only` or `verified-control-enabled` accordingly.
 
-`npm test` in the edge directory checks the simulator safety rules and bounded buffers. The backend `test/edge-http.test.ts` also starts the real gateway process against an HTTP API and PostgreSQL, verifies feedback, restarts through an outage, drains the durable buffer, and confirms that an expired command does not execute after reconnect.
+Changing model, controller, firmware or integration mapping invalidates commissioning, rotates away the existing credential and terminates outstanding commands. Authorized commands become rejected; previously dispatched commands become outcome-unknown. Existing observations and audits remain. Ordinary field offline queues cannot contain equipment commands.
 
-The buffer is bounded at 1,000 observations and records a dropped-observation count. This is an explicit capacity limit, not a promise of unlimited offline retention. Keep the state directory on a persistent private volume and preserve it across restarts. Commands are never inserted into this observation buffer.
+## Commissioning record for each asset
 
-## Information needed for each real installation
+1. Identify make/model, serial/asset label, controller, firmware and source protocol documentation/version. Photograph labels and retain the authorized evidence in private farm records.
+2. Confirm the private endpoint/serial device and access policy. Use the minimum read/write credentials. Explicitly approve any plaintext isolated network; prefer TLS wherever the controller supports it.
+3. Compare every telemetry address, unit, scale, sign/word order and quality flag against a known reference. Preserve observation/receipt timestamps and check clock skew. Unsupported readings remain absent.
+4. Test disconnected/stale input, process restart, token rotation and buffer limits. Set a justified freshness threshold. Confirm neither delayed telemetry nor an old command can initiate a late start.
+5. Test controller-enforced local interlocks and manual override under the owner's physical supervision. Record behavior during power loss, network loss, gateway failure and manual control. Define the manual operating and emergency-stop procedures.
+6. Verify each approved operation on an isolated safe installation: request, dispatch, acknowledgement, observed state, rejected interlock, expired command, duplicate delivery, missing feedback and uncertain outcome. Acknowledgement is not confirmation.
+7. Record evidence and check all required fields in the owner commissioning form; reauthenticate and explicitly enable only the verified mode. Restrict ongoing controls to authorized managers/owners.
+8. Retain the register/topic map and configuration hash with the evidence. Any relevant hardware/configuration change requires a new review. Do not erase the command journal to work around an unknown result.
 
-Record the make/model, controller and firmware; supported protocol; documented measurement/register/topic map; units and quality fields; read-only and write permissions; network/addressing and power/loss-of-network behavior; manual override and physical interlocks; and the commissioning owner. Keep connection credentials in the gateway's protected runtime configuration.
+For a pivot, list which position, sector, speed, direction, fault and programme capabilities the controller actually exposes. Generic typed telemetry can display them, but an unsupported operation must remain disabled. For cameras, verify low-bandwidth profile, snapshot support, exact motion/person topics, privacy zones/schedules, private HLS on every client, codec compatibility and storage/retention capacity. Software PTZ remains disabled pending an approved device mapping.
 
-For a borehole/pump, identify the water source, motor/controller and power supply separately. Confirm which water-level, runtime, flow, pressure, fault and power readings actually exist. For a pivot, confirm available position, direction, speed, programme and safety-stop capabilities. For a camera, confirm ONVIF/RTSP capabilities, motion versus person analytics, authenticated stream path, PTZ permissions, clip limits and retention.
+## Verification limits
 
-## Commissioning sequence
-
-1. Verify the model and protocol documents on an isolated test installation.
-2. Implement and test a read-only adapter with explicit units, observed time, receipt time and stale thresholds.
-3. Check credential rotation, least privilege, allowlisted destinations and private stream paths. The cloud API must not fetch arbitrary user-supplied camera URLs.
-4. Record local interlocks and manual override. Test power/network loss locally with the device owner.
-5. Map a short allowlist of approved commands. Verify expiry, duplicate delivery, lost acknowledgement and missing feedback using the real controller.
-6. Enable physical control only after reviewed commissioning evidence and a defined rollback/manual-operation procedure.
-
-The current code deliberately cannot mark an unknown real device as control-enabled. Physical drivers, configuration editing and a reviewed commissioning-state transition must be implemented before that enablement path is added. Do not remove the simulator-only gate as a shortcut.
+The commissioning form records an authorized person's assertion and supporting text; it cannot independently prove the wiring or physical tests. No make/model, local network, real controller state, camera analytics quality or physical safety has been inferred from simulator results. See [edge setup](../edge/README.md) for runnable protocol configuration and capacity limits.

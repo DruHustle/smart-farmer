@@ -23,7 +23,7 @@ docker compose up --build -d
 
 Compose starts a persistent PostgreSQL volume, runs versioned migrations as a separate one-shot service, then starts API and maintenance worker. The API and database ports bind to localhost. Private media has its own persistent volume. The image runs as the non-root `node` user. Compose uses PGHOST/PGUSER/PGPASSWORD/PGDATABASE rather than interpolating a possibly special-character password into a connection URL.
 
-The API has `/health` for process liveness and `/ready` for database/schema readiness. The worker writes a heartbeat checked by `dist/worker-health.js`; a running process alone does not establish worker health. Container restart policy is recovery assistance, not high availability.
+The API has `/health` for process liveness and `/ready` for database/schema readiness, including the product and operational migrations. API and worker share the same private media volume so retention and orphan cleanup operate on the stored objects. The worker writes a heartbeat checked by `dist/worker-health.js`; a running process alone does not establish worker health. Container restart policy is recovery assistance, not high availability.
 
 ### Host development
 
@@ -70,7 +70,7 @@ npm run test:backup                     # requires pg_dump and pg_restore
 
 The browser harness builds both backend and web, migrates the specified isolated database, and starts its own local API/web/browser children. It uses `CHROMIUM_PATH` when supplied or an installed Playwright Chromium. Do not point any test command at a production database. Ordinary backend tests create/drop uniquely named schemas. Backup verification creates/drops uniquely named test databases and therefore needs a test role allowed to create databases.
 
-GitHub Actions runs PostgreSQL integration tests, browser journeys, web/edge/native tests, both native bundle exports and an encrypted restore check. It uses the PostgreSQL service container's matching client utilities for backup verification. Native signing and real hardware/device tests remain separate release gates.
+GitHub Actions runs PostgreSQL integration tests, browser journeys, web/edge/native tests, both native bundle exports and an encrypted restore check. A separate native workflow compiles SQLCipher into Android and iOS simulator applications and exercises Android, iPhone and iPad journeys, preserving evidence artifacts. It uses the PostgreSQL service container's matching client utilities for backup verification. Native signing and real hardware/device tests remain separate release gates.
 
 ## Database and media backup
 
@@ -90,9 +90,9 @@ export MEDIA_ROOT=/private/smart-farmer/media
 node scripts/backup.mjs create --output /private/backups/smart-farmer.sfbak
 ```
 
-Use `PG_DUMP_BIN`/`PG_RESTORE_BIN` to select matching PostgreSQL client executables if they are not on PATH. The key is never written into the archive. The utility checks referenced media hashes, excludes incomplete temporary uploads, and refuses to overwrite an existing archive. Database snapshot precedes media capture; committed media objects are immutable and are not deleted by the current worker. An unreferenced orphan after an interrupted upload can be retained in the archive without being exposed by the API.
+Use `PG_DUMP_BIN`/`PG_RESTORE_BIN` to select matching PostgreSQL client executables if they are not on PATH. The key is never written into the archive. The utility checks referenced media hashes, excludes incomplete temporary uploads, and refuses to overwrite an existing archive. A PostgreSQL exported snapshot keeps the database dump and referenced object list consistent. A shared backup/retention advisory lock prevents deletion during capture. Only referenced field attachments and camera segments/snapshots enter the archive; every object is verified before encryption.
 
-Copy the encrypted archive to an independently controlled off-host/offline destination and verify its returned SHA-256. No independent storage account, automatic copy or recurring backup schedule has been configured. Retaining the only backup and key on the same VM does not meet an independent recovery requirement.
+The off-host scheduler, separate backup container image and systemd timer are supplied in `scripts/offhost-backup.mjs`, `Dockerfile.backup` and `ops/`. The scheduler uses independent destination credentials, uploads encrypted archives, reads them back to verify SHA-256 and can restore into a newly created isolated database. Activation still requires the destination, protected keys and recovery identity. See [provider and recovery setup](operational-integrations.md).
 
 ### Restore safely into isolation
 
@@ -119,6 +119,6 @@ For application rollback, retain the previous image and verify its schema compat
 - Farm membership/onboarding policy, shared-device procedures and authorization for every assigned role. Worker financial access is deliberately restricted.
 - HTTPS, reverse-proxy/client-IP configuration, monitored API/worker health, private database access and storage capacity alerts.
 - The local media adapter needs a persistent private volume. A production object-store adapter/bucket policy has not been activated. Media quota defaults to 250 MiB per farm and maximum attachment size to 5 MiB.
-- Camera clips, physical device drivers, external notification delivery, live weather, AI providers and payment settlement are not configured. Explicit unconfigured/simulator states must remain visible.
-- Orphan-media reconciliation and time-based media retention are not automated. The worker expires camera event metadata and equipment commands, and removes expired sessions.
+- Private camera playback and generic HTTP/MQTT/Modbus TCP/RTU/ONVIF/RTSP drivers are implemented. Farm model-specific mappings, physical interlocks and actual device commissioning still require the installation. Notification, weather and optional read-only AI adapters require provider configuration and farm consent. Manual payment records do not claim external settlement.
+- The worker reconciles old unreferenced objects in bounded pages and applies owner-configured field-media retention and camera retention. Pending deletion remains included in storage quotas. Monitor worker heartbeat, retries, quota and the last independently verified backup through operations health.
 - Machine-generated Shona/Ndebele catalogues need fluent agriculture/domain review. Native camera, encrypted storage, notification permissions and layout need signed device verification.

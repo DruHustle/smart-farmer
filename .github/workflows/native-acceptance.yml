@@ -2,6 +2,7 @@ name: Native acceptance
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml']
   pull_request:
     paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml']
@@ -51,7 +52,14 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: native-gradle-${{ runner.os }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Restore matching native Android debug binary
+        id: android-binary
+        uses: actions/cache/restore@v4
+        with:
+          path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          key: native-android-debug-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
       - name: Compile native SQLCipher Android debug application
+        if: steps.android-binary.outputs.cache-hit != 'true'
         working-directory: smart-farmer-frontend/mobile
         run: |
           set -euo pipefail
@@ -63,6 +71,12 @@ jobs:
           npx expo prebuild --no-install --platform android
           cd android
           ./gradlew assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 2>&1 | tee "$RUNNER_TEMP/native-evidence/android-build.log"
+      - name: Save successful Android compilation before UI journeys
+        if: steps.android-binary.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          key: ${{ steps.android-binary.outputs.cache-primary-key }}
       - name: Start isolated API and Metro
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
       - name: Install pinned Maestro CLI
@@ -114,7 +128,14 @@ jobs:
           "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Restore matching native iOS simulator binary
+        id: ios-binary
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          key: native-ios-simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
       - name: Compile native SQLCipher iOS simulator application
+        if: steps.ios-binary.outputs.cache-hit != 'true'
         working-directory: smart-farmer-frontend/mobile
         run: |
           set -euo pipefail
@@ -122,8 +143,19 @@ jobs:
           npx expo prebuild --no-install --platform ios
           cd ios
           pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
-          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
+          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
           ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
+      - name: Save successful iOS compilation before UI journeys
+        if: steps.ios-binary.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          key: ${{ steps.ios-binary.outputs.cache-primary-key }}
+      - name: Restore simulator app and inspect native signing
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
+          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
+          codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
       - name: Start isolated API and Metro
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
       - name: Install pinned Maestro CLI
