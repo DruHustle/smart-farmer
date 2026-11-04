@@ -81,6 +81,18 @@ class EdgeTests(unittest.TestCase):
         event["data"]["controlCommand"] = "start"
         self.assertEqual(self.agent.ingest(json.dumps(event).encode(), "a" * 40)[0], 400)
 
+    def test_full_queue_never_discards_unacknowledged_events(self):
+        self.state.conn.close()
+        self.state = EdgeState(self.path, max_pending=1)
+        self.agent.state = self.state
+        from uuid import uuid4
+        first = sample()
+        second = sample()
+        second["eventId"] = str(uuid4())
+        self.assertEqual(self.agent.ingest(json.dumps(first).encode(), "a" * 40)[0], 202)
+        self.assertEqual(self.agent.ingest(json.dumps(second).encode(), "a" * 40)[0], 503)
+        self.assertEqual(self.state.due()[0], first["eventId"])
+
     def test_plaintext_external_endpoint_is_refused(self):
         with self.assertRaises(ValueError):
             EdgeAgent(self.state, "pi-farm-1", {"pivot-1"}, "a" * 40, "b" * 40,
