@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac,randomUUID} from 'node:crypto';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import pg from 'pg';
 import {buildApp} from '../src/app.js';
 import {farmEdgeEvent,verifyFarmEdgeSignature} from '../src/edge.js';
@@ -38,7 +38,7 @@ test('gateway signature, source scope, replay conflicts and farm access',
   const previous=process.env.SMART_FARMER_EDGE_GATEWAYS;
   const app=buildApp(db,'http://localhost:5173');
   try{
-    for(const name of ['001_initial.sql','002_edge_observations.sql'])
+    for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(name=>name.endsWith('.sql')).sort())
       await db.query(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
     const register=async(username:string)=> (await app.inject({
       method:'POST',url:'/v1/register',
