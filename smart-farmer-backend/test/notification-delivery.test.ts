@@ -109,6 +109,11 @@ test("encrypted request and synchronous commit precede POST; resumed retries kee
     assert.equal(request.body, call.body);
     assert.equal(typeof JSON.parse(call.body).html, "string");
     assert.ok(JSON.parse(call.body).html.includes('lang="sn"'));
+    const logo = JSON.parse(call.body).attachments;
+    assert.equal(logo.length, 1);
+    assert.equal(logo[0].content_id, "onesa-company-logo");
+    assert.equal(logo[0].content_type, "image/png");
+    assert.ok(Buffer.from(logo[0].content, "base64").subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
     assert.equal(request.recipientHash, digest(item.address));
     assert.ok(!JSON.stringify(frozen.request_cipher).includes(item.address));
     assert.ok(!JSON.stringify(request).includes(process.env.RESEND_API_KEY!));
@@ -188,6 +193,7 @@ test("a stored plain-text request from before HTML support is sent without rewri
   const request = prepareNotificationRequest("email", item.address, { title: "Legacy notice", body: "Original plain-text notice" }, item.id);
   const legacy = JSON.parse(request.body);
   delete legacy.html;
+  delete legacy.attachments;
   request.body = JSON.stringify(legacy);
   request.bodyHash = digest(request.body);
   await f.db.query("UPDATE notification_deliveries SET request_cipher=$2,request_body_hash=$3,request_prepared_at=$4 WHERE id=$1", [item.id, sealNotificationRequest(request, row), request.bodyHash, request.preparedAt]);

@@ -1,25 +1,26 @@
 // Palette mirrors smart-farmer-frontend/web/src/style.css; email dark mode uses the same forest/cream colors.
 // Self-contained transactional email renderer. Dynamic values are escaped once.
 const shell = String.raw`<!doctype html>
-<html lang="@@LANG@@"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>@@TITLE@@</title>
-<style>body{margin:0;padding:0}table{border-collapse:collapse}a{color:@@ACCENT@@}p{margin:0 0 18px} @media(max-width:620px){.outer{padding:24px 12px!important}.content{padding:28px 24px!important}.heading{font-size:28px!important;line-height:34px!important}.brand{padding:24px!important}.footer{padding:24px 12px!important}} @media(prefers-color-scheme:dark){.canvas{background:#102119!important}.card,.brand{background:#173f2e!important}.card{border-color:#64756b!important}.ink{color:#f5f6f1!important}.copy{color:#e8f1e5!important}.muted{color:#c0cfc2!important}.panel{background:#20382d!important;border-color:#64756b!important}.rule{border-color:#64756b!important}.label,.url{color:#e8f1e5!important}.accent-fill,.button{background:#e8f1e5!important;color:#173f2e!important}.button-label{color:#173f2e!important;border-color:#e8f1e5!important}}</style></head>
-<body class="canvas" style="background:#f5f6f1;color:#20382d;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">@@PREHEADER@@</div>
-<table role="presentation" width="100%" class="canvas" style="background:#f5f6f1;"><tr><td class="outer" align="center" style="padding:40px 16px;">
+<html lang="@@LANG@@"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"><title>@@TITLE@@</title>
+<style>body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}body{margin:0;padding:0}table{border-collapse:collapse}img{border:0;outline:none;text-decoration:none}a:focus-visible{outline:3px solid @@ACCENT@@;outline-offset:4px}p{margin:0 0 18px}@media(max-width:620px){.outer{padding:20px 12px!important}.content{padding:28px 22px!important}.heading{font-size:27px!important;line-height:33px!important}.footer{padding:24px 22px!important}}@media(prefers-color-scheme:dark){.canvas{background:#102119!important}.card{background:#173f2e!important;border-color:#64756b!important}.ink{color:#f5f6f1!important}.copy{color:#e8f1e5!important}.muted{color:#c0cfc2!important}.panel,.notice{background:#20382d!important;border-color:#e8f1e5!important}.rule{border-color:#64756b!important}.url{color:#e8f1e5!important}.accent-fill,.button{background:#e8f1e5!important;color:#173f2e!important}.button-label{color:#173f2e!important;border-color:#e8f1e5!important}}</style></head>
+<body class="canvas" style="background:#f5f6f1;color:#20382d;font-family:Arial,Helvetica,sans-serif;">
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;mso-hide:all;">@@PREHEADER@@</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="outer" align="center" style="padding:40px 16px;">
 <!--[if mso]><table role="presentation" width="600" align="center"><tr><td><![endif]-->
-<table role="presentation" width="100%" class="card" style="max-width:600px;background:#ffffff;border:1px solid #dfe5dc;border-radius:16px;">
-<tr><td class="accent-fill" style="height:5px;background:@@ACCENT@@;font-size:1px;line-height:5px;">&nbsp;</td></tr>
-<tr><td class="brand rule" style="padding:28px 36px;border-bottom:1px solid #dfe5dc;"><table role="presentation" width="100%"><tr><td width="44" style="width:44px;"><table role="presentation"><tr><td class="accent-fill" align="center" width="40" height="40" style="width:40px;height:40px;background:@@ACCENT@@;color:#ffffff;border-radius:10px;font-size:15px;font-weight:bold;letter-spacing:-.5px;">@@MONOGRAM@@</td></tr></table></td><td style="padding-left:12px;"><div class="muted" style="font-size:10px;line-height:15px;letter-spacing:2px;color:#64756b;font-weight:bold;">ONESA</div><div class="ink" style="font-size:18px;line-height:24px;font-weight:bold;color:#20382d;">@@BRAND@@</div></td></tr></table></td></tr>
-<tr><td class="content" style="padding:36px;">
-<p class="label" style="font-size:11px;line-height:16px;letter-spacing:1.8px;color:#235f43;font-weight:bold;margin:0 0 14px;">@@LABEL@@</p>
-<h1 class="heading ink" style="font-size:32px;line-height:39px;letter-spacing:-.8px;color:#20382d;margin:0 0 24px;font-weight:700;overflow-wrap:anywhere;">@@HEADING@@</h1>
-<div class="copy" style="font-size:16px;line-height:26px;color:#64756b;overflow-wrap:anywhere;word-break:break-word;">@@CONTENT@@</div>
+<table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border:1px solid #dfe5dc;border-radius:16px;border-collapse:separate;border-spacing:0;">
+<tr><td class="accent-fill" style="height:4px;background:@@ACCENT@@;border-radius:15px 15px 0 0;font-size:0;line-height:4px;">&nbsp;</td></tr>
+<tr><td class="content" style="padding:36px 40px 32px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 32px;"><tr><td width="44" style="width:44px;vertical-align:middle;"><img src="cid:onesa-company-logo" width="44" height="44" alt="" style="display:block;width:44px;height:44px;"></td><td style="padding-left:12px;"><div class="ink" style="font-size:23px;line-height:28px;font-weight:700;letter-spacing:3px;color:#20382d;">ONESA</div><div class="muted" style="margin-top:3px;font-size:11px;line-height:17px;letter-spacing:.6px;color:#566952;">@@BRAND@@</div></td></tr></table>
+<h1 class="heading ink" style="margin:0 0 18px;font-size:32px;line-height:39px;font-weight:700;letter-spacing:-.7px;color:#20382d;overflow-wrap:anywhere;">@@HEADING@@</h1>
+<div class="copy" style="font-size:16px;line-height:27px;color:#566952;overflow-wrap:anywhere;word-break:break-word;">@@CONTENT@@</div>
 @@ACTION@@
 @@FALLBACK@@
 </td></tr>
-<tr><td class="panel rule" style="padding:20px 36px;background:@@SOFT@@;border-top:1px solid #dfe5dc;"><p class="muted" style="font-size:12px;line-height:20px;color:#566952;margin:0;">@@NOTE@@</p></td></tr>
-</table>
-<table role="presentation" width="100%" style="max-width:600px;"><tr><td class="footer muted" align="center" style="padding:24px 20px;color:#566952;font-size:11px;line-height:19px;letter-spacing:.2px;">@@BRAND@@ &nbsp;&middot;&nbsp; ONESA<br>@@FOOTER@@</td></tr></table>
+<tr><td class="footer rule" style="padding:24px 40px 28px;border-top:1px solid #dfe5dc;border-radius:0 0 15px 15px;">
+<p class="muted" style="margin:0 0 14px;font-size:11px;line-height:18px;color:#566952;">@@FOOTER@@</p>
+<p class="muted" style="margin:0 0 8px;font-size:12px;line-height:20px;color:#566952;"><strong>Onesa UG (haftungsbeschränkt)</strong><br>Steinhofweg 47, 69123 Heidelberg, Germany<br>Geschäftsführer / Managing Director: Andrew Gotora<br>Amtsgericht Mannheim, HRB 757830</p>
+<p class="muted" style="margin:0;font-size:12px;line-height:20px;color:#566952;"><a class="url" href="mailto:info@onesa.eu" style="color:#235f43;text-decoration:underline;">info@onesa.eu</a> &nbsp;&middot;&nbsp; +49 151 474 16152</p>
+</td></tr></table>
 <!--[if mso]></td></tr></table><![endif]-->
 </td></tr></table></body></html>`;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

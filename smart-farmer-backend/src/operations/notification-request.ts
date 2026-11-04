@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ApiError } from "../context.js";
 import { digest, fetchJson, openSecret, safeEndpoint, sealSecret } from "./common.js";
 import { renderNotificationEmail } from "./email-template.js";
+import { emailBrand } from "./email-brand.js";
 
 // Resend retains idempotency keys for 24 hours. Leave an hour for clock/network
 // uncertainty; a late retry requires reconciliation, never a fresh delivery ID.
@@ -67,7 +68,7 @@ export function prepareNotificationRequest(
   const email = {
     from: process.env.NOTIFICATION_FROM, to: [address], subject: content.title, text: content.body,
   };
-  const richEmail = kind === "email" ? { ...email, html: renderNotificationEmail(content, id.startsWith("verify:")) } : email;
+  const richEmail = kind === "email" ? { ...email, html: renderNotificationEmail(content, id.startsWith("verify:")), attachments: [{ filename: emailBrand.filename, content: emailBrand.base64, content_type: "image/png", content_id: emailBrand.cid }] } : email;
   // Escaping long content can expand HTML. Preserve the full plain-text message
   // within the existing request-size limit instead of dropping accepted content.
   const emailBody = Buffer.byteLength(JSON.stringify(richEmail)) <= 16384 ? richEmail : email;
@@ -95,6 +96,9 @@ function validateBody(request: NotificationRequest) {
       const body = z.object({
         from: z.string().refine(validNotificationFrom), to: z.array(z.email()).length(1),
         subject: z.string(), text: z.string(), html: z.string().min(1).optional(),
+        // Permit the pinned inline artwork while retaining old HTML/plain-text requests.
+        // Its original bytes remain frozen and are never replaced during a retry.
+        attachments: z.array(z.object({ filename: z.literal(emailBrand.filename), content: z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]+={0,2}$/), content_type: z.literal("image/png"), content_id: z.literal(emailBrand.cid) }).strict()).length(1).optional(),
       }).strict().parse(raw);
       address = body.to[0];
     } else if (request.channel === "push") {
