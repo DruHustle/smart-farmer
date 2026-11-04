@@ -131,8 +131,10 @@ jobs:
           docker build --tag smart-farmer-db:ci --file smart-farmer-backend/Dockerfile.database smart-farmer-backend
           candidate_db=$(docker run --detach --tmpfs /var/lib/postgresql/data:rw -e POSTGRES_PASSWORD=ci-only smart-farmer-db:ci)
           trap 'docker rm -f "$candidate_db" >/dev/null' EXIT
-          for attempt in $(seq 1 60); do docker exec "$candidate_db" pg_isready -U postgres && break; sleep 1; done
-          docker exec "$candidate_db" psql -U postgres -c 'SELECT 1'
+          # The entrypoint's temporary initialization server accepts Unix-socket
+          # connections, then stops. TCP is enabled only for the final server.
+          for attempt in $(seq 1 60); do docker exec "$candidate_db" pg_isready -h 127.0.0.1 -U postgres && break; sleep 1; done
+          docker exec -e PGPASSWORD=ci-only "$candidate_db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -c 'SELECT 1'
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
           mkdir -p "$RUNNER_TEMP/private-media-test"
           chmod 777 "$RUNNER_TEMP/private-media-test"
