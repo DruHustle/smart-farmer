@@ -133,6 +133,9 @@ jobs:
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
+      # On the Intel runner XCTest became ready just after Maestro's 120 s default.
+      # Bound driver startup separately from the unchanged application assertions.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
