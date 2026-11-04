@@ -53,6 +53,7 @@ jobs:
           chmod 600 "$FARMER_RUNTIME_ENV_FILE"
           export FARMER_API_IMAGE="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           export FARMER_WEB_IMAGE="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          export FARMER_DB_IMAGE="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
           export FARMER_SOURCE_REVISION="cccccccccccccccccccccccccccccccccccccccc"
           export FARMER_WEB_ORIGIN="https://farmer.onesa.eu" FARMER_API_PORT=18131 FARMER_WEB_PORT=18132
           export FARMER_POSTGRES_USER=farm FARMER_POSTGRES_PASSWORD=ci-only FARMER_POSTGRES_DB=farm
@@ -127,7 +128,16 @@ jobs:
           POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
           docker build --tag smart-farmer-api:ci smart-farmer-backend
           docker run --rm --entrypoint node smart-farmer-api:ci -e 'import("sharp").then(async ({default: sharp}) => { const image = await sharp({create:{width:1,height:1,channels:3,background:"red"}}).png().toBuffer(); if (!image.length) process.exit(1); })'
+          docker build --tag smart-farmer-db:ci --file smart-farmer-backend/Dockerfile.database smart-farmer-backend
+          candidate_db=$(docker run --detach --tmpfs /var/lib/postgresql/data:rw -e POSTGRES_PASSWORD=ci-only smart-farmer-db:ci)
+          trap 'docker rm -f "$candidate_db" >/dev/null' EXIT
+          for attempt in $(seq 1 60); do docker exec "$candidate_db" pg_isready -U postgres && break; sleep 1; done
+          docker exec "$candidate_db" psql -U postgres -c 'SELECT 1'
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
+          mkdir -p "$RUNNER_TEMP/private-media-test"
+          chmod 777 "$RUNNER_TEMP/private-media-test"
+          docker run --rm --mount "type=bind,src=$RUNNER_TEMP/private-media-test,dst=/scratch" --entrypoint node smart-farmer-api:ci -e 'const fs=require("node:fs");fs.mkdirSync("/scratch/farm",{mode:0o700});fs.writeFileSync("/scratch/farm/object","synthetic",{mode:0o600})'
+          docker run --rm --mount "type=bind,src=$RUNNER_TEMP/private-media-test,dst=/scratch,readonly" --entrypoint node smart-farmer-backup:ci -e 'if(require("node:fs").readFileSync("/scratch/farm/object","utf8")!=="synthetic")process.exit(1)'
           docker run --rm --entrypoint node smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_restore smart-farmer-backup:ci --version

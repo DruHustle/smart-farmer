@@ -25,7 +25,7 @@ services:
   db:
     # Optional dedicated local database. Do not start if an existing database is in use.
     profiles: [local-db]
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    image: ${FARMER_DB_IMAGE:-smart-farmer-db:unconfigured}
     environment:
       POSTGRES_USER: ${FARMER_POSTGRES_USER:-smart_farmer}
       POSTGRES_DB: ${FARMER_POSTGRES_DB:-smart_farmer}

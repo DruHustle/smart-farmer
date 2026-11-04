@@ -57,6 +57,8 @@ export async function validate(env) {
       localCredentials[1] !== env.FARMER_POSTGRES_PASSWORD ||
       localCredentials[2] !== (env.FARMER_POSTGRES_DB || 'smart_farmer')))
     fail('Dedicated local database and runtime credentials must match');
+  if (localCredentials && !immutable.test(env.FARMER_DB_IMAGE || ''))
+    fail('FARMER_DB_IMAGE must be an immutable SHA-256 image reference for the local database');
   const proxies = (runtime.TRUST_PROXY_IPS || '').split(',').map(x => x.trim()).filter(Boolean);
   if (proxies.length > 8 || proxies.some(x => !isIP(x))) fail('TRUST_PROXY_IPS must contain at most eight exact IP addresses');
   return true;
