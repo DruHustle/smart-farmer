@@ -28,7 +28,7 @@ export function displayTime(value: string, _language: 'sn' | 'nd', timeZone: str
 }
 export function displayDate(value: string, _language: 'sn' | 'nd'): string {
   const date = value.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return '—';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) return '—';
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
 }
 export function displayNumber(value: unknown, language: 'sn' | 'nd', decimals = 3): string {
@@ -36,5 +36,6 @@ export function displayNumber(value: unknown, language: 'sn' | 'nd', decimals = 
   return new Intl.NumberFormat(`${language}-ZW`, {maximumFractionDigits: decimals}).format(Number(value));
 }
 export function displayMoney(value: unknown, currency: string, language: 'sn' | 'nd'): string {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
   return `${currency} ${new Intl.NumberFormat(`${language}-ZW`, {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value))}`;
 }

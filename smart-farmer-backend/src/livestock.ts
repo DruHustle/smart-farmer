@@ -5,6 +5,7 @@ import {z} from 'zod';
 import {ApiError,audit,checkReplay,manageRoles,writeRoles,type Context} from './context.js';
 import {uuid,when,quantity,money,currency,stockMovement,finance,assertReleaseAllowed} from './core.js';
 import {sha256} from './security.js';
+import {propagateRestrictions} from './product/restrictions.js';
 import {reconcileAnimalReservations} from './product/market-ledger.js';
 import {listQuery,page} from './product/common.js';
 
@@ -19,12 +20,7 @@ type Event=z.infer<typeof eventInput>;
 function requireCount(e:Event) {if(e.count===null||e.count<=0)throw new ApiError('positive_count_required');return e.count;}
 function knownCount(p:Record<string,unknown>) {if(p.current_count===null)throw new ApiError('opening_count_required',409);return Number(p.current_count);}
 function family(type:string) {if(['broiler','layer','breeder','hatchery'].includes(type))return 'chicken';if(type.startsWith('rabbit_'))return 'rabbit';if(type.startsWith('fish'))return 'fish';return 'crop';}
-async function propagateRestrictions(c:pg.PoolClient,farmId:string,sourceId:string,targetId:string,actorId:string) {
-  await c.query(`INSERT INTO treatment_restrictions(id,farm_id,project_id,source_project_id,starts_at,ends_at,scope,reason,authorized_by,created_by,origin_restriction_id)
-    SELECT gen_random_uuid(),r.farm_id,$3,$2,r.starts_at,r.ends_at,r.scope,r.reason,r.authorized_by,$4,COALESCE(r.origin_restriction_id,r.id)
-    FROM treatment_restrictions r WHERE r.farm_id=$1 AND r.project_id=$2 AND r.ends_at>now()
-    AND NOT EXISTS(SELECT 1 FROM treatment_restrictions x WHERE x.farm_id=$1 AND x.project_id=$3 AND x.origin_restriction_id=COALESCE(r.origin_restriction_id,r.id))`,[farmId,sourceId,targetId,actorId]);
-}
+
 
 export function registerLivestock(app:FastifyInstance,ctx:Context) {
   const {db,user,member,transaction}=ctx;
@@ -36,7 +32,7 @@ export function registerLivestock(app:FastifyInstance,ctx:Context) {
     return page(r.rows,q.limit);
   });
   app.post('/v1/farms/:farmId/projects/:projectId/events',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=params.parse(req.params);if(!await member(farmId,actor,writeRoles))throw new ApiError('not_found',404);const e=eventInput.parse(req.body);
+    const actor=await user(req,reply);if(!actor)return;const {farmId,projectId}=params.parse(req.params);if(!await member(farmId,actor,[...writeRoles,'adviser']))throw new ApiError('not_found',404);const e=eventInput.parse(req.body);if(await member(farmId,actor,['adviser'])&&(!['observation','care','water_observation','growth_sample'].includes(e.type)||e.count!==null||e.destinationProjectId!==null||e.stockItemId!==null||e.amount!==null||e.historicalOnly||e.metadata.costAllocations!==undefined||e.metadata.identityIds!==undefined||e.metadata.followUpAt!==undefined))throw new ApiError('adviser_observation_only',403);
     if((e.historicalOnly||['sale','egg_sale','adjustment','close'].includes(e.type))&&!await member(farmId,actor,manageRoles))throw new ApiError('management_permission_required',403);
     if((e.amount!==null||e.metadata.costAllocations!==undefined)&&!await member(farmId,actor,manageRoles))throw new ApiError('financial_permission_required',403);
     if(e.destinationProjectId===projectId)throw new ApiError('same_project_transfer');
@@ -45,7 +41,7 @@ export function registerLivestock(app:FastifyInstance,ctx:Context) {
       if(!inserted.rowCount){const prior=await c.query('SELECT payload_hash,actor_id,project_id FROM animal_events WHERE farm_id=$1 AND id=$2',[farmId,e.id]);if(!prior.rowCount||prior.rows[0].project_id!==projectId)throw new ApiError('idempotency_conflict',409);checkReplay(prior.rows[0],hash,actor);return false;}
       const projectIds=[projectId,...(e.destinationProjectId?[e.destinationProjectId]:[])];
       let eggSourceId:string|null=null;
-      if(e.type==='incubation'&&e.stockItemId){const s=await c.query('SELECT project_id FROM stock_items WHERE farm_id=$1 AND id=$2',[farmId,e.stockItemId]);eggSourceId=s.rows[0]?.project_id??null;if(eggSourceId)projectIds.push(eggSourceId);}
+      if(['incubation','feed'].includes(e.type)&&e.stockItemId){const s=await c.query('SELECT project_id FROM stock_items WHERE farm_id=$1 AND id=$2',[farmId,e.stockItemId]);eggSourceId=s.rows[0]?.project_id??null;if(eggSourceId)projectIds.push(eggSourceId);}
       const projects=await c.query('SELECT * FROM projects WHERE farm_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR NO KEY UPDATE',[farmId,[...new Set(projectIds)]]);
       const p=projects.rows.find(x=>x.id===projectId),dest=projects.rows.find(x=>x.id===e.destinationProjectId);
       if(!p)throw new ApiError('project_not_found',404);if(p.enterprise_type==='crop')throw new ApiError('animal_project_required');
@@ -112,7 +108,7 @@ export function registerLivestock(app:FastifyInstance,ctx:Context) {
         const duplicate=await c.query("SELECT id FROM animal_events WHERE farm_id=$1 AND type='kindling' AND metadata->>'matingEventId'=$2 AND id<>$3",[farmId,m.matingEventId,e.id]);if(duplicate.rowCount)throw new ApiError('kindling_already_recorded',409);
         const n=e.count;if(n+m.stillborn===0)throw new ApiError('birth_count_required');if(dest)knownCount(dest);destDelta=n;
       }else if(e.type==='feed'){
-        if(!e.stockItemId||!e.quantity||!e.unit)throw new ApiError('feed_quantity_required');
+        if(!e.stockItemId||!e.quantity||!e.unit)throw new ApiError('feed_quantity_required');if(eggSourceId&&eggSourceId!==projectId){await assertReleaseAllowed(c,farmId,eggSourceId,'transfer');await propagateRestrictions(c,farmId,eggSourceId,projectId,actor);}
         const item=await stockMovement(c,{farmId,itemId:e.stockItemId,projectId,actorId:actor,kind:'feed',quantity:-e.quantity,unit:e.unit,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
         if(item.unit_cost!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:Math.round(Math.abs(item.delta)*Number(item.unit_cost)*100)/100,currency:item.currency,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
       }else if(e.type==='harvest'){

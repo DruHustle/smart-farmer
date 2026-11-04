@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
   pull_request:
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
 permissions:
   contents: read
 concurrency:
@@ -43,6 +43,15 @@ jobs:
         with: {node-version: 24}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
+      - name: Reserve disk for Android compilation and emulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          df -h "$RUNNER_TEMP" > "$RUNNER_TEMP/native-evidence/android-disk.txt"
+          # These unrelated preinstalled toolchains belong only to this disposable runner.
+          # Keep Android SDK/NDK, Java, Node and PostgreSQL intact.
+          sudo rm -rf /usr/share/dotnet /usr/local/.ghcup /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
       - name: Cache Android compiler dependencies for this native configuration
@@ -77,6 +86,11 @@ jobs:
         with:
           path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
           key: ${{ steps.android-binary.outputs.cache-primary-key }}
+      - name: Release compiler intermediates before installing emulator
+        run: |
+          set -euo pipefail
+          rm -rf smart-farmer-frontend/mobile/android/app/.cxx smart-farmer-frontend/mobile/android/app/build/intermediates/cxx smart-farmer-frontend/mobile/node_modules/react-native/ReactAndroid/.cxx
+          df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - name: Start isolated API and Metro
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
       - name: Install pinned Maestro CLI

@@ -60,6 +60,15 @@ test('equipment: capability gates, freshness, interlocks, command replay, feedba
     assert.equal((await f.request('POST','/v1/edge/commands/next',{},edge)).json().command,null);
     const expires=command();await f.request('POST',`${f.prefix}/assets/${asset}/commands`,expires);await f.db.query("UPDATE equipment_commands SET expires_at=now()-interval '1 second' WHERE id=$1",[expires.id]);await runMaintenance(f.db);
     assert.equal((await f.db.query('SELECT status FROM equipment_commands WHERE id=$1',[expires.id])).rows[0].status,'expired');
+    const first=(await f.request('GET',`${f.prefix}/assets/${asset}/commands?limit=1`)).json();
+    const second=(await f.request('GET',`${f.prefix}/assets/${asset}/commands?limit=1&cursor=${first.nextCursor}`)).json();
+    const third=(await f.request('GET',`${f.prefix}/assets/${asset}/commands?limit=1&cursor=${second.nextCursor}`)).json();
+    assert.deepEqual([first.items[0].id,second.items[0].id,third.items[0].id],[expires.id,lost.id,c.id]);
+    assert.equal(third.nextCursor,null);
+    const firstAsset=(await f.request('GET',`${f.prefix}/assets?limit=1`)).json();
+    const nextAsset=(await f.request('GET',`${f.prefix}/assets?limit=1&cursor=${firstAsset.nextCursor}`)).json();
+    assert.equal(firstAsset.items.length,1);assert.equal(nextAsset.items.length,1);
+    assert.notEqual(firstAsset.items[0].id,nextAsset.items[0].id);assert.equal(nextAsset.nextCursor,null);
     const outsider=await f.register('outsider');assert.equal((await f.request('GET',`${f.prefix}/assets`,undefined,outsider)).statusCode,404);
     await f.request('POST',`${f.prefix}/assets/${asset}/gateway-token`,{});assert.equal((await f.request('POST','/v1/edge/commands/next',{},edge)).statusCode,401,'rotation invalidates prior device credential');
   }finally{await f.close();}

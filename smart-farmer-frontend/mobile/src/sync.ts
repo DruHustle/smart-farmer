@@ -53,13 +53,13 @@ export class Synchronizer {
     }
     if (!options.media) return result;
     for (const original of await this.repository.attachments(farmId)) {
-      if (original.state !== 'pending' || original.attempts >= 5 || !await this.repository.accepted(farmId, original.activityId)) continue;
+      if (original.state !== 'pending' || original.attempts >= 5 || !original.assetId && (!original.activityId || !await this.repository.accepted(farmId, original.activityId))) continue;
       const attachment = { ...original, attempts: original.attempts + 1 };
       await this.repository.updateAttachment(attachment);
       try {
         await this.api.upload(`/v1/farms/${farmId}/media`, {
-          id: attachment.id, activityId: attachment.activityId, mimeType: attachment.mimeType,
-          filename: attachment.filename, dataBase64: attachment.dataBase64,
+          id: attachment.id, ...(attachment.assetId ? { assetId: attachment.assetId } : { activityId: attachment.activityId }), mimeType: attachment.mimeType,
+          filename: attachment.filename, dataBase64: attachment.dataBase64, ...(attachment.financial ? { financial: true } : {}),
         }, percent => options.onProgress?.(attachment.id, percent));
         await this.repository.updateAttachment({ ...attachment, state: 'synced', dataBase64: '', lastError: null });
         result.mediaUploaded++;

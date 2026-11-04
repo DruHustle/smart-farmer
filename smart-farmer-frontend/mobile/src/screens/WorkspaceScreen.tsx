@@ -29,7 +29,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
       {tab === 'today' ? <TodayScreen work={work} language={language} onRecord={() => setTab('record')} /> : null}
       {tab === 'farm' ? <FarmScreen work={work} language={language} /> : null}
       {tab === 'record' ? <RecordScreen work={work} language={language} nativeBusy={nativeBusy} onNativePrompt={onNativePrompt} /> : null}
-      {tab === 'more' ? <MoreScreen work={work} language={language} onLogout={onLogout} onLock={onLock} /> : null}
+      {tab === 'more' ? <MoreScreen work={work} language={language} onLogout={onLogout} onLock={onLock} onNativePrompt={onNativePrompt} /> : null}
     </ScrollView>
     <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>
       {(['today', 'farm', 'record', 'more'] as const).map(value => <Pressable key={value} testID={`tab-${value}`} disabled={nativeBusy} accessibilityRole="tab" accessibilityState={{ selected: tab === value, disabled: nativeBusy }} accessibilityLabel={t[value]} onPress={() => { setTab(value); work.setNotice(''); work.setError(null); }} style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, backgroundColor: tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }]}>{t[value]}</Text></Pressable>)}

@@ -513,7 +513,7 @@ export function registerFarmOperations(app: FastifyInstance, ctx: Context) {
       if (process.env.OPEN_METEO_API_KEY)
         url.searchParams.set("apikey", process.env.OPEN_METEO_API_KEY);
       const data = await fetchJson(url);
-      const h = z
+      const hourly = z
         .object({
           time: z.array(z.number()).min(1).max(100),
           temperature_2m: z.array(z.number().nullable()).max(100),
@@ -521,7 +521,10 @@ export function registerFarmOperations(app: FastifyInstance, ctx: Context) {
           precipitation: z.array(z.number().nullable()).max(100),
           wind_speed_10m: z.array(z.number().nullable()).max(100),
         })
-        .parse(data.hourly);
+        .safeParse(data.hourly);
+      if (!hourly.success)
+        throw new ApiError("invalid_provider_response", 502);
+      const h = hourly.data;
       if (Object.values(h).some((x) => x.length !== h.time.length))
         throw new ApiError("invalid_provider_response", 502);
       const normalized = {
@@ -670,6 +673,18 @@ export function registerFarmOperations(app: FastifyInstance, ctx: Context) {
           referenceIds: refs.map((x) => x.id),
           proposals: [],
         };
+      const records = (
+        await ctx.db.query(
+          "SELECT type,observed_at,recorded_at,note,details FROM project_records WHERE farm_id=$1 AND project_id=$2 ORDER BY observed_at DESC LIMIT 12",
+          [a.farmId, projectId],
+        )
+      ).rows;
+      const plans = (
+        await ctx.db.query(
+          "SELECT id,status,anchor_at,note,template_snapshot FROM project_plans WHERE farm_id=$1 AND project_id=$2 ORDER BY created_at DESC LIMIT 3",
+          [a.farmId, projectId],
+        )
+      ).rows;
       const url = safeEndpoint(process.env.AI_BASE_URL!, true);
       url.pathname = url.pathname.replace(/\/$/, "") + "/chat/completions";
       const response = await fetchJson(
@@ -701,6 +716,8 @@ export function registerFarmOperations(app: FastifyInstance, ctx: Context) {
                   project: p,
                   tasks,
                   references: refs,
+                  recordedObservations: records,
+                  recordedPlans: plans,
                 }),
               },
             ],
@@ -714,13 +731,16 @@ export function registerFarmOperations(app: FastifyInstance, ctx: Context) {
       } catch {
         throw new ApiError("invalid_provider_response", 502);
       }
-      const answer = z
+      const answerResult = z
         .object({
           answer: z.string().min(1).max(15000),
           referenceIds: z.array(uuid).max(8),
           limitations: z.array(z.string().max(500)).max(15),
         })
-        .parse(parsed);
+        .safeParse(parsed);
+      if (!answerResult.success)
+        throw new ApiError("invalid_provider_response", 502);
+      const answer = answerResult.data;
       if (answer.referenceIds.some((id) => !refs.some((r) => r.id === id)))
         throw new ApiError("unverified_ai_reference", 502);
       await ctx.db.query(

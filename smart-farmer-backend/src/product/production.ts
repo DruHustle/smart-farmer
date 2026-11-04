@@ -1,37 +1,413 @@
-import type {FastifyInstance} from 'fastify';
-import type pg from 'pg';
-import {z} from 'zod';
-import {ApiError,manageRoles,type Context} from '../context.js';
-import {uuid} from '../core.js';
-import {auth,listQuery,page,row} from './common.js';
-import {reportQuery,reportSummary} from './finance.js';
-export async function performance(db:pg.Pool|pg.PoolClient,farmId:string,projectId:string,from?:string,to?:string){
- const p=row((await db.query('SELECT * FROM projects WHERE farm_id=$1 AND id=$2',[farmId,projectId])).rows[0]);
- const events=(await db.query('SELECT type,count,quantity,unit,metadata,observed_at,project_id,destination_project_id FROM animal_events WHERE farm_id=$1 AND NOT historical_only AND (project_id=$2 OR destination_project_id=$2) AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) ORDER BY observed_at,id',[farmId,projectId,from??null,to??null])).rows;
- const outgoing=events.filter(e=>e.project_id===projectId);const sum=(types:string[])=>outgoing.filter(e=>types.includes(e.type)).reduce((n,e)=>n+Number(e.count??0),0);
- const mass=(type:string)=>outgoing.filter(e=>e.type===type&&['g','kg'].includes(e.unit)).reduce((n,e)=>n+Number(e.quantity)/(e.unit==='g'?1000:1),0);
- const hatch=outgoing.filter(e=>['hatch','fish_hatch'].includes(e.type)),eggsProcessed=hatch.reduce((n,e)=>n+Number(e.metadata.eggsProcessed??0),0),liveHatched=hatch.reduce((n,e)=>n+Number(e.count??0),0),feedKg=mass('feed'),harvestKg=mass('harvest');
- const samples=outgoing.filter(e=>e.type==='growth_sample').map(e=>({observedAt:e.observed_at,sampleSize:e.metadata.sampleSize,averageKg:e.metadata.measurementBasis==='total_sample_weight'?Number(e.quantity)/(e.unit==='g'?1000:1)/Number(e.metadata.sampleSize):Number(e.quantity)/(e.unit==='g'?1000:1),basis:'sample_estimate'}));
- const latest=samples.at(-1)??null;const incoming=events.filter(e=>e.destination_project_id===projectId).reduce((n,e)=>n+Number(e.count??0),0),acquired=sum(['acquisition','stocking']);
- const mortality=sum(['mortality']),baseline=p.opening_count===null?null:Number(p.opening_count)+incoming+acquired;
- const output=(await db.query("SELECT kind,unit,sum(quantity)::text AS quantity FROM stock_movements m WHERE farm_id=$1 AND project_id=$2 AND kind IN('harvest','egg_collection','egg_sale','egg_loss','egg_consumption','sale','correction') AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) GROUP BY kind,unit ORDER BY kind,unit",[farmId,projectId,from??null,to??null])).rows;
- const tasks=(await db.query("SELECT status,count(*)::int AS count FROM tasks WHERE farm_id=$1 AND project_id=$2 AND ($3::timestamptz IS NULL OR due_at>=$3) AND ($4::timestamptz IS NULL OR due_at<$4) GROUP BY status",[farmId,projectId,from??null,to??null])).rows;
- const restrictions=(await db.query('SELECT id,starts_at,ends_at,scope,reason,authorized_by FROM treatment_restrictions WHERE farm_id=$1 AND project_id=$2 AND ends_at>clock_timestamp() ORDER BY starts_at',[farmId,projectId])).rows;
- const usage=(await db.query("SELECT type,details->>'unit' AS unit,sum((details->>'quantity')::numeric)::text AS quantity,count(*)::int AS records FROM project_records WHERE farm_id=$1 AND project_id=$2 AND type IN('fuel','labour','irrigation_session') AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) GROUP BY type,details->>'unit' ORDER BY type,unit",[farmId,projectId,from??null,to??null])).rows;
- const workByDay=(await db.query("SELECT (a.observed_at AT TIME ZONE f.timezone)::date AS date,a.kind,a.unit,count(*)::int AS records,sum(a.quantity)::text AS quantity FROM activities a JOIN farms f ON f.id=a.farm_id WHERE a.farm_id=$1 AND a.project_id=$2 AND a.kind<>'cost' AND NOT EXISTS(SELECT 1 FROM activity_corrections c WHERE c.farm_id=a.farm_id AND c.activity_id=a.id AND c.action='reverse') AND ($3::timestamptz IS NULL OR a.observed_at>=$3) AND ($4::timestamptz IS NULL OR a.observed_at<$4) GROUP BY 1,a.kind,a.unit ORDER BY 1,a.kind,a.unit",[farmId,projectId,from??null,to??null])).rows;
- const breeding=(await db.query("SELECT mating.id AS mating_event_id,mating.observed_at,mating.metadata->>'damId' AS dam_id,mating.metadata->>'sireId' AS sire_id,birth.id AS birth_event_id,birth.count AS live_count,birth.metadata->>'stillborn' AS stillborn FROM animal_events mating LEFT JOIN animal_events birth ON birth.farm_id=mating.farm_id AND birth.type='kindling' AND birth.metadata->>'matingEventId'=mating.id::text WHERE mating.farm_id=$1 AND mating.project_id=$2 AND mating.type='mating' AND ($3::timestamptz IS NULL OR mating.observed_at>=$3) AND ($4::timestamptz IS NULL OR mating.observed_at<$4) ORDER BY mating.observed_at DESC",[farmId,projectId,from??null,to??null])).rows;
- return {project:p,from:from??null,to:to??null,countBasis:p.count_basis,openingCount:p.opening_count,currentCount:p.current_count,reservedCount:p.reserved_count,recordedMortality:mortality,mortalityRate:!from&&baseline&&p.count_basis==='verified'?mortality/baseline:null,mortalityDenominator:!from?baseline:null,incomingRecordedCount:incoming,acquiredRecordedCount:acquired,liveHatched,eggsProcessed,hatchRate:eggsProcessed?liveHatched/eggsProcessed:null,eggLoss:sum(['egg_loss','egg_disposition']),feedKg,harvestKg,harvestCount:sum(['harvest']),salesCount:sum(['sale']),latestWeightSample:latest,estimatedBiomassKg:latest&&p.current_count!==null?latest.averageKg*Number(p.current_count):null,feedPerHarvestKg:harvestKg?feedKg/harvestKg:null,feedConversionRatio:null,feedConversionMissing:['cohort_measured_weight_gain'],output,tasks,usage,workByDay,restrictions,breeding,missing:[...(p.current_count===null?['opening_count']:[]),...(!latest&&p.enterprise_type!=='crop'?['weight_sample']:[])],historyComplete:false};
+import type { FastifyInstance } from "fastify";
+import type pg from "pg";
+import { z } from "zod";
+import { ApiError, manageRoles, type Context } from "../context.js";
+import { uuid } from "../core.js";
+import { auth, listQuery, page, row } from "./common.js";
+import { reportQuery, reportSummary } from "./finance.js";
+export async function performance(
+  db: pg.Pool | pg.PoolClient,
+  farmId: string,
+  projectId: string,
+  from?: string,
+  to?: string,
+) {
+  const p = row(
+    (
+      await db.query("SELECT * FROM projects WHERE farm_id=$1 AND id=$2", [
+        farmId,
+        projectId,
+      ])
+    ).rows[0],
+  );
+  const events = (
+    await db.query(
+      "SELECT type,count,quantity,unit,metadata,observed_at,project_id,destination_project_id FROM animal_events WHERE farm_id=$1 AND NOT historical_only AND (project_id=$2 OR destination_project_id=$2) AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) ORDER BY observed_at,id",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  const outgoing = events.filter((e) => e.project_id === projectId);
+  const sum = (types: string[]) =>
+    outgoing
+      .filter((e) => types.includes(e.type))
+      .reduce((n, e) => n + Number(e.count ?? 0), 0);
+  const mass = (type: string) =>
+    outgoing
+      .filter((e) => e.type === type && ["g", "kg"].includes(e.unit))
+      .reduce(
+        (n, e) => n + Number(e.quantity) / (e.unit === "g" ? 1000 : 1),
+        0,
+      );
+  const hatch = outgoing.filter((e) =>
+      ["hatch", "fish_hatch"].includes(e.type),
+    ),
+    eggsProcessed = hatch.reduce(
+      (n, e) => n + Number(e.metadata.eggsProcessed ?? 0),
+      0,
+    ),
+    liveHatched = hatch.reduce((n, e) => n + Number(e.count ?? 0), 0),
+    feedKg = mass("feed"),
+    harvestKg = mass("harvest");
+  const samples = outgoing
+    .filter((e) => e.type === "growth_sample")
+    .map((e) => ({
+      observedAt: e.observed_at,
+      sampleSize: e.metadata.sampleSize,
+      averageKg:
+        e.metadata.measurementBasis === "total_sample_weight"
+          ? Number(e.quantity) /
+            (e.unit === "g" ? 1000 : 1) /
+            Number(e.metadata.sampleSize)
+          : Number(e.quantity) / (e.unit === "g" ? 1000 : 1),
+      basis: "sample_estimate",
+    }));
+  const latest = samples.at(-1) ?? null;
+  const incoming = events
+      .filter((e) => e.destination_project_id === projectId)
+      .reduce((n, e) => n + Number(e.count ?? 0), 0),
+    acquired = sum(["acquisition", "stocking"]);
+  const mortality = sum(["mortality"]),
+    baseline =
+      p.opening_count === null
+        ? null
+        : Number(p.opening_count) + incoming + acquired;
+  const output = (
+    await db.query(
+      "SELECT kind,unit,sum(quantity)::text AS quantity FROM stock_movements m WHERE farm_id=$1 AND project_id=$2 AND kind IN('harvest','egg_collection','egg_sale','egg_loss','egg_consumption','sale','correction') AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) GROUP BY kind,unit ORDER BY kind,unit",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  const tasks = (
+    await db.query(
+      "SELECT status,count(*)::int AS count FROM tasks WHERE farm_id=$1 AND project_id=$2 AND ($3::timestamptz IS NULL OR due_at>=$3) AND ($4::timestamptz IS NULL OR due_at<$4) GROUP BY status",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  const restrictions = (
+    await db.query(
+      "SELECT id,starts_at,ends_at,scope,reason,authorized_by FROM treatment_restrictions WHERE farm_id=$1 AND project_id=$2 AND ends_at>clock_timestamp() ORDER BY starts_at",
+      [farmId, projectId],
+    )
+  ).rows;
+  const usage = (
+    await db.query(
+      "SELECT type,details->>'unit' AS unit,sum((details->>'quantity')::numeric)::text AS quantity,count(*)::int AS records FROM project_records WHERE farm_id=$1 AND project_id=$2 AND type IN('fuel','labour','irrigation_session') AND ($3::timestamptz IS NULL OR observed_at>=$3) AND ($4::timestamptz IS NULL OR observed_at<$4) GROUP BY type,details->>'unit' ORDER BY type,unit",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  const workByDay = (
+    await db.query(
+      "SELECT (a.observed_at AT TIME ZONE f.timezone)::date AS date,a.kind,a.unit,count(*)::int AS records,sum(a.quantity)::text AS quantity FROM activities a JOIN farms f ON f.id=a.farm_id WHERE a.farm_id=$1 AND a.project_id=$2 AND a.kind<>'cost' AND NOT EXISTS(SELECT 1 FROM activity_corrections c WHERE c.farm_id=a.farm_id AND c.activity_id=a.id AND c.action='reverse') AND ($3::timestamptz IS NULL OR a.observed_at>=$3) AND ($4::timestamptz IS NULL OR a.observed_at<$4) GROUP BY 1,a.kind,a.unit ORDER BY 1,a.kind,a.unit",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  const breeding = (
+    await db.query(
+      "SELECT mating.id AS mating_event_id,mating.observed_at,mating.metadata->>'damId' AS dam_id,mating.metadata->>'sireId' AS sire_id,birth.id AS birth_event_id,birth.count AS live_count,birth.metadata->>'stillborn' AS stillborn FROM animal_events mating LEFT JOIN animal_events birth ON birth.farm_id=mating.farm_id AND birth.type='kindling' AND birth.metadata->>'matingEventId'=mating.id::text WHERE mating.farm_id=$1 AND mating.project_id=$2 AND mating.type='mating' AND ($3::timestamptz IS NULL OR mating.observed_at>=$3) AND ($4::timestamptz IS NULL OR mating.observed_at<$4) ORDER BY mating.observed_at DESC",
+      [farmId, projectId, from ?? null, to ?? null],
+    )
+  ).rows;
+  return {
+    project: p,
+    from: from ?? null,
+    to: to ?? null,
+    countBasis: p.count_basis,
+    openingCount: p.opening_count,
+    currentCount: p.current_count,
+    reservedCount: p.reserved_count,
+    recordedMortality: mortality,
+    countCorrections: outgoing.filter((e) => e.type === "adjustment").length,
+    mortalityRate:
+      !from &&
+      !outgoing.some((e) => e.type === "adjustment") &&
+      baseline &&
+      p.count_basis === "verified"
+        ? mortality / baseline
+        : null,
+    mortalityDenominator: !from ? baseline : null,
+    incomingRecordedCount: incoming,
+    acquiredRecordedCount: acquired,
+    liveHatched,
+    eggsProcessed,
+    hatchRate: eggsProcessed ? liveHatched / eggsProcessed : null,
+    eggLoss: sum(["egg_loss", "egg_disposition"]),
+    feedKg,
+    harvestKg,
+    harvestCount: sum(["harvest"]),
+    salesCount: sum(["sale"]),
+    latestWeightSample: latest,
+    estimatedBiomassKg:
+      latest && p.current_count !== null
+        ? latest.averageKg * Number(p.current_count)
+        : null,
+    feedPerHarvestKg: harvestKg ? feedKg / harvestKg : null,
+    feedConversionRatio: null,
+    feedConversionMissing: ["cohort_measured_weight_gain"],
+    output,
+    tasks,
+    usage,
+    workByDay,
+    restrictions,
+    breeding,
+    missing: [
+      ...(p.current_count === null ? ["opening_count"] : []),
+      ...(!latest && p.enterprise_type !== "crop" ? ["weight_sample"] : []),
+    ],
+    historyComplete: false,
+  };
 }
-export async function animalReconciliation(db:pg.Pool|pg.PoolClient,farmId:string){
- const projects=(await db.query("SELECT p.id,p.name,p.opening_count,p.current_count,p.reserved_count,COALESCE((SELECT sum(o.quantity) FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE l.animal_project_id=p.id AND o.status='reserved'),0) AS order_reserved,(SELECT count(*) FROM animal_identities a WHERE a.project_id=p.id AND a.status='active') AS identified_count FROM projects p WHERE p.farm_id=$1 AND p.enterprise_type<>'crop' ORDER BY p.id",[farmId])).rows;
- const events=(await db.query('SELECT * FROM animal_events WHERE farm_id=$1 AND NOT historical_only',[farmId])).rows;
- return projects.map(p=>{let expected=p.opening_count===null?null:Number(p.opening_count),complete=true;const relevant=events.filter(e=>e.project_id===p.id||e.destination_project_id===p.id&&Number(e.count)>0).map(e=>({event:e,sequence:e.project_id===p.id?e.source_project_version:e.destination_project_version}));if(relevant.some(e=>e.sequence===null))complete=false;for(const {event:e}of relevant.sort((a,b)=>Number(a.sequence)-Number(b.sequence))){if(e.project_id!==p.id){if(expected!==null)expected+=Number(e.count??0);continue;}if(e.type==='adjustment'){expected=Number(e.count);continue;}if(expected===null)continue;if(['acquisition','stocking','incubation'].includes(e.type))expected+=Number(e.count);else if(['mortality','transfer','fostering','weaning','sale','harvest','egg_disposition'].includes(e.type))expected-=Number(e.count);else if(['hatch','fish_hatch'].includes(e.type))expected-=Number(e.metadata.eggsProcessed);}
- const ledgerCount=complete?expected:null,reservationsBalanced=Number(p.reserved_count)===Number(p.order_reserved),identitiesBalanced=p.current_count===null?Number(p.identified_count)===0:Number(p.identified_count)<=Number(p.current_count),ledgerBalanced=ledgerCount===null?null:ledgerCount===Number(p.current_count);return {...p,ledgerCount,ledgerComplete:complete&&expected!==null,ledgerBalanced,reservationsBalanced,identitiesBalanced,balanced:reservationsBalanced&&identitiesBalanced&&ledgerBalanced!==false};});
+export async function animalReconciliation(
+  db: pg.Pool | pg.PoolClient,
+  farmId: string,
+) {
+  const projects = (
+    await db.query(
+      "SELECT p.id,p.name,p.opening_count,p.current_count,p.reserved_count,COALESCE((SELECT sum(o.quantity) FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE l.animal_project_id=p.id AND o.status='reserved'),0) AS order_reserved,(SELECT count(*) FROM animal_identities a WHERE a.project_id=p.id AND a.status='active') AS identified_count FROM projects p WHERE p.farm_id=$1 AND p.enterprise_type<>'crop' ORDER BY p.id",
+      [farmId],
+    )
+  ).rows;
+  const events = (
+    await db.query(
+      "SELECT * FROM animal_events WHERE farm_id=$1 AND NOT historical_only",
+      [farmId],
+    )
+  ).rows;
+  return projects.map((p) => {
+    let expected = p.opening_count === null ? null : Number(p.opening_count),
+      complete = true;
+    const relevant = events
+      .filter(
+        (e) =>
+          e.project_id === p.id ||
+          (e.destination_project_id === p.id && Number(e.count) > 0),
+      )
+      .map((e) => ({
+        event: e,
+        sequence:
+          e.project_id === p.id
+            ? e.source_project_version
+            : e.destination_project_version,
+      }));
+    if (relevant.some((e) => e.sequence === null)) complete = false;
+    for (const { event: e } of relevant.sort(
+      (a, b) => Number(a.sequence) - Number(b.sequence),
+    )) {
+      if (e.project_id !== p.id) {
+        if (expected !== null) expected += Number(e.count ?? 0);
+        continue;
+      }
+      if (e.type === "adjustment") {
+        expected = Number(e.count);
+        continue;
+      }
+      if (expected === null) continue;
+      if (["acquisition", "stocking", "incubation"].includes(e.type))
+        expected += Number(e.count);
+      else if (
+        [
+          "mortality",
+          "transfer",
+          "fostering",
+          "weaning",
+          "sale",
+          "harvest",
+          "egg_disposition",
+        ].includes(e.type)
+      )
+        expected -= Number(e.count);
+      else if (["hatch", "fish_hatch"].includes(e.type))
+        expected -= Number(e.metadata.eggsProcessed);
+    }
+    const ledgerCount = complete ? expected : null,
+      reservationsBalanced =
+        Number(p.reserved_count) === Number(p.order_reserved),
+      identitiesBalanced =
+        p.current_count === null
+          ? Number(p.identified_count) === 0
+          : Number(p.identified_count) <= Number(p.current_count),
+      ledgerBalanced =
+        ledgerCount === null ? null : ledgerCount === Number(p.current_count);
+    return {
+      ...p,
+      ledgerCount,
+      ledgerComplete: complete && expected !== null,
+      ledgerBalanced,
+      reservationsBalanced,
+      identitiesBalanced,
+      balanced:
+        reservationsBalanced && identitiesBalanced && ledgerBalanced !== false,
+    };
+  });
 }
-export function registerProduction(app:FastifyInstance,ctx:Context){
- app.get('/v1/farms/:farmId/incidents/:incidentId/history',async(req,reply)=>{const a=await auth(ctx,req,reply);if(!a)return;const {incidentId}=z.object({incidentId:uuid}).parse(req.params),q=listQuery.parse(req.query);const incident=row((await ctx.db.query('SELECT id,created_at,created_by FROM incidents WHERE farm_id=$1 AND id=$2',[a.farmId,incidentId])).rows[0]);return {incident,...page((await ctx.db.query("SELECT id,actor_id,action,reason,previous,current,created_at FROM audit_events WHERE farm_id=$1 AND entity_type='incident' AND entity_id=$2 AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM audit_events WHERE farm_id=$1 AND entity_type='incident' AND entity_id=$2 AND id=$3)) ORDER BY created_at DESC,id DESC LIMIT $4",[a.farmId,incidentId,q.cursor??null,q.limit+1])).rows,q.limit)};});
- app.get('/v1/farms/:farmId/projects/:projectId/cohort-births',async(req,reply)=>{const a=await auth(ctx,req,reply);if(!a)return;const {projectId}=z.object({projectId:uuid}).parse(req.params),q=listQuery.parse(req.query);row((await ctx.db.query('SELECT id FROM projects WHERE farm_id=$1 AND id=$2',[a.farmId,projectId])).rows[0]);return page((await ctx.db.query(`WITH RECURSIVE ancestors(id) AS(SELECT $2::uuid UNION SELECT e.project_id FROM animal_events e JOIN ancestors a ON e.destination_project_id=a.id WHERE e.farm_id=$1 AND e.type IN('transfer','fostering','weaning')) SELECT e.id,e.type,e.observed_at,e.note,e.count,e.historical_only,e.destination_project_id,p.name AS source_project_name,GREATEST(0,e.count-(SELECT count(*) FROM animal_identities i WHERE i.farm_id=e.farm_id AND i.birth_event_id=e.id)) AS "remainingIdentities" FROM animal_events e JOIN projects p ON p.id=e.project_id WHERE e.farm_id=$1 AND e.type IN('kindling','hatch','fish_hatch') AND e.count>0 AND e.destination_project_id IN(SELECT id FROM ancestors) AND ($3::uuid IS NULL OR e.id<$3) ORDER BY e.id DESC LIMIT $4`,[a.farmId,projectId,q.cursor??null,q.limit+1])).rows,q.limit);});
- app.get('/v1/farms/:farmId/projects/:projectId/performance',async(req,reply)=>{const a=await auth(ctx,req,reply);if(!a)return;const {projectId}=z.object({projectId:uuid}).parse(req.params),q=reportQuery.parse(req.query);const out:any=await performance(ctx.db,a.farmId,projectId,q.from,q.to);if(await ctx.member(a.farmId,a.actor,manageRoles))out.finance=await reportSummary(ctx.db,a.farmId,{...q,projectId});return out;});
- app.get('/v1/farms/:farmId/reports/performance',async(req,reply)=>{const a=await auth(ctx,req,reply);if(!a)return;const q=reportQuery.parse(req.query),pagination=listQuery.parse(req.query);const projects=(await ctx.db.query('SELECT id FROM projects WHERE farm_id=$1 AND ($2::uuid IS NULL OR id=$2) AND ($3::uuid IS NULL OR id<$3) ORDER BY id DESC LIMIT $4',[a.farmId,q.projectId??null,pagination.cursor??null,pagination.limit+1])).rows;const result=page(projects,pagination.limit),items=[];for(const p of result.items)items.push(await performance(ctx.db,a.farmId,p.id,q.from,q.to));return {items,nextCursor:result.nextCursor,financialsIncluded:false};});
- app.get('/v1/farms/:farmId/animals/:animalId/timeline',async(req,reply)=>{const a=await auth(ctx,req,reply);if(!a)return;const {animalId}=z.object({animalId:uuid}).parse(req.params),q=listQuery.parse(req.query);const animal=row((await ctx.db.query('SELECT * FROM animal_identities WHERE farm_id=$1 AND id=$2',[a.farmId,animalId])).rows[0]);const financial=await ctx.member(a.farmId,a.actor,manageRoles);const rows=(await ctx.db.query(`SELECT e.id,e.observed_at,e.type,e.project_id,e.destination_project_id,e.count,e.note,e.metadata,e.historical_only,'animal_event' AS source FROM animal_events e WHERE e.farm_id=$1 AND (e.metadata->'identityIds' @> to_jsonb(ARRAY[$2::text]) OR e.metadata->>'damId'=$2::text OR e.metadata->>'sireId'=$2::text OR e.metadata->>'matingEventId' IN(SELECT id::text FROM animal_events WHERE farm_id=$1 AND (metadata->>'damId'=$2::text OR metadata->>'sireId'=$2::text))) AND ($3::uuid IS NULL OR e.id<$3) UNION ALL SELECT r.id,r.observed_at,r.type,r.project_id,NULL::uuid,NULL::numeric,r.note,r.details AS metadata,false AS historical_only,'project_record' AS source FROM project_records r WHERE r.farm_id=$1 AND r.animal_id=$2::uuid AND ($3::uuid IS NULL OR r.id<$3) ORDER BY id DESC LIMIT $4`,[a.farmId,animalId,q.cursor??null,q.limit+1])).rows;if(!financial)for(const e of rows){delete e.metadata.costAllocations;delete e.metadata.amount;delete e.metadata.currency;}const children=(await ctx.db.query('SELECT id,identifier,sex,birth_date,status,dam_id,sire_id FROM animal_identities WHERE farm_id=$1 AND (dam_id=$2 OR sire_id=$2) ORDER BY birth_date NULLS LAST,id',[a.farmId,animalId])).rows;return {animal,birthEvent:animal.birth_event_id?(await ctx.db.query('SELECT id,type,project_id,destination_project_id,observed_at,count,metadata FROM animal_events WHERE farm_id=$1 AND id=$2',[a.farmId,animal.birth_event_id])).rows.map(e=>{if(!financial){delete e.metadata.costAllocations;delete e.metadata.amount;delete e.metadata.currency;}return e;})[0]:null,siblings:animal.birth_event_id?(await ctx.db.query('SELECT id,identifier,sex,birth_date,status,project_id FROM animal_identities WHERE farm_id=$1 AND birth_event_id=$2 AND id<>$3 ORDER BY id',[a.farmId,animal.birth_event_id,animalId])).rows:[],parents:(await ctx.db.query('SELECT id,identifier,sex,birth_date,status FROM animal_identities WHERE farm_id=$1 AND id=ANY($2::uuid[])',[a.farmId,[animal.dam_id,animal.sire_id].filter(Boolean)])).rows,children,...page(rows,q.limit),historyComplete:false};});
+export function registerProduction(app: FastifyInstance, ctx: Context) {
+  app.get(
+    "/v1/farms/:farmId/incidents/:incidentId/history",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { incidentId } = z.object({ incidentId: uuid }).parse(req.params),
+        q = listQuery.parse(req.query);
+      const incident = row(
+        (
+          await ctx.db.query(
+            "SELECT id,created_at,created_by FROM incidents WHERE farm_id=$1 AND id=$2",
+            [a.farmId, incidentId],
+          )
+        ).rows[0],
+      );
+      return {
+        incident,
+        ...page(
+          (
+            await ctx.db.query(
+              "SELECT id,actor_id,action,reason,previous,current,created_at FROM audit_events WHERE farm_id=$1 AND entity_type='incident' AND entity_id=$2 AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM audit_events WHERE farm_id=$1 AND entity_type='incident' AND entity_id=$2 AND id=$3)) ORDER BY created_at DESC,id DESC LIMIT $4",
+              [a.farmId, incidentId, q.cursor ?? null, q.limit + 1],
+            )
+          ).rows,
+          q.limit,
+        ),
+      };
+    },
+  );
+  app.get(
+    "/v1/farms/:farmId/projects/:projectId/cohort-births",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { projectId } = z.object({ projectId: uuid }).parse(req.params),
+        q = listQuery.parse(req.query);
+      row(
+        (
+          await ctx.db.query(
+            "SELECT id FROM projects WHERE farm_id=$1 AND id=$2",
+            [a.farmId, projectId],
+          )
+        ).rows[0],
+      );
+      return page(
+        (
+          await ctx.db.query(
+            `WITH RECURSIVE ancestors(id) AS(SELECT $2::uuid UNION SELECT e.project_id FROM animal_events e JOIN ancestors a ON e.destination_project_id=a.id WHERE e.farm_id=$1 AND e.type IN('transfer','fostering','weaning')) SELECT e.id,e.type,e.observed_at,e.note,e.count,e.historical_only,e.destination_project_id,p.name AS source_project_name,GREATEST(0,e.count-(SELECT count(*) FROM animal_identities i WHERE i.farm_id=e.farm_id AND i.birth_event_id=e.id)) AS "remainingIdentities" FROM animal_events e JOIN projects p ON p.id=e.project_id WHERE e.farm_id=$1 AND e.type IN('kindling','hatch','fish_hatch') AND e.count>0 AND e.destination_project_id IN(SELECT id FROM ancestors) AND ($3::uuid IS NULL OR e.id<$3) ORDER BY e.id DESC LIMIT $4`,
+            [a.farmId, projectId, q.cursor ?? null, q.limit + 1],
+          )
+        ).rows,
+        q.limit,
+      );
+    },
+  );
+  app.get(
+    "/v1/farms/:farmId/projects/:projectId/performance",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { projectId } = z.object({ projectId: uuid }).parse(req.params),
+        q = reportQuery.parse(req.query);
+      const out: any = await performance(
+        ctx.db,
+        a.farmId,
+        projectId,
+        q.from,
+        q.to,
+      );
+      if (await ctx.member(a.farmId, a.actor, manageRoles))
+        out.finance = await reportSummary(ctx.db, a.farmId, {
+          ...q,
+          projectId,
+        });
+      return out;
+    },
+  );
+  app.get("/v1/farms/:farmId/reports/performance", async (req, reply) => {
+    const a = await auth(ctx, req, reply);
+    if (!a) return;
+    const q = reportQuery.parse(req.query),
+      pagination = listQuery.parse(req.query);
+    const projects = (
+      await ctx.db.query(
+        "SELECT id FROM projects WHERE farm_id=$1 AND ($2::uuid IS NULL OR id=$2) AND ($3::uuid IS NULL OR id<$3) ORDER BY id DESC LIMIT $4",
+        [
+          a.farmId,
+          q.projectId ?? null,
+          pagination.cursor ?? null,
+          pagination.limit + 1,
+        ],
+      )
+    ).rows;
+    const result = page(projects, pagination.limit),
+      items = [];
+    for (const p of result.items)
+      items.push(await performance(ctx.db, a.farmId, p.id, q.from, q.to));
+    return { items, nextCursor: result.nextCursor, financialsIncluded: false };
+  });
+  app.get(
+    "/v1/farms/:farmId/animals/:animalId/timeline",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { animalId } = z.object({ animalId: uuid }).parse(req.params),
+        q = listQuery.parse(req.query);
+      const animal = row(
+        (
+          await ctx.db.query(
+            "SELECT * FROM animal_identities WHERE farm_id=$1 AND id=$2",
+            [a.farmId, animalId],
+          )
+        ).rows[0],
+      );
+      const financial = await ctx.member(a.farmId, a.actor, manageRoles);
+      const rows = (
+        await ctx.db.query(
+          `SELECT e.id,e.observed_at,e.type,e.project_id,e.destination_project_id,e.count,e.note,e.metadata,e.historical_only,'animal_event' AS source FROM animal_events e WHERE e.farm_id=$1 AND (e.metadata->'identityIds' @> to_jsonb(ARRAY[$2::text]) OR e.metadata->>'damId'=$2::text OR e.metadata->>'sireId'=$2::text OR e.metadata->>'matingEventId' IN(SELECT id::text FROM animal_events WHERE farm_id=$1 AND (metadata->>'damId'=$2::text OR metadata->>'sireId'=$2::text))) AND ($3::uuid IS NULL OR e.id<$3) UNION ALL SELECT r.id,r.observed_at,r.type,r.project_id,NULL::uuid,NULL::numeric,r.note,r.details AS metadata,false AS historical_only,'project_record' AS source FROM project_records r WHERE r.farm_id=$1 AND r.animal_id=$2::uuid AND ($3::uuid IS NULL OR r.id<$3) ORDER BY id DESC LIMIT $4`,
+          [a.farmId, animalId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows;
+      if (!financial)
+        for (const e of rows) {
+          delete e.metadata.costAllocations;
+          delete e.metadata.amount;
+          delete e.metadata.currency;
+        }
+      const children = (
+        await ctx.db.query(
+          "SELECT id,identifier,sex,birth_date,status,dam_id,sire_id FROM animal_identities WHERE farm_id=$1 AND (dam_id=$2 OR sire_id=$2) ORDER BY birth_date NULLS LAST,id",
+          [a.farmId, animalId],
+        )
+      ).rows;
+      return {
+        animal,
+        birthEvent: animal.birth_event_id
+          ? (
+              await ctx.db.query(
+                "SELECT id,type,project_id,destination_project_id,observed_at,count,metadata FROM animal_events WHERE farm_id=$1 AND id=$2",
+                [a.farmId, animal.birth_event_id],
+              )
+            ).rows.map((e) => {
+              if (!financial) {
+                delete e.metadata.costAllocations;
+                delete e.metadata.amount;
+                delete e.metadata.currency;
+              }
+              return e;
+            })[0]
+          : null,
+        siblings: animal.birth_event_id
+          ? (
+              await ctx.db.query(
+                "SELECT id,identifier,sex,birth_date,status,project_id FROM animal_identities WHERE farm_id=$1 AND birth_event_id=$2 AND id<>$3 ORDER BY id",
+                [a.farmId, animal.birth_event_id, animalId],
+              )
+            ).rows
+          : [],
+        parents: (
+          await ctx.db.query(
+            "SELECT id,identifier,sex,birth_date,status FROM animal_identities WHERE farm_id=$1 AND id=ANY($2::uuid[])",
+            [a.farmId, [animal.dam_id, animal.sire_id].filter(Boolean)],
+          )
+        ).rows,
+        children,
+        ...page(rows, q.limit),
+        historyComplete: false,
+      };
+    },
+  );
 }

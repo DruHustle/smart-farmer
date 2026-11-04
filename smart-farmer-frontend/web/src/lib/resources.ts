@@ -5,7 +5,8 @@ export {allPages};
 export type {PageResult};
 /** Feature caches live in the same encrypted, farm- and role-scoped vault as field records. */
 export function useResource<T>(path: string | null, initial: T) {
-  const {call, farm, vault, online, run, data} = useFarm();
+  const {call, farm, vault, online, run, data, snapshot} = useFarm();
+  const queuedRevision = snapshot.outbox.filter(entry => entry.path === path?.split('?')[0]).map(entry => `${entry.id}:${entry.status}`).join('|');
   const cached = path ? data.resources?.[path] : undefined;
   const [value, setValue] = useState<T>(() => cached?.role === farm.role ? cached.value as T : initial);
   const [savedAt, setSavedAt] = useState(cached?.savedAt ?? '');
@@ -33,16 +34,17 @@ export function useResource<T>(path: string | null, initial: T) {
     const stored = path ? vault.snapshot().data[farm.id]?.resources?.[path] : undefined;
     setValue(stored?.role === farm.role ? stored.value as T : initial); setValueIdentity(identity); setSavedAt(stored?.savedAt ?? '');
     setFailed(false); if (online && path) void run(reload);
-  }, [identity, online]);
+  }, [identity, online, queuedRevision]);
   return {value: valueIdentity === identity ? value : cached?.role === farm.role ? cached.value as T : initial, setValue, savedAt: valueIdentity === identity ? savedAt : '', loading, failed, reload};
 }
 export function useList<T extends {id: string}>(path: string | null) {
   const {call, run, online, vault, farm} = useFarm(); const resource = useResource<PageResult<T>>(path, {items: []});
-  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreBusy, setMoreBusy] = useState(false); const identity = `${farm.id}:${farm.role}:${path}`; const current = useRef(identity); current.current = identity;
   const more = async () => {
     if (!online || !path || !resource.value.nextCursor || moreBusy) return;
     setMoreBusy(true);
-    try {await run(async () => {const page = await call<PageResult<T>>(`${path}${path.includes('?') ? '&' : '?'}cursor=${encodeURIComponent(resource.value.nextCursor!)}&limit=100`); const merged = {...resource.value, items: [...resource.value.items, ...page.items.filter(item => !resource.value.items.some(old => old.id === item.id))], nextCursor: page.nextCursor}; resource.setValue(merged); await vault.mutate(next => {const target = next.data[farm.id]?.resources?.[path]; if (target?.role === farm.role) target.value = merged;});});}
+    const identityAtRead = identity;
+    try {await run(async () => {const page = await call<PageResult<T>>(`${path}${path.includes('?') ? '&' : '?'}cursor=${encodeURIComponent(resource.value.nextCursor!)}&limit=100`); if (current.current !== identityAtRead) return; const merged = {...resource.value, items: [...resource.value.items, ...page.items.filter(item => !resource.value.items.some(old => old.id === item.id))], nextCursor: page.nextCursor}; resource.setValue(merged); await vault.mutate(next => {const target = next.data[farm.id]?.resources?.[path]; if (target?.role === farm.role) target.value = merged;});});}
     finally {setMoreBusy(false);}
   };
   return {...resource, items: resource.value.items ?? [], nextCursor: resource.value.nextCursor, more, moreBusy};

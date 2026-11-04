@@ -8,7 +8,7 @@ export type Option = { value: string; label: string };
 export type FormField = {
   key: string; label?: string; type?: 'text' | 'number' | 'integer' | 'date' | 'time' | 'datetime' | 'boolean' | 'choice' | 'multi' | 'rows' | 'password';
   required?: boolean; multiline?: boolean; minimum?: number; maximum?: number; maxLength?: number;
-  options?: Option[]; fields?: FormField[]; initial?: unknown; hint?: string;
+  options?: Option[]; fields?: FormField[]; initial?: unknown; hint?: string; when?: { key: string; equals: unknown };
 };
 export function string(value: unknown): string { return value === null || value === undefined ? '' : String(value); }
 export function rows(value: unknown): Row[] { return Array.isArray(value) ? value.filter((row): row is Row => Boolean(row && typeof row === 'object' && !Array.isArray(row))) : []; }
@@ -21,6 +21,7 @@ export function initials(fields: FormField[], existing: Row = {}): Row {
 export function parseFields(fields: FormField[], values: Row, timezone: string): Row {
   const body: Row = {};
   for (const field of fields) {
+    if (field.when && values[field.when.key] !== field.when.equals) continue;
     const raw = values[field.key];
     if (field.type === 'boolean') { body[field.key] = raw === true; if (field.required && raw !== true) throw new Error('required'); continue; }
     if (field.type === 'rows') {
@@ -40,7 +41,7 @@ export function parseFields(fields: FormField[], values: Row, timezone: string):
     else if (field.type === 'date') { if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value) throw new Error('invalid_date'); body[field.key] = value; }
     else if (field.type === 'time') { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error('invalid_date'); body[field.key] = value; }
     else if (field.type === 'choice') { if (!field.options?.some(option => option.value === value)) throw new Error('invalid_input'); body[field.key] = value; }
-    else { if (value.length > (field.maxLength ?? 4000)) throw new Error('invalid_input'); body[field.key] = value; }
+    else { if (value.length > (field.maxLength ?? 4000)) throw new Error('invalid_input'); body[field.key] = /currency$/i.test(field.key) ? value.toUpperCase() : value; if (/currency$/i.test(field.key) && !/^[A-Z]{3}$/.test(String(body[field.key]))) throw new Error('invalid_currency'); }
   }
   return body;
 }

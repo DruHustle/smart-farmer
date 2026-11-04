@@ -53,9 +53,9 @@ export type Mutation = {
   id: string; farmId: string; kind: MutationKind; resourceId?: string;
   body: Record<string, unknown>; state: OutboxState; attempts: number; lastError: string | null; createdAt: string;
 };
-export type MediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'audio/mp4' | 'audio/mpeg' | 'audio/webm' | 'audio/wav';
+export type MediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'audio/mp4' | 'audio/mpeg' | 'audio/webm' | 'audio/wav' | 'application/pdf';
 export type Attachment = {
-  id: string; farmId: string; activityId: string; mimeType: MediaType; filename: string;
+  id: string; farmId: string; activityId?: string; assetId?: string; financial?: boolean; mimeType: MediaType; filename: string;
   dataBase64: string; sizeBytes: number; state: 'draft' | 'pending' | 'synced' | 'blocked' | 'conflict';
   attempts: number; lastError: string | null; createdAt: string;
 };

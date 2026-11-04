@@ -5,7 +5,7 @@ import {farmTimeToUtc, localDateTime} from '../lib/time';
 import {Field, Form, Modal, StockSelect, Submit, VoiceRecorder, formNumber, formValue, Icon} from '../components/ui';
 
 const mimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'audio/mp4', 'audio/mpeg', 'audio/webm', 'audio/wav']);
-export async function prepareFile(file: File, compact = true): Promise<{mimeType: string; dataBase64: string; filename: string}> {
+export async function prepareFile(file: File, compact = true, allowDocuments = false): Promise<{mimeType: string; dataBase64: string; filename: string}> {
   let blob: Blob = file;
   if (compact && file.type.startsWith('image/') && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     const image = await createImageBitmap(file); const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
@@ -14,14 +14,14 @@ export async function prepareFile(file: File, compact = true): Promise<{mimeType
     blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('attachment_type')), 'image/jpeg', 0.8));
   }
   const type = blob.type.split(';')[0];
-  if (!mimeTypes.has(type)) throw new Error('attachment_type');
+  if (!mimeTypes.has(type) && !(allowDocuments && type === 'application/pdf')) throw new Error('attachment_type');
   if (blob.size > 5 * 1024 * 1024) throw new Error('attachment_too_large');
   const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = '';
   for (let i = 0; i < bytes.length; i += 16_384) binary += String.fromCharCode(...bytes.subarray(i, i + 16_384));
   return {mimeType: type, dataBase64: btoa(binary), filename: file.name};
 }
 export function RecordActivity({initialProject, onClose}: {initialProject: string; onClose: () => void}) {
-  const {data, t, farm, run, enqueue, vault, manager, snapshot} = useFarm(); const [projectId, setProjectId] = useState(initialProject || data.projects[0]?.id || ''); const selectedProject = data.projects.find(p => p.id === projectId); const [kind, setKind] = useState('work'); const [stockId, setStockId] = useState(''); const [files, setFiles] = useState<File[]>([]);
+  const {data, t, farm, run, enqueue, vault, manager, snapshot} = useFarm(); const [projectId, setProjectId] = useState(initialProject || data.projects[0]?.id || ''); const selectedProject = data.projects.find(p => p.id === projectId); const [kind, setKind] = useState(farm.role === 'adviser' ? 'observation' : 'work'); const [stockId, setStockId] = useState(''); const [files, setFiles] = useState<File[]>([]);
   const stockKind = kind === 'input_use' || kind === 'harvest'; const stock = data.stock.find(s => s.id === stockId);
   return <Modal title={t.record} onClose={onClose}><p className="muted">{t.recordHint}</p><Form onSubmit={async f => {
     const success = await run(async () => {
@@ -42,9 +42,9 @@ export function RecordActivity({initialProject, onClose}: {initialProject: strin
     });
     if (success) onClose();
   }}>
-    <Field label={t.project}><select name="projectId" required value={projectId} onChange={e => {setProjectId(e.target.value); setKind('work'); setStockId('');}}>{data.projects.filter(p => p.status !== 'closed').map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
-    <Field label={t.kind}><select name="kind" value={kind} onChange={e => {setKind(e.target.value); setStockId('');}}>{['work', 'observation', ...(selectedProject?.enterprise_type === 'crop' ? ['rain', 'irrigation', 'harvest', 'input_use'] : []), ...(manager ? ['cost'] : [])].map(k => <option key={k} value={k}>{label(t, k)}</option>)}</select></Field>
-    <Field label={t.linkedTask}><select name="taskId"><option value="">{t.none}</option>{data.tasks.filter(task => task.project_id === projectId && !['completed', 'cancelled'].includes(task.status) && (manager || task.assignee_id === snapshot.identity.userId)).map(task => <option value={task.id} key={task.id}>{task.title}</option>)}</select></Field>
+    <Field label={t.project}><select name="projectId" required value={projectId} onChange={e => {setProjectId(e.target.value); setKind(farm.role === 'adviser' ? 'observation' : 'work'); setStockId('');}}>{data.projects.filter(p => p.status !== 'closed').map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
+    <Field label={t.kind}><select name="kind" value={kind} onChange={e => {setKind(e.target.value); setStockId('');}}>{(farm.role==='adviser'?['observation',...(selectedProject?.enterprise_type==='crop'?['rain']:[])]:['work', 'observation', ...(selectedProject?.enterprise_type === 'crop' ? ['rain', 'irrigation', 'harvest', 'input_use'] : []), ...(manager ? ['cost'] : [])]).map(k => <option key={k} value={k}>{label(t, k)}</option>)}</select></Field>
+    {farm.role!=='adviser'&&<Field label={t.linkedTask}><select name="taskId"><option value="">{t.none}</option>{data.tasks.filter(task => task.project_id === projectId && !['completed', 'cancelled'].includes(task.status) && (manager || task.assignee_id === snapshot.identity.userId)).map(task => <option value={task.id} key={task.id}>{task.title}</option>)}</select></Field>}
     <Field label={t.when} hint={`${t.farmTime}: ${farm.timezone}`}><input name="observedAt" type="datetime-local" required defaultValue={localDateTime(new Date(), farm.timezone)}/></Field>
     <Field label={t.note}><textarea name="note" rows={3} maxLength={4000}/></Field>
     {stockKind && <StockSelect required value={stockId} onChange={setStockId}/>}

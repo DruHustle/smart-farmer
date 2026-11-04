@@ -28,7 +28,7 @@ export function App() {
   const snapshot = useSyncExternalStore(vault?.subscribe ?? emptySubscribe, vault?.snapshot ?? noSnapshot);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [language, setLanguage] = useState<Lang>(() => localStorage.getItem('smart-farmer-language') === 'nd' ? 'nd' : 'sn');
-  const [online, setOnline] = useState(navigator.onLine); const [page, setPage] = useState<Page>(new URLSearchParams(location.search).has('listing') ? 'market' : 'today'); const [recordProject, setRecordProject] = useState<string | null>(null); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const synchronising = useRef(false);
+  const [online, setOnline] = useState(navigator.onLine); const [page, setPage] = useState<Page>(new URLSearchParams(location.search).has('listing') ? 'market' : 'today'); const [recordProject, setRecordProject] = useState<string | null>(null); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const synchronising = useRef(false); const pendingSync = useRef({requested:false,includeMedia:false});
   const lang = snapshot?.language ?? language, t = catalog[lang];
   const farm = snapshot?.farms.find(f => f.id === snapshot.currentFarmId) ?? snapshot?.farms[0];
   const farmId = farm?.id ?? '';
@@ -79,13 +79,13 @@ export function App() {
     });
   }, [vault, call]);
   const sync = useCallback(async (includeMedia = false) => {
-    if (!vault || !navigator.onLine || synchronising.current) return;
+    if (!vault || !navigator.onLine) return; if (synchronising.current) {pendingSync.current.requested=true; pendingSync.current.includeMedia ||= includeMedia; return;}
     if (vault.snapshot().requiresAuth || new Date(vault.snapshot().identity.expiresAt).getTime() <= Date.now()) {setNotice(t.sessionExpired); return;}
     synchronising.current = true;
     try {
       await drainOutbox(vault, (entry, payload) => entry.mediaId ? uploadRecord(entry.path, vault.snapshot().identity.token, payload, percent => setUploadProgress(old => ({...old, [entry.id]: percent}))) : call(entry.path, jsonBody(payload, entry.method)), includeMedia);
       if (!vault.snapshot().requiresAuth) await refresh();
-    } catch (error) {setNotice(errorLabel(t, error));} finally {synchronising.current = false;}
+    } catch (error) {setNotice(errorLabel(t, error));} finally {synchronising.current = false; const pending=pendingSync.current; pendingSync.current={requested:false,includeMedia:false}; if(pending.requested&&navigator.onLine) void sync(pending.includeMedia);}
   }, [vault, call, refresh, t]);
   useEffect(() => {if (vault && online) void sync(vault.snapshot().preferences?.automaticMedia ?? false);}, [vault, online, sync]);
   useEffect(() => {if (!vault || !online) return; const timer = setInterval(() => void sync(vault.snapshot().preferences?.automaticMedia ?? false), 60_000); return () => clearInterval(timer);}, [vault, online, sync]);
@@ -120,10 +120,10 @@ export function App() {
       {snapshot.requiresAuth && <div className="notice warning"><span>{t.sessionExpired}</span><button className="text-button" onClick={lock}>{t.signIn}</button></div>}
       {notice && <div className="notice" role="status"><span>{notice}</span><button className="icon-button" aria-label={t.close} onClick={() => setNotice('')}><Icon name="close" size={16}/></button></div>}
       {busy && <div className="working-line" role="status">{t.working}</div>}
-      {farm ? <Context.Provider value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: setPage, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
+      {farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: setPage, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
         {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
-        {recordProject === null && page !== 'market' && page !== 'services' && farm.role !== 'adviser' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
+        {recordProject === null && page !== 'market' && page !== 'services' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
       </Context.Provider> : <div className="loading-card"><Icon name="leaf" size={30}/><p>{online ? t.loading : t.no_saved_data}</p><button onClick={lock}>{t.signIn}</button></div>}
     </main><nav className="mobile-nav" aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} onClick={() => setPage(item)}><Icon name={item}/><span>{t[item]}</span></button>)}</nav></div>;
 }

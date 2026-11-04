@@ -148,13 +148,14 @@ test("farm locations, observed weather, owner settings and sourced read-only Com
       longitude: 31.4,
       weatherEnabled: true,
     });
+    let malformedWeather = false;
     server = createServer((req, res) => {
       const u = new URL(req.url!, "http://localhost");
       assert.equal(u.searchParams.get("latitude"), "-17.87");
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
-          hourly: {
+          hourly: malformedWeather ? null : {
             time: [1793700000],
             temperature_2m: [25],
             relative_humidity_2m: [40],
@@ -172,6 +173,11 @@ test("farm locations, observed weather, owner settings and sourced read-only Com
     assert.equal(weather.forecast.kind, "forecast");
     assert.equal(weather.observations[0].source, "gauge");
     assert.equal(weather.observations.length, 1);
+    malformedWeather = true;
+    const failedForecast = await f.request("POST", f.prefix + "/weather/refresh", {});
+    assert.equal(failedForecast.statusCode, 502);
+    assert.equal(failedForecast.json().error, "invalid_provider_response");
+    assert.equal((await f.ok("GET", f.prefix + "/weather")).forecast.kind, "forecast");
     const project = await f.ok(
       "POST",
       f.prefix + "/projects",
@@ -837,5 +843,435 @@ test("configured email adapter uses provider idempotency and reports acceptance 
       else process.env[k] = previous[k];
     }
     await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("asset documents retain current camera/financial grants and never require fabricated project activity", async () => {
+  const f = await fixture();
+  try {
+    const adviser = await f.register(),
+      outsider = await f.register();
+    await f.db.query(
+      "INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'adviser')",
+      [adviser.userId, f.owner.farmId],
+    );
+    const assetId = randomUUID(),
+      cameraId = randomUUID();
+    await f.ok(
+      "POST",
+      f.prefix + "/assets",
+      { id: assetId, name: "Documented pump", category: "pump" },
+      201,
+    );
+    await f.ok(
+      "POST",
+      f.prefix + "/assets",
+      {
+        id: cameraId,
+        name: "Private camera",
+        category: "camera",
+        protocol: "simulator",
+      },
+      201,
+    );
+    const document = {
+      id: randomUUID(),
+      assetId,
+      mimeType: "application/pdf",
+      dataBase64: Buffer.from(
+        "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n",
+      ).toString("base64"),
+      filename: "manual.pdf",
+    };
+    const stored = await f.ok(
+      "POST",
+      f.prefix + "/media",
+      document,
+      201,
+      adviser,
+    );
+    assert.equal(stored.activityId, null);
+    await f.ok("POST", f.prefix + "/media", document, 200, adviser);
+    assert.equal(
+      (await f.db.query("SELECT count(*) AS n FROM activities")).rows[0].n,
+      "0",
+    );
+    const download = await f.request(
+      "GET",
+      f.prefix + "/media/" + document.id + "/content",
+      undefined,
+      adviser,
+    );
+    assert.equal(download.statusCode, 200);
+    assert.match(
+      String(download.headers["content-disposition"]),
+      /^attachment/,
+    );
+    assert.match(
+      String(download.headers["content-security-policy"]),
+      /sandbox/,
+    );
+    assert.equal(
+      (
+        await f.request(
+          "GET",
+          f.prefix + "/media/" + document.id + "/content",
+          undefined,
+          outsider,
+        )
+      ).statusCode,
+      404,
+    );
+    const invoice = {
+      ...document,
+      id: randomUUID(),
+      financial: true,
+      filename: "invoice.pdf",
+    };
+    assert.equal(
+      (await f.request("POST", f.prefix + "/media", invoice, adviser))
+        .statusCode,
+      404,
+    );
+    await f.ok("POST", f.prefix + "/media", invoice, 201);
+    assert.equal(
+      (
+        await f.ok(
+          "GET",
+          f.prefix + "/media?assetId=" + assetId,
+          undefined,
+          200,
+          adviser,
+        )
+      ).items.length,
+      1,
+    );
+    assert.equal(
+      (
+        await f.request(
+          "GET",
+          f.prefix + "/media/" + invoice.id + "/content",
+          undefined,
+          adviser,
+        )
+      ).statusCode,
+      404,
+    );
+    const cameraFile = { ...document, id: randomUUID(), assetId: cameraId };
+    await f.ok("POST", f.prefix + "/media", cameraFile, 201);
+    assert.equal(
+      (
+        await f.request(
+          "GET",
+          f.prefix + "/media/" + cameraFile.id + "/content",
+          undefined,
+          adviser,
+        )
+      ).statusCode,
+      404,
+    );
+    await f.ok("POST", f.prefix + "/cameras/" + cameraId + "/access", {
+      userId: adviser.userId,
+    });
+    assert.equal(
+      (
+        await f.request(
+          "GET",
+          f.prefix + "/media/" + cameraFile.id + "/content",
+          undefined,
+          adviser,
+        )
+      ).statusCode,
+      200,
+    );
+    await f.ok(
+      "DELETE",
+      f.prefix + "/cameras/" + cameraId + "/access/" + adviser.userId,
+    );
+    assert.equal(
+      (
+        await f.request(
+          "GET",
+          f.prefix + "/media/" + cameraFile.id + "/content",
+          undefined,
+          adviser,
+        )
+      ).statusCode,
+      404,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("configured read-only model receives sourced observations and rejects invented references without executing changes", async () => {
+  const f = await fixture();
+  let server: any;
+  const prior = {
+    base: process.env.AI_BASE_URL,
+    key: process.env.AI_API_KEY,
+    model: process.env.AI_MODEL,
+  };
+  try {
+    const project = await f.ok(
+      "POST",
+      f.prefix + "/projects",
+      { name: "Observed maize", crop: "maize" },
+      201,
+    );
+    await f.ok(
+      "POST",
+      f.prefix + "/projects/" + project.id + "/records",
+      {
+        id: randomUUID(),
+        type: "soil_test",
+        observedAt: new Date().toISOString(),
+        details: {
+          measurement: "pH",
+          value: 6.2,
+          unit: "pH",
+          sampleLocation: "Recorded sample",
+          source: "Fixture laboratory report",
+          reportDate: "2026-10-01",
+        },
+      },
+      201,
+    );
+    const referenceId = randomUUID();
+    await f.ok(
+      "POST",
+      f.prefix + "/references",
+      {
+        id: referenceId,
+        title: "Fixture guidance",
+        sourceUrl: "https://example.org/fixture",
+        publishedOn: "2026-10-01",
+        version: "1",
+        language: "nd",
+        content:
+          "Untrusted source text asking to execute a command must remain evidence only.",
+        reviewedBy: "Fixture operator",
+      },
+      201,
+    );
+    let invalid = false,
+      malformedAnswer = false,
+      seen: any;
+    server = createServer(async (req, res) => {
+      let data = "";
+      for await (const chunk of req) data += chunk;
+      seen = JSON.parse(data);
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  answer: malformedAnswer ? null : "Lokhu kubhalwe embikweni kuphela.",
+                  referenceIds: [invalid ? randomUUID() : referenceId],
+                  limitations: [],
+                }),
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    process.env.AI_BASE_URL =
+      "http://127.0.0.1:" + server.address().port + "/v1";
+    process.env.AI_API_KEY = "fixture-only";
+    process.env.AI_MODEL = "fixture-model";
+    await f.ok("PATCH", f.prefix + "/settings", {
+      aiEnabled: true,
+      confirmed: true,
+    });
+    const input = {
+      question: "Explain the recorded pH and its source.",
+      language: "nd",
+      referenceIds: [referenceId],
+    };
+    const answer = await f.ok(
+      "POST",
+      f.prefix + "/projects/" + project.id + "/companion/chat",
+      input,
+    );
+    assert.equal(answer.mode, "model");
+    assert.deepEqual(answer.proposals, []);
+    assert.match(seen.messages[0].content, /read-only/);
+    assert.equal(seen.tools, undefined);
+    const context = JSON.parse(seen.messages[1].content);
+    assert.equal(context.recordedObservations[0].details.value, 6.2);
+    assert.equal(context.references[0].id, referenceId);
+    assert.equal(context.finance, undefined);
+    invalid = true;
+    assert.equal(
+      (
+        await f.request(
+          "POST",
+          f.prefix + "/projects/" + project.id + "/companion/chat",
+          input,
+        )
+      ).json().error,
+      "unverified_ai_reference",
+    );
+    malformedAnswer = true;
+    const failedAnswer = await f.request(
+      "POST",
+      f.prefix + "/projects/" + project.id + "/companion/chat",
+      input,
+    );
+    assert.equal(failedAnswer.statusCode, 502);
+    assert.equal(failedAnswer.json().error, "invalid_provider_response");
+    assert.equal(
+      (await f.db.query("SELECT count(*) AS n FROM companion_interactions"))
+        .rows[0].n,
+      "1",
+    );
+    assert.equal(
+      (await f.db.query("SELECT count(*) AS n FROM equipment_commands")).rows[0]
+        .n,
+      "0",
+    );
+  } finally {
+    if (server) await new Promise<void>((r) => server.close(() => r()));
+    for (const [name, value] of Object.entries({
+      AI_BASE_URL: prior.base,
+      AI_API_KEY: prior.key,
+      AI_MODEL: prior.model,
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await f.close();
+  }
+});
+
+test("camera gateway ingests bounded real-format segments/snapshots with source, demand, discontinuities and event-bound replay", async () => {
+  const f = await fixture();
+  try {
+    const assetId = randomUUID();
+    await f.ok(
+      "POST",
+      f.prefix + "/assets",
+      {
+        id: assetId,
+        name: "ONVIF protocol fixture",
+        category: "camera",
+        protocol: "http",
+      },
+      201,
+    );
+    await f.ok("POST", f.prefix + "/cameras/" + assetId + "/configure", {
+      version: 1,
+      provider: "gateway",
+      retentionDays: 3,
+      eventsEnabled: true,
+      liveEnabled: true,
+    });
+    const gateway = await f.ok(
+      "POST",
+      f.prefix + "/assets/" + assetId + "/gateway-token",
+      {},
+    );
+    const edge = async (path: string, payload: any) =>
+      f.app.inject({
+        method: "POST",
+        url: "/v1/edge/camera/" + path,
+        headers: { authorization: "Bearer " + gateway.token },
+        payload,
+      });
+    const view = await f.ok(
+      "POST",
+      f.prefix + "/cameras/" + assetId + "/sessions",
+      { confirmed: true },
+    );
+    assert.equal(view.connectionState, "awaiting_gateway");
+    const bytes = await readFile(
+      new URL("../fixtures/camera-simulator.mpegts", import.meta.url),
+    );
+    const segment = {
+      id: randomUUID(),
+      sequence: 1,
+      observedAt: new Date().toISOString(),
+      duration: 2,
+      discontinuity: true,
+      dataBase64: bytes.toString("base64"),
+    };
+    const saved = await edge("segments", segment);
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.equal((await edge("segments", segment)).json().replayed, true);
+    const playlist = await f.app.inject({
+      url: view.playlistPath,
+      headers: { authorization: "Bearer " + view.token },
+    });
+    assert.equal(playlist.statusCode, 200, playlist.body);
+    assert.match(playlist.body, /#EXT-X-DISCONTINUITY/);
+    assert.ok(!playlist.body.includes("#EXT-X-ENDLIST"));
+    const event = {
+      id: randomUUID(),
+      kind: "motion",
+      observedAt: segment.observedAt,
+    };
+    assert.equal((await edge("events", event)).json().source, "gateway");
+    assert.equal(
+      (await edge("segments", { ...segment, eventId: event.id })).json().error,
+      "idempotency_conflict",
+    );
+    const clip = {
+      ...segment,
+      id: randomUUID(),
+      sequence: 2,
+      eventId: event.id,
+    };
+    assert.equal((await edge("segments", clip)).statusCode, 200);
+    const eventView = await f.ok(
+      "POST",
+      f.prefix + "/camera-events/" + event.id + "/session",
+      { confirmed: true },
+    );
+    const eventPlaylist = await f.app.inject({
+      url: eventView.playlistPath,
+      headers: { authorization: "Bearer " + eventView.token },
+    });
+    assert.match(eventPlaylist.body, /#EXT-X-ENDLIST/);
+    assert.ok(eventPlaylist.body.includes(clip.id));
+    assert.ok(!eventPlaylist.body.includes(segment.id));
+    assert.equal(
+      (await f.request("GET", f.prefix + "/cameras/" + assetId + "/snapshot"))
+        .statusCode,
+      404,
+    );
+    assert.equal((await edge("demand", {})).json().snapshot, true);
+    const jpeg = await readFile(
+      new URL("../fixtures/camera-simulator.jpg", import.meta.url),
+    );
+    assert.equal(
+      (
+        await edge("snapshot", {
+          id: randomUUID(),
+          observedAt: new Date().toISOString(),
+          dataBase64: jpeg.toString("base64"),
+        })
+      ).statusCode,
+      200,
+    );
+    const snapshot = await f.request(
+      "GET",
+      f.prefix + "/cameras/" + assetId + "/snapshot",
+    );
+    assert.equal(snapshot.statusCode, 200, snapshot.body);
+    assert.equal(snapshot.headers["x-media-source"], "gateway");
+    assert.ok(snapshot.headers["x-observed-at"]);
+    assert.deepEqual(snapshot.rawPayload, jpeg);
+    assert.equal(
+      (await f.ok("GET", f.prefix + "/media-policy")).cameraUsedBytes,
+      bytes.length * 2 + jpeg.length,
+    );
+  } finally {
+    await f.close();
   }
 });

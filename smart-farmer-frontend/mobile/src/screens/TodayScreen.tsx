@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import * as Crypto from 'expo-crypto';
-import { label, textFor } from '../i18n';
+import { errorText, label, textFor } from '../i18n';
 import { farmNow, farmTimeToIso, formatFarmTime } from '../time';
 import type { Language, Task, TaskStatus } from '../types';
 import { Button, Card, Choice, Field, Notice, Sheet, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
+import { c, dateField, Form, memberOptions, projectOptions, selectField, textField } from '../completion-ui';
 
 export function TodayScreen({ work, language, onRecord }: { work: Workspace; language: Language; onRecord: () => void }) {
   const t = textFor(language);
@@ -14,15 +15,11 @@ export function TodayScreen({ work, language, onRecord }: { work: Workspace; lan
   const [status, setStatus] = useState<TaskStatus>('started');
   const [evidence, setEvidence] = useState('');
   const [reason, setReason] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [newTask, setNewTask] = useState(false);
-  const [title, setTitle] = useState('');
-  const [instructions, setInstructions] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const [assignee, setAssignee] = useState('');
-  const [due, setDue] = useState('');
   const snapshot = work.snapshot;
   if (!snapshot) return <Notice text={t.neverSynced} />;
-  const tasks = snapshot.tasks.filter(item => !['completed', 'cancelled'].includes(item.status));
+  const tasks = snapshot.tasks.filter(item => showAll || !['completed', 'cancelled'].includes(item.status));
   const column = width >= 800 ? { flexBasis: '48%' as const, flexGrow: 1 } : { width: '100%' as const };
 
   async function saveStatus() {
@@ -35,18 +32,11 @@ export function TodayScreen({ work, language, onRecord }: { work: Workspace; lan
     } catch (value) { work.setError(value); }
   }
 
-  async function createTask() {
-    if (!title.trim()) { work.setError(new Error('required')); return; }
-    const completed = await work.onlineAction(async () => {
-      await work.api.request(`/v1/farms/${work.farmId}/tasks`, 'POST', { id: Crypto.randomUUID(), title: title.trim(), instructions: instructions.trim(), ...(projectId ? { projectId } : {}), ...(assignee ? { assigneeId: assignee } : {}), ...(due ? { dueAt: farmTimeToIso(due, snapshot!.farm.timezone) } : {}) });
-    });
-    if (completed) { setNewTask(false); setTitle(''); setInstructions(''); setDue(''); await work.refresh(); }
-  }
 
   return <>
     <View style={styles.between}><View><Text style={styles.title}>{t.today}</Text><Text style={styles.muted}>{farmNow(snapshot.farm.timezone).slice(0, 10)} · {snapshot.farm.timezone}</Text></View><Button title={t.record} onPress={onRecord} testID="today-record" /></View>
     <View style={styles.grid}>
-      <Card title={t.tasks} style={column}>
+      <Card title={t.tasks} style={column}><Button secondary title={c(language, showAll ? 'open' : 'history')} onPress={() => setShowAll(!showAll)} />
         {tasks.length ? tasks.map(item => {
           const queued = work.mutations.some(mutation => mutation.kind === 'task-status' && mutation.resourceId === item.id && mutation.state !== 'resolved');
           const editable = work.canManage || item.assignee_id === work.session.userId;
@@ -63,16 +53,14 @@ export function TodayScreen({ work, language, onRecord }: { work: Workspace; lan
     </View>
     {snapshot.assets.some(asset => ['offline', 'degraded'].includes(asset.integration_state)) ? <Card title={t.equipment}>{snapshot.assets.filter(asset => ['offline', 'degraded'].includes(asset.integration_state)).map(asset => <Text key={asset.id} style={styles.text}>{asset.name} · {label(language, asset.integration_state)}</Text>)}</Card> : null}
     <Sheet title={task?.title || t.task} visible={Boolean(task)} onClose={() => setTask(null)} closeLabel={t.close}>
+      {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       <Choice label={t.stage} value={status} onChange={setStatus} closeLabel={t.close} options={(['started', 'completed', 'blocked', ...(work.canManage ? ['cancelled'] : [])] as TaskStatus[]).map(value => ({ value, label: label(language, value) }))} />
       <Field label={t.evidence} value={evidence} onChangeText={setEvidence} multiline maxLength={2000} /><Field label={t.reason} value={reason} onChangeText={setReason} multiline maxLength={2000} />
       <Button title={t.save} onPress={() => { void saveStatus(); }} />
+      {task && work.canManage ? <Form work={work} language={language} title={c(language, 'taskDetails')} includeId={false} fields={[textField('title', true, { maxLength: 200 }), textField('instructions', false, { multiline: true }), dateField('dueAt', false), selectField('assigneeId', memberOptions(work)), textField('reason', true, { maxLength: 1000 })]} initial={{ ...task, dueAt: task.due_at ? farmNow(snapshot.farm.timezone, new Date(task.due_at)) : '', assigneeId: task.assignee_id }} submit={body => work.api.request(`/v1/farms/${work.farmId}/tasks/${task.id}`, 'PATCH', { ...body, dueAt: body.dueAt ?? null, assigneeId: body.assigneeId ?? null, version: task.version })} onSaved={async () => { setTask(null); await work.refresh(); }} /> : null}
     </Sheet>
     <Sheet title={t.newTask} visible={newTask} onClose={() => setNewTask(false)} closeLabel={t.close}>
-      <Field label={t.taskTitle} value={title} onChangeText={setTitle} maxLength={160} /><Field label={t.instructions} value={instructions} onChangeText={setInstructions} multiline />
-      <Choice label={t.project} value={projectId} onChange={setProjectId} closeLabel={t.close} options={[{ value: '', label: '—' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.name }))]} />
-      <Choice label={t.assignee} value={assignee} onChange={setAssignee} closeLabel={t.close} options={[{ value: '', label: t.unassigned }, ...snapshot.members.map(member => ({ value: member.id, label: member.username }))]} />
-      <Field label={`${t.due} · ${snapshot.farm.timezone}`} hint={t.farmTimeHint} value={due} onChangeText={setDue} autoCapitalize="none" />
-      <Button title={t.save} busy={work.busy} onPress={() => { void createTask(); }} />
+      <Form work={work} language={language} fields={[textField('title', true, { maxLength: 200 }), textField('instructions', false, { multiline: true }), selectField('projectId', projectOptions(work)), selectField('assigneeId', memberOptions(work)), dateField('dueAt', false)]} submit={body => work.api.request(`/v1/farms/${work.farmId}/tasks`, 'POST', body)} onSaved={async () => { setNewTask(false); await work.refresh(); }} />
     </Sheet>
   </>;
 }

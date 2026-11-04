@@ -179,9 +179,9 @@ export const catalogues = { sn, nd };
 export type TextKey = keyof typeof sn;
 export function textFor(language: Language) { return catalogues[language]; }
 export function label(language: Language, value: string): string {
-  const aliases: Record<string, TextKey> = { planting_date: 'plantingDate', area_ha: 'area', as_of_date: 'asOfDate', current_count: 'currentCount' };
-  const key = aliases[value] || value.replaceAll('-', '_') as TextKey;
-  return completionText(language, value) ?? catalogues[language][key] ?? catalogues[language].unknown;
+  const aliases: Record<string, string> = { planting_date: 'plantingDate', area_ha: 'area', as_of_date: 'asOfDate', current_count: 'currentCount', projectId: 'project', assigneeId: 'assignee', taskId: 'task', damId: 'dam', sireId: 'sire', observedAt: 'when', animalId: 'animal', costAllocations: 'allocations', animal: 'animals', unitCost: 'unitCost' };
+  const key = (aliases[value] || value.replaceAll('-', '_')) as TextKey;
+  return completionText(language, value) ?? completionText(language, key) ?? catalogues[language][key] ?? catalogues[language].unknown;
 }
 export function errorText(language: Language, error: unknown): string {
   const key = (error instanceof Error ? error.message : 'request_failed') as TextKey;

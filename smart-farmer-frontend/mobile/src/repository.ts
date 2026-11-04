@@ -36,6 +36,7 @@ export class LocalRepository {
       CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS snapshots (farm_id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS drafts (farm_id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS form_drafts (farm_id TEXT NOT NULL, form_key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(farm_id,form_key));
       CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, farm_id TEXT NOT NULL, value TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS outbox_farm ON outbox(farm_id);
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, farm_id TEXT NOT NULL);
@@ -55,6 +56,18 @@ export class LocalRepository {
     return this.exclusive(async () => { await this.db.runAsync('INSERT INTO preferences(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, JSON.stringify(value)); });
   }
 
+  formDraft<T>(farmId: string, key: string): Promise<T | null> {
+    return this.exclusive(async () => { const row = await this.db.getFirstAsync<JsonRow>('SELECT value FROM form_drafts WHERE farm_id = ? AND form_key = ?', farmId, key); return row ? JSON.parse(row.value) as T : null; });
+  }
+
+  saveFormDraft(farmId: string, key: string, value: unknown): Promise<void> {
+    if (!UUID.test(farmId)) throw new Error('invalid_record');
+    return this.exclusive(async () => {
+      if (value === null) await this.db.runAsync('DELETE FROM form_drafts WHERE farm_id = ? AND form_key = ?', farmId, key);
+      else await this.db.runAsync('INSERT INTO form_drafts(farm_id, form_key, value) VALUES(?, ?, ?) ON CONFLICT(farm_id,form_key) DO UPDATE SET value=excluded.value', farmId, key, JSON.stringify(value));
+    });
+  }
+
   snapshot(farmId: string): Promise<FarmSnapshot | null> {
     return this.exclusive(async () => {
       const row = await this.db.getFirstAsync<JsonRow>('SELECT value FROM snapshots WHERE farm_id = ?', farmId);
@@ -71,6 +84,8 @@ export class LocalRepository {
     return this.exclusive(async () => {
       await this.db.runAsync('DELETE FROM snapshots WHERE farm_id = ?', farmId);
       await this.db.runAsync('DELETE FROM preferences WHERE key LIKE ?', `farm:${farmId}:%`);
+      const files = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ?', farmId);
+      for (const row of files) { const attachment = JSON.parse(row.value) as Attachment; if (attachment.state !== 'synced') await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ?', JSON.stringify({ ...attachment, state: 'blocked', lastError: 'access_revoked' }), attachment.id); }
       const rows = await this.db.getAllAsync<JsonRow>('SELECT value FROM outbox WHERE farm_id = ?', farmId);
       for (const row of rows) {
         const mutation = JSON.parse(row.value) as Mutation;
@@ -145,7 +160,7 @@ export class LocalRepository {
   }
 
   attach(attachment: Attachment): Promise<void> {
-    if (!UUID.test(attachment.id) || !UUID.test(attachment.activityId) || !UUID.test(attachment.farmId)) throw new Error('invalid_record');
+    if (!UUID.test(attachment.id) || !UUID.test(attachment.activityId || attachment.assetId || '') || Boolean(attachment.activityId) === Boolean(attachment.assetId) || !UUID.test(attachment.farmId)) throw new Error('invalid_record');
     if (attachment.sizeBytes > 5 * 1024 * 1024 || attachment.sizeBytes <= 0) throw new Error('media_too_large');
     const encodedSize = Math.floor(attachment.dataBase64.length * 3 / 4) - (attachment.dataBase64.endsWith('==') ? 2 : attachment.dataBase64.endsWith('=') ? 1 : 0);
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(attachment.dataBase64) || encodedSize !== attachment.sizeBytes) throw new Error('invalid_record');
@@ -153,7 +168,7 @@ export class LocalRepository {
       const rows = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments');
       const used = rows.reduce((total, row) => { const prior = JSON.parse(row.value) as Attachment; return total + (prior.state === 'synced' ? 0 : prior.sizeBytes); }, 0);
       if (used + attachment.sizeBytes > 50 * 1024 * 1024) throw new Error('local_quota');
-      await this.db.runAsync('INSERT INTO attachments(id, farm_id, activity_id, value) VALUES(?, ?, ?, ?)', attachment.id, attachment.farmId, attachment.activityId, JSON.stringify(attachment));
+      await this.db.runAsync('INSERT INTO attachments(id, farm_id, activity_id, value) VALUES(?, ?, ?, ?)', attachment.id, attachment.farmId, attachment.assetId ? `asset:${attachment.assetId}` : attachment.activityId!, JSON.stringify(attachment));
     });
   }
 
@@ -163,6 +178,21 @@ export class LocalRepository {
         ? await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ? AND activity_id = ? ORDER BY rowid', farmId, activityId)
         : await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ? ORDER BY rowid', farmId);
       return rows.map(row => JSON.parse(row.value) as Attachment);
+    });
+  }
+
+  queueAssetAttachments(farmId: string, assetId: string): Promise<void> {
+    if (!UUID.test(farmId) || !UUID.test(assetId)) throw new Error('invalid_record');
+    return this.exclusive(async () => {
+      await this.db.execAsync('BEGIN IMMEDIATE');
+      try {
+        const values = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ? AND activity_id = ?', farmId, `asset:${assetId}`);
+        for (const value of values) {
+          const attachment = JSON.parse(value.value) as Attachment;
+          if (attachment.assetId === assetId && attachment.state === 'draft') await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ? AND farm_id = ?', JSON.stringify({ ...attachment, state: 'pending' }), attachment.id, farmId);
+        }
+        await this.db.execAsync('COMMIT');
+      } catch (error) { await this.db.execAsync('ROLLBACK'); throw error; }
     });
   }
 

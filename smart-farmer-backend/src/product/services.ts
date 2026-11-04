@@ -1,45 +1,1099 @@
-import {randomUUID} from 'node:crypto';
-import type {FastifyInstance} from 'fastify';
-import type {PoolClient} from 'pg';
-import {z} from 'zod';
-import {ApiError,audit,manageRoles,type Context} from '../context.js';
-import {uuid,when,money,currency,quantity,finance} from '../core.js';
-import {sha256} from '../security.js';
-import {auth,idempotent,listQuery,page,project,row,text,cents} from './common.js';
-const serviceInput=z.object({id:uuid,name:z.string().trim().min(1).max(150),description:text,serviceArea:z.string().trim().min(1).max(150),rate:money,currency,rateBasis:z.string().trim().min(1).max(80),operatorIncluded:z.boolean(),fuelIncluded:z.boolean(),terms:z.string().max(1500).default(''),resourceAssetId:uuid.nullable().default(null),minimumCharge:money.default(0),mobilisationCharge:money.default(0),cancellationTerms:z.string().max(1500).default(''),capability:z.string().max(1500).default(''),availabilityNote:z.string().max(1500).default('')}).strict();
-const bookingParams=z.object({bookingId:uuid});
-async function lockBooking(c:PoolClient,bookingId:string,farmId:string){
- const snap=row((await c.query('SELECT b.service_id,b.farm_id AS customer_farm_id,s.farm_id AS provider_farm_id,s.resource_asset_id FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE b.id=$1',[bookingId])).rows[0]);if(snap.customer_farm_id!==farmId&&snap.provider_farm_id!==farmId)throw new ApiError('not_found',404);
- if(snap.resource_asset_id)row((await c.query('SELECT id FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE',[snap.provider_farm_id,snap.resource_asset_id])).rows[0]);
- const service=row((await c.query('SELECT * FROM service_listings WHERE id=$1 FOR UPDATE',[snap.service_id])).rows[0]);if(service.resource_asset_id!==snap.resource_asset_id)throw new ApiError('retry_transaction',409);const booking=row((await c.query('SELECT * FROM service_bookings WHERE id=$1 FOR UPDATE',[bookingId])).rows[0]);return {service,booking,provider:service.farm_id===farmId,customer:booking.farm_id===farmId};
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance } from "fastify";
+import type { PoolClient } from "pg";
+import { z } from "zod";
+import { ApiError, audit, manageRoles, type Context } from "../context.js";
+import { uuid, when, money, currency, quantity, finance } from "../core.js";
+import { sha256 } from "../security.js";
+import {
+  auth,
+  idempotent,
+  listQuery,
+  page,
+  project,
+  row,
+  text,
+  cents,
+} from "./common.js";
+const serviceInput = z
+  .object({
+    id: uuid,
+    name: z.string().trim().min(1).max(150),
+    description: text,
+    serviceArea: z.string().trim().min(1).max(150),
+    rate: money,
+    currency,
+    rateBasis: z.string().trim().min(1).max(80),
+    operatorIncluded: z.boolean(),
+    fuelIncluded: z.boolean(),
+    terms: z.string().max(1500).default(""),
+    resourceAssetId: uuid.nullable().default(null),
+    minimumCharge: money.default(0),
+    mobilisationCharge: money.default(0),
+    cancellationTerms: z.string().max(1500).default(""),
+    capability: z.string().max(1500).default(""),
+    availabilityNote: z.string().max(1500).default(""),
+  })
+  .strict();
+const bookingParams = z.object({ bookingId: uuid });
+async function lockBooking(c: PoolClient, bookingId: string, farmId: string) {
+  const snap = row(
+    (
+      await c.query(
+        "SELECT b.service_id,b.farm_id AS customer_farm_id,s.farm_id AS provider_farm_id,s.resource_asset_id FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE b.id=$1",
+        [bookingId],
+      )
+    ).rows[0],
+  );
+  if (snap.customer_farm_id !== farmId && snap.provider_farm_id !== farmId)
+    throw new ApiError("not_found", 404);
+  if (snap.resource_asset_id)
+    row(
+      (
+        await c.query(
+          "SELECT id FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+          [snap.provider_farm_id, snap.resource_asset_id],
+        )
+      ).rows[0],
+    );
+  const service = row(
+    (
+      await c.query("SELECT * FROM service_listings WHERE id=$1 FOR UPDATE", [
+        snap.service_id,
+      ])
+    ).rows[0],
+  );
+  if (service.resource_asset_id !== snap.resource_asset_id)
+    throw new ApiError("retry_transaction", 409);
+  const booking = row(
+    (
+      await c.query("SELECT * FROM service_bookings WHERE id=$1 FOR UPDATE", [
+        bookingId,
+      ])
+    ).rows[0],
+  );
+  return {
+    service,
+    booking,
+    provider: service.farm_id === farmId,
+    customer: booking.farm_id === farmId,
+  };
 }
-async function paidTotal(c:PoolClient,id:string){return Number((await c.query("SELECT COALESCE(sum(CASE WHEN kind='refund' THEN -amount ELSE amount END),0) AS n FROM service_payment_records WHERE booking_id=$1 AND status='recorded'",[id])).rows[0].n);}
-async function recordReceipt(c:PoolClient,payment:any,booking:any,service:any,actor:string){
- if(payment.currency!==booking.currency)throw new ApiError('currency_mismatch',409);const paid=await paidTotal(c,booking.id);if(payment.kind==='refund'){if(cents(Number(payment.amount))>cents(paid))throw new ApiError('refund_exceeds_paid',409);}else{if(booking.status==='cancelled')throw new ApiError('booking_cancelled',409);if(cents(paid+Number(payment.amount))>cents(Number(booking.amount)))throw new ApiError('payment_exceeds_balance',409);}
- const sign=payment.kind==='refund'?-1:1,sourceType=sign<0?'manual_service_refund':'manual_service_payment',observedAt=new Date().toISOString();
- await finance(c,{farmId:service.farm_id,projectId:null,actorId:actor,kind:'payment',amount:sign*Number(payment.amount),currency:payment.currency,sourceType,sourceId:payment.id,observedAt,note:payment.note});
- await finance(c,{farmId:booking.farm_id,projectId:booking.project_id,actorId:actor,kind:'cash_out',amount:sign*Number(payment.amount),currency:payment.currency,sourceType,sourceId:payment.id,observedAt,note:payment.note});
- const next=(await c.query("UPDATE service_payment_records SET status='recorded',acknowledged_by=$2,acknowledged_at=now() WHERE id=$1 RETURNING *",[payment.id,actor])).rows[0];await audit(c,service.farm_id,actor,'service_payment',payment.id,'manually_acknowledged',payment.note,null,next);return {...next,provenance:'manual',providerVerified:false};
+async function paidTotal(c: PoolClient, id: string) {
+  return Number(
+    (
+      await c.query(
+        "SELECT COALESCE(sum(CASE WHEN kind='refund' THEN -amount ELSE amount END),0) AS n FROM service_payment_records WHERE booking_id=$1 AND status='recorded'",
+        [id],
+      )
+    ).rows[0].n,
+  );
 }
-export function registerServices(app:FastifyInstance,ctx:Context){
- app.get('/v1/services',async(req)=>{const q=listQuery.extend({q:z.string().max(100).default('')}).parse(req.query);return page((await ctx.db.query("SELECT s.id,s.name,s.description,s.service_area,s.rate,s.currency,s.rate_basis,s.operator_included,s.fuel_included,s.terms,s.minimum_charge,s.mobilisation_charge,s.cancellation_terms,s.capability,s.availability_note,s.version,f.name AS provider_name FROM service_listings s JOIN farms f ON f.id=s.farm_id WHERE s.active AND s.name ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR s.id<$2) ORDER BY s.id DESC LIMIT $3",[q.q,q.cursor??null,q.limit+1])).rows,q.limit);});
- app.get('/v1/farms/:farmId/services',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const q=listQuery.parse(req.query);return page((await ctx.db.query('SELECT * FROM service_listings WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[a.farmId,q.cursor??null,q.limit+1])).rows,q.limit);});
- app.post('/v1/farms/:farmId/services',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const b=serviceInput.parse(req.body);const out=await idempotent(ctx,a.farmId,a.actor,b.id,{operation:'service',...b},async c=>{if(b.resourceAssetId)row((await c.query('SELECT id FROM assets WHERE farm_id=$1 AND id=$2',[a.farmId,b.resourceAssetId])).rows[0]);return (await c.query('INSERT INTO service_listings(id,farm_id,created_by,name,description,service_area,rate,currency,rate_basis,operator_included,fuel_included,terms,payload_hash,resource_asset_id,minimum_charge,mobilisation_charge,cancellation_terms,capability,availability_note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *',[b.id,a.farmId,a.actor,b.name,b.description,b.serviceArea,b.rate,b.currency,b.rateBasis,b.operatorIncluded,b.fuelIncluded,b.terms,sha256(JSON.stringify(b)),b.resourceAssetId,b.minimumCharge,b.mobilisationCharge,b.cancellationTerms,b.capability,b.availabilityNote])).rows[0];});return reply.code(out.replayed?200:201).send(out.body);});
- app.patch('/v1/farms/:farmId/services/:serviceId',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {serviceId}=z.object({serviceId:uuid}).parse(req.params);const b=serviceInput.omit({id:true}).partial().extend({version:z.number().int().positive(),reason:text,active:z.boolean().optional()}).strict().parse(req.body);return ctx.transaction(async c=>{const snapshot=row((await c.query('SELECT resource_asset_id FROM service_listings WHERE farm_id=$1 AND id=$2',[a.farmId,serviceId])).rows[0]);const ids=[snapshot.resource_asset_id,b.resourceAssetId].filter(Boolean).sort();for(const id of new Set(ids))row((await c.query('SELECT id FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE',[a.farmId,id])).rows[0]);const old=row((await c.query('SELECT * FROM service_listings WHERE farm_id=$1 AND id=$2 FOR UPDATE',[a.farmId,serviceId])).rows[0]);if(old.version!==b.version)throw new ApiError('version_conflict',409,{current:old});if(old.resource_asset_id!==snapshot.resource_asset_id)throw new ApiError('retry_transaction',409);if(b.resourceAssetId!==undefined&&b.resourceAssetId!==old.resource_asset_id&&(await c.query("SELECT 1 FROM service_bookings WHERE service_id=$1 AND status IN('confirmed','completed')",[serviceId])).rowCount)throw new ApiError('resource_has_bookings',409);const map:Record<string,string>={name:'name',description:'description',serviceArea:'service_area',rate:'rate',currency:'currency',rateBasis:'rate_basis',operatorIncluded:'operator_included',fuelIncluded:'fuel_included',terms:'terms',resourceAssetId:'resource_asset_id',minimumCharge:'minimum_charge',mobilisationCharge:'mobilisation_charge',cancellationTerms:'cancellation_terms',capability:'capability',availabilityNote:'availability_note',active:'active'};const values:any[]=[serviceId],updates=[];for(const [key,column]of Object.entries(map))if(key in b){values.push((b as any)[key]);updates.push(`${column}=$${values.length}`);}if(!updates.length)throw new ApiError('no_changes');const next=(await c.query(`UPDATE service_listings SET ${updates.join(',')},version=version+1 WHERE id=$1 RETURNING *`,values)).rows[0];await audit(c,a.farmId,a.actor,'service',serviceId,'updated',b.reason,old,next);return next;});});
- app.post('/v1/services/:serviceId/bookings',async(req,reply)=>{const actor=await ctx.user(req,reply);if(!actor)return;const {serviceId}=z.object({serviceId:uuid}).parse(req.params);const b=z.object({id:uuid,farmId:uuid,projectId:uuid.nullable().default(null),taskId:uuid.nullable().default(null),startsAt:when,endsAt:when,note:z.string().max(1500).default(''),requestedQuantity:quantity.refine(v=>v>0).nullable().default(null),requestedUnit:z.string().trim().min(1).max(40).nullable().default(null)}).strict().refine(b=>(b.requestedQuantity===null)===(b.requestedUnit===null),'quantity_unit_pair_required').refine(b=>Date.parse(b.endsAt)>Date.parse(b.startsAt),'invalid_booking_dates').parse(req.body);if(!await ctx.member(b.farmId,actor,manageRoles))throw new ApiError('not_found',404);const out=await idempotent(ctx,b.farmId,actor,b.id,{operation:'booking',serviceId,...b},async c=>{const service=row((await c.query('SELECT * FROM service_listings WHERE id=$1 AND active',[serviceId])).rows[0]);if(b.projectId)await project(c,b.farmId,b.projectId);if(b.taskId){const t=row((await c.query('SELECT * FROM tasks WHERE farm_id=$1 AND id=$2',[b.farmId,b.taskId])).rows[0]);if(t.project_id!==b.projectId||['completed','cancelled'].includes(t.status))throw new ApiError('task_project_mismatch',409);}const booking=(await c.query('INSERT INTO service_bookings(id,service_id,farm_id,project_id,requested_by,starts_at,ends_at,note,payload_hash,task_id,requested_quantity,requested_unit) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',[b.id,serviceId,b.farmId,b.projectId,actor,b.startsAt,b.endsAt,b.note,sha256(JSON.stringify(b)),b.taskId,b.requestedQuantity,b.requestedUnit])).rows[0];await c.query("INSERT INTO booking_audit(booking_id,actor_id,status,version,detail) VALUES($1,$2,'requested',1,$3)",[b.id,actor,JSON.stringify({requestedQuantity:b.requestedQuantity,requestedUnit:b.requestedUnit,taskId:b.taskId})]);return {...booking,indicativeCharge:b.requestedQuantity===null?null:Math.round((Math.max(Number(service.minimum_charge),b.requestedQuantity*Number(service.rate))+Number(service.mobilisation_charge))*100)/100,indicativeCurrency:service.currency,quoteRequired:true};});return reply.code(out.replayed?200:201).send(out.body);});
- app.get('/v1/farms/:farmId/bookings',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const q=listQuery.parse(req.query);return page((await ctx.db.query("SELECT b.*,s.name,(s.farm_id=$1) AS is_provider,(b.farm_id=$1) AS is_customer,COALESCE((SELECT sum(CASE WHEN p.kind='refund' THEN -p.amount ELSE p.amount END) FROM service_payment_records p WHERE p.booking_id=b.id AND p.status='recorded'),0) AS manually_recorded_paid,COALESCE((SELECT jsonb_agg(jsonb_build_object('quantity',w.quantity,'unit',w.unit,'observed_at',w.observed_at,'note',w.note) ORDER BY w.observed_at) FROM service_work_records w WHERE w.booking_id=b.id),'[]'::jsonb) AS actual_work FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE (b.farm_id=$1 OR s.farm_id=$1) AND ($2::uuid IS NULL OR b.id<$2) ORDER BY b.id DESC LIMIT $3",[a.farmId,q.cursor??null,q.limit+1])).rows,q.limit);});
- app.post('/v1/farms/:farmId/bookings/:bookingId/status',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);const b=z.object({status:z.enum(['quoted','confirmed','completed','cancelled']),version:z.number().int().positive(),amount:money.optional(),currency:currency.optional(),workDescription:z.string().max(2000).optional(),quotedQuantity:quantity.refine(v=>v>0).nullable().optional(),quotedUnit:z.string().trim().min(1).max(40).nullable().optional(),depositRequired:money.optional(),mobilisationCharge:money.optional()}).strict().parse(req.body);if(b.status!=='quoted'&&['amount','currency','workDescription','quotedQuantity','quotedUnit','depositRequired','mobilisationCharge'].some(k=>k in b))throw new ApiError('quote_fields_only');return ctx.transaction(async c=>{const {service:s,booking:o,provider,customer}=await lockBooking(c,bookingId,a.farmId);if(o.version!==b.version)throw new ApiError('version_conflict',409,{current:o});let amount=o.amount,code=o.currency,work=o.work_description,quotedQuantity=o.quoted_quantity,quotedUnit=o.quoted_unit,deposit=o.deposit_required,mobilisation=o.mobilisation_charge;
-  if(b.status==='quoted'){if(!provider||!['requested','quoted'].includes(o.status))throw new ApiError('invalid_transition',409);if(b.amount===undefined||!b.currency)throw new ApiError('quote_amount_required');if(b.currency!==s.currency)throw new ApiError('currency_mismatch',409);amount=b.amount;code=b.currency;work=b.workDescription??o.work_description;quotedQuantity=b.quotedQuantity===undefined?o.quoted_quantity:b.quotedQuantity;quotedUnit=b.quotedUnit===undefined?o.quoted_unit:b.quotedUnit;if((quotedQuantity===null)!==(quotedUnit===null))throw new ApiError('quantity_unit_pair_required');deposit=b.depositRequired??o.deposit_required;mobilisation=b.mobilisationCharge??s.mobilisation_charge;if(cents(Number(amount))<cents(Number(s.minimum_charge)+Number(mobilisation)))throw new ApiError('quote_below_minimum',409);if(cents(Number(deposit))>cents(Number(amount)))throw new ApiError('deposit_exceeds_quote',409);}
-  else if(b.status==='confirmed'){if(!customer||o.status!=='quoted')throw new ApiError('invalid_transition',409);if(!s.active)throw new ApiError('service_unavailable',409);if((await c.query("SELECT 1 FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE b.id<>$2 AND b.status IN('confirmed','completed') AND b.starts_at<$3 AND b.ends_at>$4 AND (b.service_id=$1 OR ($5::uuid IS NOT NULL AND s.farm_id=$6 AND s.resource_asset_id=$5)) LIMIT 1",[s.id,bookingId,o.ends_at,o.starts_at,s.resource_asset_id,s.farm_id])).rowCount)throw new ApiError('booking_overlap',409);}
-  else if(b.status==='completed'){if(!customer||o.status!=='confirmed')throw new ApiError('invalid_transition',409);if((await c.query("SELECT 1 FROM service_amendments WHERE booking_id=$1 AND status='proposed'",[bookingId])).rowCount)throw new ApiError('amendment_acceptance_required',409);await finance(c,{farmId:o.farm_id,projectId:o.project_id,actorId:a.actor,kind:'expense',amount:Number(amount),currency:code,sourceType:'service_booking',sourceId:bookingId,observedAt:new Date().toISOString(),note:work});if(s.farm_id!==o.farm_id)await finance(c,{farmId:s.farm_id,projectId:null,actorId:a.actor,kind:'revenue',amount:Number(amount),currency:code,sourceType:'service_booking',sourceId:bookingId,observedAt:new Date().toISOString(),note:work});if(o.task_id){const task=row((await c.query('SELECT * FROM tasks WHERE farm_id=$1 AND id=$2 FOR UPDATE',[o.farm_id,o.task_id])).rows[0]);if(task.status==='cancelled')throw new ApiError('linked_task_cancelled',409);if(!(await c.query('SELECT 1 FROM service_work_records WHERE booking_id=$1',[bookingId])).rowCount)throw new ApiError('actual_work_required',409);if(task.status!=='completed'){await c.query("UPDATE tasks SET status='completed',evidence=$2,version=version+1,updated_at=now() WHERE id=$1",[task.id,`service_booking:${bookingId}`]);await audit(c,o.farm_id,a.actor,'task',task.id,'completed','customer_confirmed_service',task,{bookingId});}}}
-  else{if(!['requested','quoted','confirmed'].includes(o.status))throw new ApiError('invalid_transition',409);await c.query("UPDATE service_amendments SET status='rejected',accepted_by=$2,accepted_at=now() WHERE booking_id=$1 AND status='proposed'",[bookingId,a.actor]);}
-  const next=(await c.query('UPDATE service_bookings SET status=$2,amount=$3,currency=$4,work_description=$5,quoted_quantity=$6,quoted_unit=$7,deposit_required=$8,mobilisation_charge=$9,version=version+1,updated_at=now() WHERE id=$1 RETURNING *',[bookingId,b.status,amount,code,work,quotedQuantity,quotedUnit,deposit,mobilisation])).rows[0];await c.query('INSERT INTO booking_audit(booking_id,actor_id,status,amount,currency,version,detail) VALUES($1,$2,$3,$4,$5,$6,$7)',[bookingId,a.actor,b.status,amount,code,next.version,JSON.stringify({workDescription:work,quotedQuantity,quotedUnit,depositRequired:deposit,mobilisationCharge:mobilisation})]);await audit(c,a.farmId,a.actor,'service_booking',bookingId,b.status,'explicit_booking_transition',o,next);return next;});});
- app.get('/v1/farms/:farmId/bookings/:bookingId/history',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);return ctx.transaction(async c=>{await lockBooking(c,bookingId,a.farmId);return {items:(await c.query('SELECT * FROM booking_audit WHERE booking_id=$1 ORDER BY id',[bookingId])).rows,work:(await c.query('SELECT * FROM service_work_records WHERE booking_id=$1 ORDER BY observed_at,id',[bookingId])).rows,amendments:(await c.query('SELECT * FROM service_amendments WHERE booking_id=$1 ORDER BY created_at,id',[bookingId])).rows};});});
- app.post('/v1/farms/:farmId/bookings/:bookingId/work',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);const b=z.object({id:uuid,observedAt:when,quantity:quantity.refine(v=>v>0),unit:z.string().trim().min(1).max(40),note:text}).strict().parse(req.body);const out=await idempotent(ctx,a.farmId,a.actor,b.id,{operation:'service_work',bookingId,...b},async c=>{const {booking,provider}=await lockBooking(c,bookingId,a.farmId);if(!provider)throw new ApiError('not_found',404);if(booking.status!=='confirmed')throw new ApiError('booking_not_confirmed',409);const result=(await c.query('INSERT INTO service_work_records(id,booking_id,actor_id,observed_at,quantity,unit,note) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[b.id,bookingId,a.actor,b.observedAt,b.quantity,b.unit,b.note])).rows[0];await audit(c,a.farmId,a.actor,'service_work',b.id,'recorded',b.note,null,result);return result;});return reply.code(out.replayed?200:201).send(out.body);});
- app.get('/v1/farms/:farmId/bookings/:bookingId/payments',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);return ctx.transaction(async c=>{const {booking}=await lockBooking(c,bookingId,a.farmId);const items=(await c.query('SELECT * FROM service_payment_records WHERE booking_id=$1 ORDER BY created_at,id',[bookingId])).rows.map(p=>({...p,provenance:'manual',providerVerified:false}));const paid=await paidTotal(c,bookingId);return {items,manuallyRecordedPaid:paid,outstanding:booking.amount===null?null:Math.max(0,Number(booking.amount)-paid),depositOutstanding:Math.max(0,Number(booking.deposit_required)-paid),cancelledHeldPayment:booking.status==='cancelled'?paid:0,providerVerified:false};});});
- app.post('/v1/farms/:farmId/bookings/:bookingId/payments',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);const b=z.object({id:uuid,kind:z.enum(['deposit','balance','refund']),amount:money.refine(v=>v>0),currency,note:text}).strict().parse(req.body);const out=await idempotent(ctx,a.farmId,a.actor,b.id,{operation:'service_payment',bookingId,...b},async c=>{const {booking,service,provider}=await lockBooking(c,bookingId,a.farmId);if(booking.amount===null||!['confirmed','completed','cancelled'].includes(booking.status))throw new ApiError('booking_not_confirmed',409);if(b.currency!==booking.currency)throw new ApiError('currency_mismatch',409);if(b.kind==='refund'&&!provider)throw new ApiError('provider_refund_required',403);if(booking.status==='cancelled'&&b.kind!=='refund')throw new ApiError('booking_cancelled',409);const p=(await c.query('INSERT INTO service_payment_records(id,booking_id,actor_id,recorded_farm_id,kind,amount,currency,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[b.id,bookingId,a.actor,a.farmId,b.kind,b.amount,b.currency,b.note])).rows[0];if(provider)return recordReceipt(c,p,booking,service,a.actor);return {...p,provenance:'manual_declaration',providerVerified:false,requiresProviderAcknowledgment:true};});return reply.code(out.replayed?200:201).send(out.body);});
- app.post('/v1/farms/:farmId/bookings/:bookingId/payments/:paymentId/acknowledge',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId,paymentId}=bookingParams.extend({paymentId:uuid}).parse(req.params);z.object({}).strict().parse(req.body??{});return ctx.transaction(async c=>{const {booking,service,provider}=await lockBooking(c,bookingId,a.farmId);if(!provider)throw new ApiError('not_found',404);const p=row((await c.query('SELECT * FROM service_payment_records WHERE booking_id=$1 AND id=$2 FOR UPDATE',[bookingId,paymentId])).rows[0]);if(p.status==='recorded')return {...p,provenance:'manual',providerVerified:false};if(p.status!=='declared')throw new ApiError('payment_not_declared',409);return recordReceipt(c,p,booking,service,a.actor);});});
- app.post('/v1/farms/:farmId/bookings/:bookingId/amendments',async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId}=bookingParams.parse(req.params);const b=z.object({id:uuid,version:z.number().int().positive(),amount:money,currency,reason:text,workDescription:text}).strict().parse(req.body);const out=await idempotent(ctx,a.farmId,a.actor,b.id,{operation:'service_amendment',bookingId,...b},async c=>{const {booking,provider}=await lockBooking(c,bookingId,a.farmId);if(!provider)throw new ApiError('not_found',404);if(booking.status!=='confirmed')throw new ApiError('booking_not_confirmed',409);if(booking.version!==b.version)throw new ApiError('version_conflict',409,{current:booking});if(b.currency!==booking.currency)throw new ApiError('currency_mismatch',409);if(cents(b.amount)<cents(await paidTotal(c,bookingId)))throw new ApiError('amendment_below_paid',409);if((await c.query("SELECT 1 FROM service_amendments WHERE booking_id=$1 AND status='proposed'",[bookingId])).rowCount)throw new ApiError('amendment_pending',409);return (await c.query('INSERT INTO service_amendments(id,booking_id,booking_version,amount,currency,reason,work_description,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[b.id,bookingId,b.version,b.amount,b.currency,b.reason,b.workDescription,a.actor])).rows[0];});return reply.code(out.replayed?200:201).send(out.body);});
- for(const action of ['accept','reject'] as const)app.post(`/v1/farms/:farmId/bookings/:bookingId/amendments/:amendmentId/${action}`,async(req,reply)=>{const a=await auth(ctx,req,reply,manageRoles);if(!a)return;const {bookingId,amendmentId}=bookingParams.extend({amendmentId:uuid}).parse(req.params);const b=z.object({version:z.number().int().positive(),confirmed:z.literal(true)}).strict().parse(req.body);return ctx.transaction(async c=>{const {booking,customer}=await lockBooking(c,bookingId,a.farmId);if(!customer)throw new ApiError('not_found',404);const amendment=row((await c.query('SELECT * FROM service_amendments WHERE booking_id=$1 AND id=$2 FOR UPDATE',[bookingId,amendmentId])).rows[0]);const state=action==='accept'?'accepted':'rejected';if(amendment.status===state&&amendment.accepted_by===a.actor)return {amendment,booking};if(booking.version!==b.version||amendment.booking_version!==b.version)throw new ApiError('version_conflict',409,{current:booking});if(booking.status!=='confirmed'||amendment.status!=='proposed')throw new ApiError('invalid_transition',409);if(action==='accept'&&cents(Number(amendment.amount))<cents(await paidTotal(c,bookingId)))throw new ApiError('amendment_below_paid',409);const next=(await c.query('UPDATE service_amendments SET status=$2,accepted_by=$3,accepted_at=now() WHERE id=$1 RETURNING *',[amendmentId,state,a.actor])).rows[0];let revised=booking;if(action==='accept'){revised=(await c.query('UPDATE service_bookings SET amount=$2,work_description=$3,deposit_required=LEAST(deposit_required,$2),version=version+1,updated_at=now() WHERE id=$1 RETURNING *',[bookingId,amendment.amount,amendment.work_description])).rows[0];await c.query('INSERT INTO booking_audit(booking_id,actor_id,status,amount,currency,version,detail) VALUES($1,$2,$3,$4,$5,$6,$7)',[bookingId,a.actor,'amended',revised.amount,revised.currency,revised.version,JSON.stringify({amendmentId,reason:amendment.reason,workDescription:amendment.work_description})]);}await audit(c,a.farmId,a.actor,'service_amendment',amendmentId,state,amendment.reason,amendment,next);return {amendment:next,booking:revised};});});
- app.get('/v1/services/:serviceId/reviews',async(req)=>{const {serviceId}=z.object({serviceId:uuid}).parse(req.params),q=listQuery.parse(req.query);return page((await ctx.db.query("SELECT r.id,r.rating,r.note,r.created_at FROM interaction_reviews r JOIN service_bookings b ON b.id=r.booking_id WHERE b.service_id=$1 AND b.status='completed' AND ($2::uuid IS NULL OR r.id<$2) ORDER BY r.id DESC LIMIT $3",[serviceId,q.cursor??null,q.limit+1])).rows,q.limit);});
+async function recordReceipt(
+  c: PoolClient,
+  payment: any,
+  booking: any,
+  service: any,
+  actor: string,
+) {
+  if (payment.currency !== booking.currency)
+    throw new ApiError("currency_mismatch", 409);
+  const paid = await paidTotal(c, booking.id);
+  if (payment.kind === "refund") {
+    if (cents(Number(payment.amount)) > cents(paid))
+      throw new ApiError("refund_exceeds_paid", 409);
+  } else {
+    if (booking.status === "cancelled")
+      throw new ApiError("booking_cancelled", 409);
+    if (cents(paid + Number(payment.amount)) > cents(Number(booking.amount)))
+      throw new ApiError("payment_exceeds_balance", 409);
+  }
+  const sign = payment.kind === "refund" ? -1 : 1,
+    sourceType = sign < 0 ? "manual_service_refund" : "manual_service_payment",
+    observedAt = new Date().toISOString();
+  await finance(c, {
+    farmId: service.farm_id,
+    projectId: null,
+    actorId: actor,
+    kind: "payment",
+    amount: sign * Number(payment.amount),
+    currency: payment.currency,
+    sourceType,
+    sourceId: payment.id,
+    observedAt,
+    note: payment.note,
+  });
+  await finance(c, {
+    farmId: booking.farm_id,
+    projectId: booking.project_id,
+    actorId: actor,
+    kind: "cash_out",
+    amount: sign * Number(payment.amount),
+    currency: payment.currency,
+    sourceType,
+    sourceId: payment.id,
+    observedAt,
+    note: payment.note,
+  });
+  const next = (
+    await c.query(
+      "UPDATE service_payment_records SET status='recorded',acknowledged_by=$2,acknowledged_at=now() WHERE id=$1 RETURNING *",
+      [payment.id, actor],
+    )
+  ).rows[0];
+  await audit(
+    c,
+    service.farm_id,
+    actor,
+    "service_payment",
+    payment.id,
+    "manually_acknowledged",
+    payment.note,
+    null,
+    next,
+  );
+  return { ...next, provenance: "manual", providerVerified: false };
+}
+export function registerServices(app: FastifyInstance, ctx: Context) {
+  app.get("/v1/services", async (req) => {
+    const q = listQuery
+      .extend({ q: z.string().max(100).default("") })
+      .parse(req.query);
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT s.id,s.name,s.description,s.service_area,s.rate,s.currency,s.rate_basis,s.operator_included,s.fuel_included,s.terms,s.minimum_charge,s.mobilisation_charge,s.cancellation_terms,s.capability,s.availability_note,s.version,f.name AS provider_name FROM service_listings s JOIN farms f ON f.id=s.farm_id WHERE s.active AND s.name ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR s.id<$2) ORDER BY s.id DESC LIMIT $3",
+          [q.q, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows,
+      q.limit,
+    );
+  });
+  app.get("/v1/farms/:farmId/services", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const q = listQuery.parse(req.query);
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT * FROM service_listings WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
+          [a.farmId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows,
+      q.limit,
+    );
+  });
+  app.post("/v1/farms/:farmId/services", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const b = serviceInput.parse(req.body);
+    const out = await idempotent(
+      ctx,
+      a.farmId,
+      a.actor,
+      b.id,
+      { operation: "service", ...b },
+      async (c) => {
+        if (b.resourceAssetId)
+          row(
+            (
+              await c.query(
+                "SELECT id FROM assets WHERE farm_id=$1 AND id=$2",
+                [a.farmId, b.resourceAssetId],
+              )
+            ).rows[0],
+          );
+        return (
+          await c.query(
+            "INSERT INTO service_listings(id,farm_id,created_by,name,description,service_area,rate,currency,rate_basis,operator_included,fuel_included,terms,payload_hash,resource_asset_id,minimum_charge,mobilisation_charge,cancellation_terms,capability,availability_note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *",
+            [
+              b.id,
+              a.farmId,
+              a.actor,
+              b.name,
+              b.description,
+              b.serviceArea,
+              b.rate,
+              b.currency,
+              b.rateBasis,
+              b.operatorIncluded,
+              b.fuelIncluded,
+              b.terms,
+              sha256(JSON.stringify(b)),
+              b.resourceAssetId,
+              b.minimumCharge,
+              b.mobilisationCharge,
+              b.cancellationTerms,
+              b.capability,
+              b.availabilityNote,
+            ],
+          )
+        ).rows[0];
+      },
+    );
+    return reply.code(out.replayed ? 200 : 201).send(out.body);
+  });
+  app.patch("/v1/farms/:farmId/services/:serviceId", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const { serviceId } = z.object({ serviceId: uuid }).parse(req.params);
+    const b = serviceInput
+      .omit({ id: true })
+      .partial()
+      .extend({
+        version: z.number().int().positive(),
+        reason: text,
+        active: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    return ctx.transaction(async (c) => {
+      const snapshot = row(
+        (
+          await c.query(
+            "SELECT resource_asset_id FROM service_listings WHERE farm_id=$1 AND id=$2",
+            [a.farmId, serviceId],
+          )
+        ).rows[0],
+      );
+      const ids = [snapshot.resource_asset_id, b.resourceAssetId]
+        .filter(Boolean)
+        .sort();
+      for (const id of new Set(ids))
+        row(
+          (
+            await c.query(
+              "SELECT id FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+              [a.farmId, id],
+            )
+          ).rows[0],
+        );
+      const old = row(
+        (
+          await c.query(
+            "SELECT * FROM service_listings WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+            [a.farmId, serviceId],
+          )
+        ).rows[0],
+      );
+      if (old.version !== b.version)
+        throw new ApiError("version_conflict", 409, { current: old });
+      if (old.resource_asset_id !== snapshot.resource_asset_id)
+        throw new ApiError("retry_transaction", 409);
+      if (
+        b.resourceAssetId !== undefined &&
+        b.resourceAssetId !== old.resource_asset_id &&
+        (
+          await c.query(
+            "SELECT 1 FROM service_bookings WHERE service_id=$1 AND status IN('confirmed','completed')",
+            [serviceId],
+          )
+        ).rowCount
+      )
+        throw new ApiError("resource_has_bookings", 409);
+      const map: Record<string, string> = {
+        name: "name",
+        description: "description",
+        serviceArea: "service_area",
+        rate: "rate",
+        currency: "currency",
+        rateBasis: "rate_basis",
+        operatorIncluded: "operator_included",
+        fuelIncluded: "fuel_included",
+        terms: "terms",
+        resourceAssetId: "resource_asset_id",
+        minimumCharge: "minimum_charge",
+        mobilisationCharge: "mobilisation_charge",
+        cancellationTerms: "cancellation_terms",
+        capability: "capability",
+        availabilityNote: "availability_note",
+        active: "active",
+      };
+      const values: any[] = [serviceId],
+        updates = [];
+      for (const [key, column] of Object.entries(map))
+        if (key in b) {
+          values.push((b as any)[key]);
+          updates.push(`${column}=$${values.length}`);
+        }
+      if (!updates.length) throw new ApiError("no_changes");
+      const next = (
+        await c.query(
+          `UPDATE service_listings SET ${updates.join(",")},version=version+1 WHERE id=$1 RETURNING *`,
+          values,
+        )
+      ).rows[0];
+      await audit(
+        c,
+        a.farmId,
+        a.actor,
+        "service",
+        serviceId,
+        "updated",
+        b.reason,
+        old,
+        next,
+      );
+      return next;
+    });
+  });
+  app.post("/v1/services/:serviceId/bookings", async (req, reply) => {
+    const actor = await ctx.user(req, reply);
+    if (!actor) return;
+    const { serviceId } = z.object({ serviceId: uuid }).parse(req.params);
+    const b = z
+      .object({
+        id: uuid,
+        farmId: uuid,
+        projectId: uuid.nullable().default(null),
+        taskId: uuid.nullable().default(null),
+        startsAt: when,
+        endsAt: when,
+        note: z.string().max(1500).default(""),
+        requestedQuantity: quantity
+          .refine((v) => v > 0)
+          .nullable()
+          .default(null),
+        requestedUnit: z
+          .string()
+          .trim()
+          .min(1)
+          .max(40)
+          .nullable()
+          .default(null),
+      })
+      .strict()
+      .refine(
+        (b) => (b.requestedQuantity === null) === (b.requestedUnit === null),
+        "quantity_unit_pair_required",
+      )
+      .refine(
+        (b) => Date.parse(b.endsAt) > Date.parse(b.startsAt),
+        "invalid_booking_dates",
+      )
+      .parse(req.body);
+    if (!(await ctx.member(b.farmId, actor, manageRoles)))
+      throw new ApiError("not_found", 404);
+    const out = await idempotent(
+      ctx,
+      b.farmId,
+      actor,
+      b.id,
+      { operation: "booking", serviceId, ...b },
+      async (c) => {
+        const service = row(
+          (
+            await c.query(
+              "SELECT * FROM service_listings WHERE id=$1 AND active",
+              [serviceId],
+            )
+          ).rows[0],
+        );
+        if (b.projectId) await project(c, b.farmId, b.projectId);
+        if (b.taskId) {
+          const t = row(
+            (
+              await c.query("SELECT * FROM tasks WHERE farm_id=$1 AND id=$2", [
+                b.farmId,
+                b.taskId,
+              ])
+            ).rows[0],
+          );
+          if (
+            t.project_id !== b.projectId ||
+            ["completed", "cancelled"].includes(t.status)
+          )
+            throw new ApiError("task_project_mismatch", 409);
+        }
+        const booking = (
+          await c.query(
+            "INSERT INTO service_bookings(id,service_id,farm_id,project_id,requested_by,starts_at,ends_at,note,payload_hash,task_id,requested_quantity,requested_unit) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
+            [
+              b.id,
+              serviceId,
+              b.farmId,
+              b.projectId,
+              actor,
+              b.startsAt,
+              b.endsAt,
+              b.note,
+              sha256(JSON.stringify(b)),
+              b.taskId,
+              b.requestedQuantity,
+              b.requestedUnit,
+            ],
+          )
+        ).rows[0];
+        await c.query(
+          "INSERT INTO booking_audit(booking_id,actor_id,status,version,detail) VALUES($1,$2,'requested',1,$3)",
+          [
+            b.id,
+            actor,
+            JSON.stringify({
+              requestedQuantity: b.requestedQuantity,
+              requestedUnit: b.requestedUnit,
+              taskId: b.taskId,
+            }),
+          ],
+        );
+        return {
+          ...booking,
+          indicativeCharge:
+            b.requestedQuantity === null
+              ? null
+              : Math.round(
+                  (Math.max(
+                    Number(service.minimum_charge),
+                    b.requestedQuantity * Number(service.rate),
+                  ) +
+                    Number(service.mobilisation_charge)) *
+                    100,
+                ) / 100,
+          indicativeCurrency: service.currency,
+          quoteRequired: true,
+        };
+      },
+    );
+    return reply.code(out.replayed ? 200 : 201).send(out.body);
+  });
+  app.get("/v1/farms/:farmId/bookings", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const q = listQuery.parse(req.query);
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT b.*,s.name,(s.farm_id=$1) AS is_provider,(b.farm_id=$1) AS is_customer,COALESCE((SELECT sum(CASE WHEN p.kind='refund' THEN -p.amount ELSE p.amount END) FROM service_payment_records p WHERE p.booking_id=b.id AND p.status='recorded'),0) AS manually_recorded_paid,COALESCE((SELECT jsonb_agg(jsonb_build_object('quantity',w.quantity,'unit',w.unit,'observed_at',w.observed_at,'note',w.note) ORDER BY w.observed_at) FROM service_work_records w WHERE w.booking_id=b.id),'[]'::jsonb) AS actual_work FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE (b.farm_id=$1 OR s.farm_id=$1) AND ($2::uuid IS NULL OR b.id<$2) ORDER BY b.id DESC LIMIT $3",
+          [a.farmId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows,
+      q.limit,
+    );
+  });
+  app.post(
+    "/v1/farms/:farmId/bookings/:bookingId/status",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId } = bookingParams.parse(req.params);
+      const b = z
+        .object({
+          status: z.enum(["quoted", "confirmed", "completed", "cancelled"]),
+          version: z.number().int().positive(),
+          amount: money.optional(),
+          currency: currency.optional(),
+          workDescription: z.string().max(2000).optional(),
+          quotedQuantity: quantity
+            .refine((v) => v > 0)
+            .nullable()
+            .optional(),
+          quotedUnit: z.string().trim().min(1).max(40).nullable().optional(),
+          depositRequired: money.optional(),
+          mobilisationCharge: money.optional(),
+        })
+        .strict()
+        .parse(req.body);
+      if (
+        b.status !== "quoted" &&
+        [
+          "amount",
+          "currency",
+          "workDescription",
+          "quotedQuantity",
+          "quotedUnit",
+          "depositRequired",
+          "mobilisationCharge",
+        ].some((k) => k in b)
+      )
+        throw new ApiError("quote_fields_only");
+      return ctx.transaction(async (c) => {
+        const {
+          service: s,
+          booking: o,
+          provider,
+          customer,
+        } = await lockBooking(c, bookingId, a.farmId);
+        if (o.version !== b.version)
+          throw new ApiError("version_conflict", 409, { current: o });
+        let amount = o.amount,
+          code = o.currency,
+          work = o.work_description,
+          quotedQuantity = o.quoted_quantity,
+          quotedUnit = o.quoted_unit,
+          deposit = o.deposit_required,
+          mobilisation = o.mobilisation_charge;
+        if (b.status === "quoted") {
+          if (!provider || !["requested", "quoted"].includes(o.status))
+            throw new ApiError("invalid_transition", 409);
+          if (b.amount === undefined || !b.currency)
+            throw new ApiError("quote_amount_required");
+          if (b.currency !== s.currency)
+            throw new ApiError("currency_mismatch", 409);
+          amount = b.amount;
+          code = b.currency;
+          work = b.workDescription ?? o.work_description;
+          quotedQuantity =
+            b.quotedQuantity === undefined
+              ? o.quoted_quantity
+              : b.quotedQuantity;
+          quotedUnit =
+            b.quotedUnit === undefined ? o.quoted_unit : b.quotedUnit;
+          if ((quotedQuantity === null) !== (quotedUnit === null))
+            throw new ApiError("quantity_unit_pair_required");
+          deposit = b.depositRequired ?? o.deposit_required;
+          mobilisation = b.mobilisationCharge ?? s.mobilisation_charge;
+          if (
+            cents(Number(amount)) <
+            cents(Number(s.minimum_charge) + Number(mobilisation))
+          )
+            throw new ApiError("quote_below_minimum", 409);
+          if (cents(Number(deposit)) > cents(Number(amount)))
+            throw new ApiError("deposit_exceeds_quote", 409);
+        } else if (b.status === "confirmed") {
+          if (!customer || o.status !== "quoted")
+            throw new ApiError("invalid_transition", 409);
+          if (!s.active) throw new ApiError("service_unavailable", 409);
+          if (
+            (
+              await c.query(
+                "SELECT 1 FROM service_bookings b JOIN service_listings s ON s.id=b.service_id WHERE b.id<>$2 AND b.status IN('confirmed','completed') AND b.starts_at<$3 AND b.ends_at>$4 AND (b.service_id=$1 OR ($5::uuid IS NOT NULL AND s.farm_id=$6 AND s.resource_asset_id=$5)) LIMIT 1",
+                [
+                  s.id,
+                  bookingId,
+                  o.ends_at,
+                  o.starts_at,
+                  s.resource_asset_id,
+                  s.farm_id,
+                ],
+              )
+            ).rowCount
+          )
+            throw new ApiError("booking_overlap", 409);
+        } else if (b.status === "completed") {
+          if (!customer || o.status !== "confirmed")
+            throw new ApiError("invalid_transition", 409);
+          if (
+            (
+              await c.query(
+                "SELECT 1 FROM service_amendments WHERE booking_id=$1 AND status='proposed'",
+                [bookingId],
+              )
+            ).rowCount
+          )
+            throw new ApiError("amendment_acceptance_required", 409);
+          await finance(c, {
+            farmId: o.farm_id,
+            projectId: o.project_id,
+            actorId: a.actor,
+            kind: "expense",
+            amount: Number(amount),
+            currency: code,
+            sourceType: "service_booking",
+            sourceId: bookingId,
+            observedAt: new Date().toISOString(),
+            note: work,
+          });
+          if (s.farm_id !== o.farm_id)
+            await finance(c, {
+              farmId: s.farm_id,
+              projectId: null,
+              actorId: a.actor,
+              kind: "revenue",
+              amount: Number(amount),
+              currency: code,
+              sourceType: "service_booking",
+              sourceId: bookingId,
+              observedAt: new Date().toISOString(),
+              note: work,
+            });
+          if (o.task_id) {
+            const task = row(
+              (
+                await c.query(
+                  "SELECT * FROM tasks WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+                  [o.farm_id, o.task_id],
+                )
+              ).rows[0],
+            );
+            if (task.status === "cancelled")
+              throw new ApiError("linked_task_cancelled", 409);
+            if (
+              !(
+                await c.query(
+                  "SELECT 1 FROM service_work_records WHERE booking_id=$1",
+                  [bookingId],
+                )
+              ).rowCount
+            )
+              throw new ApiError("actual_work_required", 409);
+            if (task.status !== "completed") {
+              await c.query(
+                "UPDATE tasks SET status='completed',evidence=$2,version=version+1,updated_at=now() WHERE id=$1",
+                [task.id, `service_booking:${bookingId}`],
+              );
+              await audit(
+                c,
+                o.farm_id,
+                a.actor,
+                "task",
+                task.id,
+                "completed",
+                "customer_confirmed_service",
+                task,
+                { bookingId },
+              );
+            }
+          }
+        } else {
+          if (!["requested", "quoted", "confirmed"].includes(o.status))
+            throw new ApiError("invalid_transition", 409);
+          await c.query(
+            "UPDATE service_amendments SET status='rejected',accepted_by=$2,accepted_at=now() WHERE booking_id=$1 AND status='proposed'",
+            [bookingId, a.actor],
+          );
+        }
+        const next = (
+          await c.query(
+            "UPDATE service_bookings SET status=$2,amount=$3,currency=$4,work_description=$5,quoted_quantity=$6,quoted_unit=$7,deposit_required=$8,mobilisation_charge=$9,version=version+1,updated_at=now() WHERE id=$1 RETURNING *",
+            [
+              bookingId,
+              b.status,
+              amount,
+              code,
+              work,
+              quotedQuantity,
+              quotedUnit,
+              deposit,
+              mobilisation,
+            ],
+          )
+        ).rows[0];
+        await c.query(
+          "INSERT INTO booking_audit(booking_id,actor_id,status,amount,currency,version,detail) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          [
+            bookingId,
+            a.actor,
+            b.status,
+            amount,
+            code,
+            next.version,
+            JSON.stringify({
+              workDescription: work,
+              quotedQuantity,
+              quotedUnit,
+              depositRequired: deposit,
+              mobilisationCharge: mobilisation,
+            }),
+          ],
+        );
+        await audit(
+          c,
+          a.farmId,
+          a.actor,
+          "service_booking",
+          bookingId,
+          b.status,
+          "explicit_booking_transition",
+          o,
+          next,
+        );
+        return next;
+      });
+    },
+  );
+  app.get(
+    "/v1/farms/:farmId/bookings/:bookingId/history",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId } = bookingParams.parse(req.params);
+      return ctx.transaction(async (c) => {
+        await lockBooking(c, bookingId, a.farmId);
+        return {
+          items: (
+            await c.query(
+              "SELECT * FROM booking_audit WHERE booking_id=$1 ORDER BY id",
+              [bookingId],
+            )
+          ).rows,
+          work: (
+            await c.query(
+              "SELECT * FROM service_work_records WHERE booking_id=$1 ORDER BY observed_at,id",
+              [bookingId],
+            )
+          ).rows,
+          amendments: (
+            await c.query(
+              "SELECT * FROM service_amendments WHERE booking_id=$1 ORDER BY created_at,id",
+              [bookingId],
+            )
+          ).rows,
+        };
+      });
+    },
+  );
+  app.post("/v1/farms/:farmId/bookings/:bookingId/work", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const { bookingId } = bookingParams.parse(req.params);
+    const b = z
+      .object({
+        id: uuid,
+        observedAt: when,
+        quantity: quantity.refine((v) => v > 0),
+        unit: z.string().trim().min(1).max(40),
+        note: text,
+      })
+      .strict()
+      .parse(req.body);
+    const out = await idempotent(
+      ctx,
+      a.farmId,
+      a.actor,
+      b.id,
+      { operation: "service_work", bookingId, ...b },
+      async (c) => {
+        const { booking, provider } = await lockBooking(c, bookingId, a.farmId);
+        if (!provider) throw new ApiError("not_found", 404);
+        if (booking.status !== "confirmed")
+          throw new ApiError("booking_not_confirmed", 409);
+        const result = (
+          await c.query(
+            "INSERT INTO service_work_records(id,booking_id,actor_id,observed_at,quantity,unit,note) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+            [
+              b.id,
+              bookingId,
+              a.actor,
+              b.observedAt,
+              b.quantity,
+              b.unit,
+              b.note,
+            ],
+          )
+        ).rows[0];
+        await audit(
+          c,
+          a.farmId,
+          a.actor,
+          "service_work",
+          b.id,
+          "recorded",
+          b.note,
+          null,
+          result,
+        );
+        return result;
+      },
+    );
+    return reply.code(out.replayed ? 200 : 201).send(out.body);
+  });
+  app.get(
+    "/v1/farms/:farmId/bookings/:bookingId/payments",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId } = bookingParams.parse(req.params);
+      return ctx.transaction(async (c) => {
+        const { booking } = await lockBooking(c, bookingId, a.farmId);
+        const items = (
+          await c.query(
+            "SELECT * FROM service_payment_records WHERE booking_id=$1 ORDER BY created_at,id",
+            [bookingId],
+          )
+        ).rows.map((p) => ({
+          ...p,
+          provenance: "manual",
+          providerVerified: false,
+        }));
+        const paid = await paidTotal(c, bookingId);
+        return {
+          items,
+          manuallyRecordedPaid: paid,
+          outstanding:
+            booking.amount === null
+              ? null
+              : Math.max(0, Number(booking.amount) - paid),
+          depositOutstanding: Math.max(
+            0,
+            Number(booking.deposit_required) - paid,
+          ),
+          cancelledHeldPayment: booking.status === "cancelled" ? paid : 0,
+          providerVerified: false,
+        };
+      });
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/bookings/:bookingId/payments",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId } = bookingParams.parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          kind: z.enum(["deposit", "balance", "refund"]),
+          amount: money.refine((v) => v > 0),
+          currency,
+          note: text,
+        })
+        .strict()
+        .parse(req.body);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { operation: "service_payment", bookingId, ...b },
+        async (c) => {
+          const { booking, service, provider } = await lockBooking(
+            c,
+            bookingId,
+            a.farmId,
+          );
+          if (
+            booking.amount === null ||
+            !["confirmed", "completed", "cancelled"].includes(booking.status)
+          )
+            throw new ApiError("booking_not_confirmed", 409);
+          if (b.currency !== booking.currency)
+            throw new ApiError("currency_mismatch", 409);
+          if (b.kind === "refund" && !provider)
+            throw new ApiError("provider_refund_required", 403);
+          if (booking.status === "cancelled" && b.kind !== "refund")
+            throw new ApiError("booking_cancelled", 409);
+          const p = (
+            await c.query(
+              "INSERT INTO service_payment_records(id,booking_id,actor_id,recorded_farm_id,kind,amount,currency,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+              [
+                b.id,
+                bookingId,
+                a.actor,
+                a.farmId,
+                b.kind,
+                b.amount,
+                b.currency,
+                b.note,
+              ],
+            )
+          ).rows[0];
+          if (provider) return recordReceipt(c, p, booking, service, a.actor);
+          return {
+            ...p,
+            provenance: "manual_declaration",
+            providerVerified: false,
+            requiresProviderAcknowledgment: true,
+          };
+        },
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/bookings/:bookingId/payments/:paymentId/acknowledge",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId, paymentId } = bookingParams
+        .extend({ paymentId: uuid })
+        .parse(req.params);
+      z.object({})
+        .strict()
+        .parse(req.body ?? {});
+      return ctx.transaction(async (c) => {
+        const { booking, service, provider } = await lockBooking(
+          c,
+          bookingId,
+          a.farmId,
+        );
+        if (!provider) throw new ApiError("not_found", 404);
+        const p = row(
+          (
+            await c.query(
+              "SELECT * FROM service_payment_records WHERE booking_id=$1 AND id=$2 FOR UPDATE",
+              [bookingId, paymentId],
+            )
+          ).rows[0],
+        );
+        if (p.status === "recorded")
+          return { ...p, provenance: "manual", providerVerified: false };
+        if (p.status !== "declared")
+          throw new ApiError("payment_not_declared", 409);
+        return recordReceipt(c, p, booking, service, a.actor);
+      });
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/bookings/:bookingId/amendments",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { bookingId } = bookingParams.parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          version: z.number().int().positive(),
+          amount: money,
+          currency,
+          reason: text,
+          workDescription: text,
+        })
+        .strict()
+        .parse(req.body);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { operation: "service_amendment", bookingId, ...b },
+        async (c) => {
+          const { booking, provider } = await lockBooking(
+            c,
+            bookingId,
+            a.farmId,
+          );
+          if (!provider) throw new ApiError("not_found", 404);
+          if (booking.status !== "confirmed")
+            throw new ApiError("booking_not_confirmed", 409);
+          if (booking.version !== b.version)
+            throw new ApiError("version_conflict", 409, { current: booking });
+          if (b.currency !== booking.currency)
+            throw new ApiError("currency_mismatch", 409);
+          if (cents(b.amount) < cents(await paidTotal(c, bookingId)))
+            throw new ApiError("amendment_below_paid", 409);
+          if (
+            (
+              await c.query(
+                "SELECT 1 FROM service_amendments WHERE booking_id=$1 AND status='proposed'",
+                [bookingId],
+              )
+            ).rowCount
+          )
+            throw new ApiError("amendment_pending", 409);
+          return (
+            await c.query(
+              "INSERT INTO service_amendments(id,booking_id,booking_version,amount,currency,reason,work_description,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+              [
+                b.id,
+                bookingId,
+                b.version,
+                b.amount,
+                b.currency,
+                b.reason,
+                b.workDescription,
+                a.actor,
+              ],
+            )
+          ).rows[0];
+        },
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+  for (const action of ["accept", "reject"] as const)
+    app.post(
+      `/v1/farms/:farmId/bookings/:bookingId/amendments/:amendmentId/${action}`,
+      async (req, reply) => {
+        const a = await auth(ctx, req, reply, manageRoles);
+        if (!a) return;
+        const { bookingId, amendmentId } = bookingParams
+          .extend({ amendmentId: uuid })
+          .parse(req.params);
+        const b = z
+          .object({
+            version: z.number().int().positive(),
+            confirmed: z.literal(true),
+          })
+          .strict()
+          .parse(req.body);
+        return ctx.transaction(async (c) => {
+          const { booking, customer } = await lockBooking(
+            c,
+            bookingId,
+            a.farmId,
+          );
+          if (!customer) throw new ApiError("not_found", 404);
+          const amendment = row(
+            (
+              await c.query(
+                "SELECT * FROM service_amendments WHERE booking_id=$1 AND id=$2 FOR UPDATE",
+                [bookingId, amendmentId],
+              )
+            ).rows[0],
+          );
+          const state = action === "accept" ? "accepted" : "rejected";
+          if (amendment.status === state && amendment.accepted_by === a.actor)
+            return { amendment, booking };
+          if (
+            booking.version !== b.version ||
+            amendment.booking_version !== b.version
+          )
+            throw new ApiError("version_conflict", 409, { current: booking });
+          if (booking.status !== "confirmed" || amendment.status !== "proposed")
+            throw new ApiError("invalid_transition", 409);
+          if (
+            action === "accept" &&
+            cents(Number(amendment.amount)) <
+              cents(await paidTotal(c, bookingId))
+          )
+            throw new ApiError("amendment_below_paid", 409);
+          const next = (
+            await c.query(
+              "UPDATE service_amendments SET status=$2,accepted_by=$3,accepted_at=now() WHERE id=$1 RETURNING *",
+              [amendmentId, state, a.actor],
+            )
+          ).rows[0];
+          let revised = booking;
+          if (action === "accept") {
+            revised = (
+              await c.query(
+                "UPDATE service_bookings SET amount=$2,work_description=$3,deposit_required=LEAST(deposit_required,$2),version=version+1,updated_at=now() WHERE id=$1 RETURNING *",
+                [bookingId, amendment.amount, amendment.work_description],
+              )
+            ).rows[0];
+            await c.query(
+              "INSERT INTO booking_audit(booking_id,actor_id,status,amount,currency,version,detail) VALUES($1,$2,$3,$4,$5,$6,$7)",
+              [
+                bookingId,
+                a.actor,
+                "amended",
+                revised.amount,
+                revised.currency,
+                revised.version,
+                JSON.stringify({
+                  amendmentId,
+                  reason: amendment.reason,
+                  workDescription: amendment.work_description,
+                }),
+              ],
+            );
+          }
+          await audit(
+            c,
+            a.farmId,
+            a.actor,
+            "service_amendment",
+            amendmentId,
+            state,
+            amendment.reason,
+            amendment,
+            next,
+          );
+          return { amendment: next, booking: revised };
+        });
+      },
+    );
+  app.get("/v1/services/:serviceId/reviews", async (req) => {
+    const { serviceId } = z.object({ serviceId: uuid }).parse(req.params),
+      q = listQuery.parse(req.query);
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT r.id,r.rating,r.note,r.created_at FROM interaction_reviews r JOIN service_bookings b ON b.id=r.booking_id WHERE b.service_id=$1 AND b.status='completed' AND ($2::uuid IS NULL OR r.id<$2) ORDER BY r.id DESC LIMIT $3",
+          [serviceId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows,
+      q.limit,
+    );
+  });
 }

@@ -23,6 +23,7 @@ export const selectField = (key: string, values: { value: string; label: string 
 export function Fields({ fields, value, onChange, language, prefix = 'form' }: { fields: FormField[]; value: Row; onChange: (value: Row) => void; language: Language; prefix?: string }) {
   const t = textFor(language);
   return <>{fields.map(field => {
+    if (field.when && value[field.when.key] !== field.when.equals) return null;
     const title = field.label || c(language, field.key);
     const update = (next: unknown) => onChange({ ...value, [field.key]: next });
     const id = `${prefix}-${field.key}`;
@@ -40,8 +41,9 @@ export function Form({ work, language, title, fields, initial = {}, submit, onSa
   const [sending, setSending] = useState(false);
   const id = useRef(Crypto.randomUUID()); const t = textFor(language);
   const draftReady = useRef(!draftKey);
-  useEffect(() => { let active = true; if (draftKey) void work.repository.preference<{ id: string; values: Row }>(`farm:${work.farmId}:form:${draftKey}`).then(saved => { if (active && saved) { id.current = saved.id; setValues(saved.values); } draftReady.current = true; }).catch(work.setError); return () => { active = false; }; }, [draftKey, work.farmId]);
-  const updateValues = (next: Row) => { setValues(next); if (draftKey && draftReady.current) void work.repository.setPreference(`farm:${work.farmId}:form:${draftKey}`, { id: id.current, values: next }).catch(work.setError); };
+  const [draftLoaded, setDraftLoaded] = useState(!draftKey);
+  useEffect(() => { let active = true; if (draftKey) void work.repository.formDraft<{ id: string; values: Row }>(work.farmId, draftKey).then(saved => { if (active && saved) { id.current = saved.id; setValues(saved.values); } if (active) { draftReady.current = true; setDraftLoaded(true); } }).catch(work.setError); return () => { active = false; }; }, [draftKey, work.farmId]);
+  const updateValues = (next: Row) => { setValues(next); if (draftKey && draftReady.current) void work.repository.saveFormDraft(work.farmId, draftKey, { id: id.current, values: next }).catch(work.setError); };
   async function send(body: Row) {
     if (sending) return;
     setSending(true);
@@ -52,10 +54,11 @@ export function Form({ work, language, title, fields, initial = {}, submit, onSa
     setSending(false);
   }
   function prepare() { work.setError(null); try { const body = parseFields(fields, values, work.snapshot?.farm.timezone || 'Africa/Harare'); if (confirmation) setReview(body); else void send(body); } catch (error) { work.setError(error); } }
+  if (!draftLoaded) return <Card title={title}>{work.error ? <Notice error text={errorText(language, work.error)} /> : <Text style={styles.muted}>{t.loading}</Text>}</Card>;
   return <Card title={title}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{hint ? <Notice text={hint} /> : null}<Fields fields={fields} value={values} onChange={updateValues} language={language} /><Button testID="product-review" title={offline ? t.save : c(language, confirmation ? 'review' : 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={prepare} /><Text style={styles.caption}>{offline ? t.savedLocally : c(language, 'onlineOnly')}</Text><Sheet title={c(language, 'review')} visible={Boolean(review)} onClose={() => setReview(null)} closeLabel={t.close}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{review ? <FormSummary fields={fields} value={review} language={language} timezone={work.snapshot?.farm.timezone || 'Africa/Harare'} /> : null}<Button testID="product-confirm" title={c(language, 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={() => { if (review) void send(review); }} /></Sheet></Card>;
 }
 function FormSummary({ fields, value, language, timezone }: { fields: FormField[]; value: Row; language: Language; timezone: string }) {
-  return <>{fields.filter(field => field.type !== 'password' && value[field.key] !== undefined).map(field => <View key={field.key} style={styles.item}><Text style={styles.label}>{field.label || c(language, field.key)}</Text>{field.type === 'rows' ? rows(value[field.key]).map((item, i) => <Card key={i}><FormSummary fields={field.fields || []} value={item} language={language} timezone={timezone} /></Card>) : <Text style={styles.text}>{field.type === 'boolean' ? value[field.key] ? '✓' : '—' : field.type === 'datetime' ? formatFarmTime(string(value[field.key]), timezone, language) : field.type === 'choice' ? field.options?.find(option => option.value === value[field.key])?.label : field.type === 'multi' ? (value[field.key] as string[]).map(item => field.options?.find(option => option.value === item)?.label).join(' · ') : string(value[field.key])}</Text>}</View>)}</>;
+  return <>{fields.filter(field => field.type !== 'password' && value[field.key] !== undefined).map(field => <View key={field.key} style={styles.item}><Text style={styles.label}>{field.label || c(language, field.key)}</Text>{field.type === 'rows' ? rows(value[field.key]).map((item, i) => <Card key={i}><FormSummary fields={field.fields || []} value={item} language={language} timezone={timezone} /></Card>) : <Text style={styles.text}>{field.type === 'boolean' ? c(language, value[field.key] ? 'yes' : 'no') : field.type === 'datetime' ? formatFarmTime(string(value[field.key]), timezone, language) : field.type === 'choice' ? field.options?.find(option => option.value === value[field.key])?.label : field.type === 'multi' ? (value[field.key] as string[]).map(item => field.options?.find(option => option.value === item)?.label).join(' · ') : string(value[field.key])}</Text>}</View>)}</>;
 }
 
 export function Action({ work, language, title, detail, action, onSaved, danger = false }: { work: Workspace; language: Language; title: string; detail?: string; action: () => Promise<unknown>; onSaved?: () => void | Promise<void>; danger?: boolean }) {
@@ -84,13 +87,15 @@ export function usePanel<T>(work: Workspace, key: string, read: () => Promise<T>
 export function Facts({ value, fields, language, timezone }: { value: Row; fields: string[]; language: Language; timezone?: string }) {
   return <>{fields.filter(key => value[key] !== undefined && value[key] !== null).map(key => {
     const v = value[key]; const labelKey = key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
-    const shown = typeof v === 'boolean' ? v ? '✓' : '—' : typeof v === 'number' ? numberText(v, language) : /(_at|At)$/.test(key) && typeof v === 'string' && Number.isFinite(Date.parse(v)) && timezone ? formatFarmTime(v, timezone, language) : ['status', 'type', 'kind', 'category', 'mode', 'integration_state', 'delivery_state', 'state', 'severity', 'count_basis'].includes(key) ? c(language, string(v)) : completionText(language, string(v)) ?? string(v);
+    const shown = ['mortalityRate', 'hatchRate'].includes(key) ? `${numberText(Number(v) * 100, language)}%` : typeof v === 'boolean' ? c(language, v ? 'yes' : 'no') : typeof v === 'number' ? numberText(v, language) : /(_at|At)$/.test(key) && typeof v === 'string' && Number.isFinite(Date.parse(v)) && timezone ? formatFarmTime(v, timezone, language) : ['mortalityRate', 'hatchRate'].includes(key) ? `${numberText(Number(v) * 100, language)}%` : ['status', 'type', 'kind', 'category', 'mode', 'integration_state', 'delivery_state', 'state', 'severity', 'count_basis', 'countBasis', 'onboarding_mode'].includes(key) || key.endsWith('Fit') ? c(language, key === 'mode' && v === 'model' ? 'model_ai' : string(v)) : key === 'source' && ['manual', 'simulated', 'simulator', 'gateway', 'gauge'].includes(string(v)) ? c(language, string(v)) : string(v);
     if (typeof v === 'object') return null;
     return <View key={key} style={styles.item}><Text style={styles.caption}>{c(language, labelKey)}</Text><Text selectable style={styles.text}>{shown}</Text></View>;
   })}</>;
 }
 
 export function Records({ items, language, timezone, titleKey = 'title', fields = ['type', 'status', 'observed_at', 'note', 'quantity', 'unit', 'amount', 'currency'], children }: { items: Row[]; language: Language; timezone: string; titleKey?: string; fields?: string[]; children?: (item: Row) => React.ReactNode }) {
+  const [visible, setVisible] = useState(40);
+  useEffect(() => { setVisible(40); }, [items.length, items[0]?.id]);
   if (!items.length) return <Text style={styles.muted}>{textFor(language).empty}</Text>;
-  return <>{items.map((item, index) => <Card key={string(item.id) || index} title={string(item[titleKey]) || (item.type ? c(language, string(item.type)) : undefined)}><Facts value={item} fields={fields} language={language} timezone={timezone} />{children?.(item)}</Card>)}</>;
+  return <>{items.slice(0, visible).map((item, index) => <Card key={string(item.id) || index} title={string(item[titleKey]) || (item.type ? c(language, string(item.type)) : undefined)}><Facts value={item} fields={fields} language={language} timezone={timezone} />{children?.(item)}</Card>)}{items.length > visible ? <Button secondary title={`${c(language, 'loadMore')} (${visible}/${items.length})`} onPress={() => setVisible(value => value + 40)} /> : null}</>;
 }

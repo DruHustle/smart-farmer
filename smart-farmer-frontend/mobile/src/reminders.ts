@@ -42,5 +42,5 @@ export async function endDeviceNotifications(session: Session): Promise<void> {
   const channels = await storedChannels(); const owned = channels.filter(item => item.origin === session.origin && item.userId === session.userId);
   await SecureStore.setItemAsync(PUSH_CHANNELS_KEY, JSON.stringify(channels.filter(item => !owned.includes(item))), { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
   const api = createApi(session.origin, session.token);
-  await Promise.allSettled(owned.map(item => api.request(`/v1/farms/${item.farmId}/notification-channels/${item.id}`, 'DELETE')));
+  void Promise.allSettled(owned.map(item => api.request(`/v1/farms/${item.farmId}/notification-channels/${item.id}`, 'DELETE')));
 }

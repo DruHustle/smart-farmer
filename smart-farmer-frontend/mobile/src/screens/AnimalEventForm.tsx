@@ -1,10 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Text } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { label, textFor } from '../i18n';
 import { farmNow, farmTimeToIso, optionalNumber } from '../time';
 import type { AnimalEvent, AnimalEventType, Language, Project } from '../types';
-import { Button, Choice, Field, styles } from '../ui';
+import { Button, Choice, Field, Toggle, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
 import { c, Fields, numericField, textField } from '../completion-ui';
 import { parseFields, type FormField, type Row } from '../product';
@@ -35,14 +35,21 @@ export function AnimalEventForm({ work, language, project, history, animals, onS
   const t = textFor(language);
   const [type, setType] = useState<AnimalEventType>('observation');
   const [values, setValues] = useState<Record<string, string>>({ observedAt: farmNow(work.snapshot?.farm.timezone || 'Africa/Harare') });
+  const [historical, setHistorical] = useState(false);
+  const draftReady = useRef(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const draftKey = `animal:${project.id}`;
   const [saving, setSaving] = useState(false);
   const [extra, setExtra] = useState<Row>({});
   const id = useRef(Crypto.randomUUID());
+  useEffect(() => { let active = true; void work.repository.formDraft<{ id: string; type: AnimalEventType; values: Record<string, string>; extra: Row; historical: boolean }>(work.farmId, draftKey).then(saved => { if (!active) return; if (saved) { id.current = saved.id; setType(saved.type); setValues(saved.values); setExtra(saved.extra); setHistorical(saved.historical === true); } draftReady.current = true; setDraftLoaded(true); }).catch(work.setError); return () => { active = false; }; }, [draftKey]);
+  useEffect(() => { if (draftReady.current) void work.repository.saveFormDraft(work.farmId, draftKey, { id: id.current, type, values, extra, historical }).catch(work.setError); }, [type, values, extra, historical]);
   const value = (name: string) => values[name] || '';
   const update = (name: string, entry: string) => setValues(previous => ({ ...previous, [name]: entry }));
   const number = (name: string, minimum = 0) => optionalNumber(value(name), minimum);
   const field = (name: string, title: string, numeric = false, hint?: string) => <Field key={name} label={title} value={value(name)} onChangeText={entry => update(name, entry)} keyboardType={numeric ? 'decimal-pad' : 'default'} hint={hint} />;
-  const destinations = (work.snapshot?.projects || []).filter(candidate => candidate.id !== project.id && candidate.enterprise_type !== 'crop' && candidate.status !== 'closed');
+  const family = (enterprise: string) => enterprise.startsWith('fish') ? 'fish' : enterprise.startsWith('rabbit_') ? 'rabbit' : enterprise === 'crop' ? 'crop' : 'chicken';
+  const destinations = (work.snapshot?.projects || []).filter(candidate => candidate.id !== project.id && family(candidate.enterprise_type) === family(project.enterprise_type) && (historical || candidate.status !== 'closed' && (type === 'spawning' ? candidate.enterprise_type === 'fish_hatchery' : type === 'fish_hatch' ? candidate.enterprise_type === 'fish_nursery' : !['hatchery', 'fish_hatchery'].includes(candidate.enterprise_type))));
   const needsCount = ['acquisition', 'mortality', 'transfer', 'sale', 'egg_collection', 'egg_consumption', 'egg_loss', 'egg_sale', 'incubation', 'hatch', 'kindling', 'fostering', 'weaning', 'stocking', 'harvest', 'adjustment', 'spawning', 'fish_hatch', 'egg_disposition'].includes(type);
   const needsDestination = ['transfer', 'hatch', 'kindling', 'fostering', 'weaning', 'spawning', 'fish_hatch'].includes(type);
   const needsStock = ['feed', 'egg_collection', 'egg_consumption', 'egg_loss', 'egg_sale', 'incubation', 'harvest'].includes(type);
@@ -58,8 +65,15 @@ export function AnimalEventForm({ work, language, project, history, animals, onS
     if (saving) return;
     setSaving(true);
     try {
+      if (work.selectedFarm?.role === 'adviser' && !['observation', 'care', 'water_observation', 'growth_sample'].includes(type)) throw new Error('adviser_observation_only');
       const body: Record<string, unknown> = { id: id.current, type, observedAt: farmTimeToIso(value('observedAt'), work.snapshot!.farm.timezone), note: value('note') };
       if (needsCount) { const count = number('count'); if (count === null || !Number.isInteger(count) || !zeroAllowed && count <= 0) throw new Error('required'); body.count = count; }
+      if (historical) {
+        if (!work.canManage || !value('historySource').trim()) throw new Error('required');
+        body.historicalOnly = true;
+        body.metadata = { historySource: value('historySource').trim(), ...Object.fromEntries(['damId', 'sireId', 'matingEventId'].filter(key => value(key)).map(key => [key, value(key)])) };
+        if (needsDestination && value('destination')) body.destinationProjectId = value('destination');
+      } else {
       if (needsDestination && body.count !== 0) { if (!value('destination')) throw new Error('required'); body.destinationProjectId = value('destination'); }
       if (needsStock) { if (!value('stock')) throw new Error('required'); body.stockItemId = value('stock'); }
       if (needsQuantity) { const quantity = number('quantity'); if (!quantity || !value('unit')) throw new Error('required'); Object.assign(body, { quantity, unit: value('unit') }); }
@@ -92,17 +106,22 @@ export function AnimalEventForm({ work, language, project, history, animals, onS
       if (type === 'adjustment') { if (!value('reason') || !value('countBasis')) throw new Error('required'); Object.assign(metadata, { reason: value('reason'), countBasis: value('countBasis') }); }
       if (['mortality', 'close'].includes(type) && !value('note').trim()) throw new Error('required');
       if (Object.keys(metadata).length) body.metadata = metadata;
+      }
       await work.repository.enqueue({ id: id.current, farmId: work.farmId, kind: 'animal-event', resourceId: project.id, body, state: 'pending', attempts: 0, lastError: null, createdAt: new Date().toISOString() });
+      draftReady.current = false; await work.repository.saveFormDraft(work.farmId, draftKey, null);
       await work.reloadLocal(); work.setNotice('savedLocally'); onSaved(); if (work.online) void work.sync();
     } catch (error) { work.setError(error); } finally { setSaving(false); }
   }
 
+  if (!draftLoaded) return <Text style={styles.muted}>{t.loading}</Text>;
   return <>
     <Text style={styles.muted}>{t.eventHint}</Text>
-    <Choice label={t.animalEvent} value={type} onChange={setType} closeLabel={t.close} options={eventsFor(project, work.canManage).map(event => ({ value: event, label: event === 'close' ? t.closeProject : label(language, event) }))} />
+    <Choice label={t.animalEvent} value={type} onChange={setType} closeLabel={t.close} options={eventsFor(project, work.canManage).filter(event => work.selectedFarm?.role !== 'adviser' || ['observation', 'care', 'water_observation', 'growth_sample'].includes(event)).map(event => ({ value: event, label: event === 'close' ? t.closeProject : label(language, event) }))} />
+    {work.canManage && project.as_of_date ? <Toggle label={c(language, 'historicalOnly')} hint={c(language, 'historicalHint')} value={historical} onChange={setHistorical} /> : null}
     {field('observedAt', `${t.when} · ${work.snapshot?.farm.timezone}`, false, t.farmTimeHint)}
     {needsCount ? field('count', ['fish_hatchery', 'hatchery'].includes(project.enterprise_type) && !['fish_hatch', 'hatch'].includes(type) || type === 'spawning' ? c(language, 'eggCount') : t.count, true, ['hatch', 'kindling', 'fish_hatch'].includes(type) ? c(language, 'zeroLiveHint') : undefined) : null}
     {needsDestination ? <Choice label={t.destination} value={value('destination')} onChange={entry => update('destination', entry)} closeLabel={t.close} options={[{ value: '', label: t.choose }, ...destinations.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${label(language, candidate.enterprise_type)}` }))]} /> : null}
+    {historical ? <>{field('historySource', c(language, 'historySource'))}{['mating', 'spawning'].includes(type) ? <><Choice label={t.dam} value={value('damId')} onChange={entry => update('damId', entry)} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...animals.filter(animal => animal.sex === 'female').map(animal => ({ value: animal.id, label: animal.identifier }))]} /><Choice label={t.sire} value={value('sireId')} onChange={entry => update('sireId', entry)} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...animals.filter(animal => animal.sex === 'male').map(animal => ({ value: animal.id, label: animal.identifier }))]} /></> : null}{type === 'kindling' ? <Choice label={t.mating} value={value('matingEventId')} onChange={entry => update('matingEventId', entry)} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...history.filter(event => event.type === 'mating').map(event => ({ value: event.id, label: `${event.observed_at.slice(0, 10)} · ${event.note || ''}` }))]} /> : null}</> : <>
     {needsStock ? <Choice label={t.stockItem} value={value('stock')} onChange={entry => { update('stock', entry); const stock = work.snapshot?.stock.find(stock => stock.id === entry); if (stock) update('unit', stock.unit); }} closeLabel={t.close} options={[{ value: '', label: t.choose }, ...(work.snapshot?.stock || []).map(stock => ({ value: stock.id, label: `${stock.name} · ${stock.quantity} ${stock.unit}` }))]} /> : null}
     {needsQuantity ? <>{field('quantity', t.quantity, true)}{field('unit', t.unit)}</> : null}
     {sale ? <>{field('amount', t.amount, true)}<Field label={t.currency} value={value('currency')} onChangeText={entry => update('currency', entry.toUpperCase())} autoCapitalize="characters" maxLength={3} /></> : null}
@@ -125,6 +144,7 @@ export function AnimalEventForm({ work, language, project, history, animals, onS
     {type === 'care' ? <>{field('authorizedBy', t.authorizedBy)}{field('administeredBy', t.administeredBy)}{field('instructionsSource', t.sourceReference)}</> : null}
     {type === 'adjustment' ? <>{field('reason', t.reason)}<Choice label={t.countBasis} value={value('countBasis')} onChange={entry => update('countBasis', entry)} closeLabel={t.close} options={[{ value: '', label: t.choose }, { value: 'verified', label: t.verified }, { value: 'estimated', label: t.estimated }]} /></> : null}
     <Fields fields={extraFields} value={extra} onChange={setExtra} language={language} prefix="animal" />
+    </>}
     <Field label={t.note} value={value('note')} onChangeText={entry => update('note', entry)} multiline maxLength={4000} />
     <Button title={t.save} busy={saving} onPress={() => { void submit(); }} />
   </>;

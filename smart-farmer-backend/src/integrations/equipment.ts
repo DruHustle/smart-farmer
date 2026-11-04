@@ -9,6 +9,7 @@ import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import { ApiError, audit } from "../context.js";
 import { sha256, token } from "../security.js";
+import { listQuery, paged } from "../operations/common.js";
 import {
   authorize,
   hash,
@@ -211,17 +212,14 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
   app.get("/v1/farms/:farmId/assets", async (req, reply) => {
     const auth = await authorize(ctx, req, reply);
     if (!auth) return;
-    const query = z.object({ cursor: uuid.optional() }).parse(req.query);
+    const query = listQuery.parse(req.query);
     const rows = (
       await ctx.db.query(
-        "SELECT id,name,category,model,make,controller,firmware,location_id,responsible_id,notes,version,configuration,configuration_hash,protocol,parent_asset_id,integration_state,capabilities,stale_after_seconds,last_observed_at,latest_telemetry,COALESCE(last_observed_at>now()-make_interval(secs=>stale_after_seconds) AND last_observed_at<=now()+interval '5 seconds',false) AS fresh FROM assets WHERE farm_id=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT 101",
-        [auth.farmId, query.cursor ?? null],
+        "SELECT id,name,category,model,make,controller,firmware,location_id,responsible_id,notes,version,configuration,configuration_hash,protocol,parent_asset_id,integration_state,capabilities,stale_after_seconds,last_observed_at,latest_telemetry,COALESCE(last_observed_at>now()-make_interval(secs=>stale_after_seconds) AND last_observed_at<=now()+interval '5 seconds',false) AS fresh FROM assets WHERE farm_id=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT $3",
+        [auth.farmId, query.cursor ?? null, query.limit + 1],
       )
     ).rows;
-    return {
-      items: rows.slice(0, 100),
-      nextCursor: rows.length > 100 ? rows[99].id : null,
-    };
+    return paged(rows, query.limit);
   });
   app.post("/v1/farms/:farmId/assets", async (req, reply) => {
     const auth = await authorize(ctx, req, reply, managers);
@@ -348,15 +346,17 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     const auth = await authorize(ctx, req, reply, managers);
     if (!auth) return;
     const { assetId } = assetParams.parse(req.params);
+    const query = listQuery.parse(req.query);
     await ctx.transaction(expireCommands);
-    return {
-      items: (
+    return paged(
+      (
         await ctx.db.query(
-          "SELECT id,asset_id,command,status,expires_at,created_at,dispatched_at,acknowledged_at,completed_at,feedback,reason FROM equipment_commands WHERE farm_id=$1 AND asset_id=$2 ORDER BY created_at DESC LIMIT 100",
-          [auth.farmId, assetId],
+          "SELECT id,asset_id,command,status,expires_at,created_at,dispatched_at,acknowledged_at,completed_at,feedback,reason FROM equipment_commands WHERE farm_id=$1 AND asset_id=$2 AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM equipment_commands WHERE id=$3 AND farm_id=$1 AND asset_id=$2)) ORDER BY created_at DESC,id DESC LIMIT $4",
+          [auth.farmId, assetId, query.cursor ?? null, query.limit + 1],
         )
       ).rows,
-    };
+      query.limit,
+    );
   });
   app.post("/v1/farms/:farmId/assets/:assetId/commands", async (req, reply) => {
     const auth = await authorize(ctx, req, reply, managers);

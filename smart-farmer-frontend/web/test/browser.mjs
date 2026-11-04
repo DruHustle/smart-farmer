@@ -19,6 +19,23 @@ const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir
 await mkdir(artifacts, {recursive: true});
 const children = []; let browser; let page;
 const steps = []; const diagnostics = []; let stage = 'setup';
+// Accelerated multi-day journeys share one localhost IP. Respect the real API
+// window instead of disabling rate limits or hiding HTTP failures.
+let rateRemaining = Infinity, rateResetAt = 0;
+function observeRate(headers) {
+  if (Number(headers['x-ratelimit-limit']) !== 600) return;
+  rateRemaining = Number(headers['x-ratelimit-remaining']);
+  rateResetAt = Date.now() + Number(headers['x-ratelimit-reset']) * 1000;
+}
+async function pace() {
+  if (rateRemaining >= 100 || rateResetAt <= Date.now()) return;
+  const until = rateResetAt + 100;
+  console.log(`RATE: allowing the real API window to reset (${Math.ceil((until-Date.now())/1000)} seconds)`);
+  while (Date.now() < until) await new Promise(resolvePause => setTimeout(resolvePause, Math.min(59000, until-Date.now())));
+  rateRemaining = Infinity;
+}
+function watchContext(context) {context.on('response', response => {if(response.url().startsWith(api+'/')) observeRate(response.headers());});}
+
 function checkpoint(name) {stage = name; console.log(`STEP: ${name}`);}
 const watchdog = setTimeout(() => {
   const failure = `Browser suite exceeded 720 seconds during: ${stage}`;
@@ -38,7 +55,7 @@ async function command(cmd, args, cwd, extra = {}) {
 }
 function server(args, cwd) {const proc = spawn(process.execPath, args, {cwd, env, stdio: ['ignore', 'pipe', 'pipe']}); let logs = ''; proc.stdout.on('data', part => {logs += part;}); proc.stderr.on('data', part => {logs += part;}); children.push({proc, logs: () => logs}); return proc;}
 async function waitUrl(url) {for (let i = 0; i < 100; i++) {try {const response = await fetch(url, {signal: AbortSignal.timeout(2000)}); if (response.ok) return;} catch {} await new Promise(r => setTimeout(r, 100));} throw new Error(`Server did not become ready: ${url}`);}
-async function apiCall(path, body, token = '', method = body === undefined ? 'GET' : 'POST') {const response = await fetch(api + path, {signal: AbortSignal.timeout(10000), method, headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(body === undefined ? {} : {body: JSON.stringify(body)})}); const data = response.status === 204 ? {} : await response.json(); if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${JSON.stringify(data)}`); return data;}
+async function apiCall(path, body, token = '', method = body === undefined ? 'GET' : 'POST') {await pace();const response = await fetch(api + path, {signal: AbortSignal.timeout(10000), method, headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(body === undefined ? {} : {body: JSON.stringify(body)})}); observeRate(Object.fromEntries(response.headers));const data = response.status === 204 ? {} : await response.json(); if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${JSON.stringify(data)}`); return data;}
 const sn = catalog.sn, nd = catalog.nd;
 const unique = Date.now().toString(36); const username = `web_owner_${unique}`; let password = 'browser-fixture-password-2026';
 const note = `Offline field evidence ${unique}`;
@@ -64,7 +81,7 @@ try {
   checkpoint('Launch Chromium');
   browser = await chromium.launch({headless: true, timeout: 15000, ...((process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) ? {executablePath: process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : existsSync(chromium.executablePath()) ? {} : existsSync('/usr/bin/chromium') ? {executablePath: '/usr/bin/chromium'} : {}), args: ['--no-sandbox']});
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
-  page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
+  watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   const errors = []; page.on('pageerror', err => errors.push(err.message));
   page.on('console', message => {if (['error', 'warning'].includes(message.type())) diagnostics.push(`console ${message.type()}: ${message.text()}`);});
   page.on('requestfailed', request => diagnostics.push(`requestfailed ${request.method()} ${request.url()}: ${request.failure()?.errorText}`));
@@ -145,7 +162,7 @@ try {
   assert.equal((await apiCall(`/v1/farms/${farm.id}/assets/${sim.id}/commands`, undefined, token)).items[0].status, 'confirmed');
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
 
-  await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts});
+  await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
 
   checkpoint('Phone and desktop visual evidence');
   await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-equipment.png');

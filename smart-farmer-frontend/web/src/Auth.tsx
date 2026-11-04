@@ -11,7 +11,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot; recoveryCode: string} | null>(null);
   function finish(vault: Vault, code: string) {setChallenge(null); if (code) {setOneTimeCode(code); setPendingVault(vault);} else onLogin(vault);}
   async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); const form = new FormData(e.currentTarget); const username = String(form.get('username') ?? '').trim().toLowerCase(), password = String(form.get('password') ?? ''); setBusy(true); setMessage('');
+    e.preventDefault(); const invalid = [...e.currentTarget.elements].find(element => element instanceof HTMLInputElement && !element.validity.valid) as HTMLInputElement | undefined; if (invalid) {setMessage(t.invalid_input); invalid.focus(); return;} const form = new FormData(e.currentTarget); const username = String(form.get('username') ?? '').trim().toLowerCase(), password = String(form.get('password') ?? ''); setBusy(true); setMessage('');
     try {
       if (mode === 'offlineUnlock') {
         const vault = await Vault.unlock(apiOrigin, username, password);
@@ -33,7 +33,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div></section>
       <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>
         <h2>{t[mode]}</h2>{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
-        <form onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
+        <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}
           {mode === 'recover' && <Field label={t.recoveryCode}><input name="recoveryCode" required autoComplete="off" spellCheck={false}/></Field>}
           <Field label={mode === 'recover' ? t.newPassword : t.password} hint={t.passwordHint}><input name="password" type="password" required minLength={12} maxLength={128} autoComplete={mode === 'register' || mode === 'recover' || mode === 'join' ? 'new-password' : 'current-password'}/></Field>

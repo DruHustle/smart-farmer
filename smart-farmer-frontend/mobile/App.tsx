@@ -92,11 +92,11 @@ function Root() {
 
   async function signOut() {
     const previous = session;
+    setLocked(true);
     await forgetSession();
-    try { await clearReminders(); } catch { /* Notification service failure must not prevent local sign-out. */ }
+    try { if (previous) await endDeviceNotifications(previous); else await clearReminders(); } catch { /* Notification service failure must not prevent local sign-out. */ }
     setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode('');
     if (previous) {
-      void endDeviceNotifications(previous).catch(() => undefined);
       // Local access ends immediately; the server request is best-effort when a connection exists.
       void createApi(previous.origin, previous.token).request('/v1/sessions/current', 'DELETE').catch(() => undefined);
     }

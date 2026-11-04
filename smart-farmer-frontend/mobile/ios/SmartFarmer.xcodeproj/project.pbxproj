@@ -12,8 +12,8 @@
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 		F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748432D0307B40044C1D9 /* SceneDelegate.swift */; };
-		8A93C896980241A2BFFA0E5F /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 42B07352BD9145DDAD457483 /* InfoPlist.strings */; };
-		33692DCE056B4A469ADAB606 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D84B708035734FB680F45DE5 /* InfoPlist.strings */; };
+		F6C159959D794017AE538750 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = E6ACC02771B04270AD5C6A2F /* InfoPlist.strings */; };
+		B148C8D1057F4B49A24A003C /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2353AE455F9A4EF3922C1E24 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,8 +26,8 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = SmartFarmer/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748432D0307B40044C1D9 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SceneDelegate.swift; path = SmartFarmer/SceneDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* SmartFarmer-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SmartFarmer-Bridging-Header.h"; path = "SmartFarmer/SmartFarmer-Bridging-Header.h"; sourceTree = "<group>"; };
-		42B07352BD9145DDAD457483 /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "sn.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
-		D84B708035734FB680F45DE5 /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "nd.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
+		E6ACC02771B04270AD5C6A2F /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "sn.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
+		2353AE455F9A4EF3922C1E24 /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "nd.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,26 +95,26 @@
 			isa = PBXGroup;
 			children = (
 				BB2F792C24A3F905000567C9 /* Expo.plist */,
-				B70D1F5C36154876997D5859 /* sn.lproj */,
-				2BF014B50F0E48BDBD214FD2 /* nd.lproj */,
+				CB9FE12FED1E4F2099F05D73 /* sn.lproj */,
+				201FFB7BA12E4C779AFE2EFA /* nd.lproj */,
 			);
 			name = Supporting;
 			path = SmartFarmer/Supporting;
 			sourceTree = "<group>";
 		};
-		B70D1F5C36154876997D5859 /* sn.lproj */ = {
+		CB9FE12FED1E4F2099F05D73 /* sn.lproj */ = {
 			isa = "PBXGroup";
 			children = (
-				42B07352BD9145DDAD457483 /* InfoPlist.strings */,
+				E6ACC02771B04270AD5C6A2F /* InfoPlist.strings */,
 			);
 			name = sn.lproj;
 			sourceTree = "<group>";
 			path = "";
 		};
-		2BF014B50F0E48BDBD214FD2 /* nd.lproj */ = {
+		201FFB7BA12E4C779AFE2EFA /* nd.lproj */ = {
 			isa = "PBXGroup";
 			children = (
-				D84B708035734FB680F45DE5 /* InfoPlist.strings */,
+				2353AE455F9A4EF3922C1E24 /* InfoPlist.strings */,
 			);
 			name = nd.lproj;
 			sourceTree = "<group>";
@@ -133,7 +133,7 @@
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				80EC9FC5E0214BE38E5177EF /* [Expo Dev Launcher] Strip Local Network Keys for Release */,
+				65FA12A9AC8E44CD8062C5F5 /* [Expo Dev Launcher] Strip Local Network Keys for Release */,
 			);
 			buildRules = (
 			);
@@ -183,8 +183,8 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				8A93C896980241A2BFFA0E5F /* InfoPlist.strings in Resources */,
-				33692DCE056B4A469ADAB606 /* InfoPlist.strings in Resources */,
+				F6C159959D794017AE538750 /* InfoPlist.strings in Resources */,
+				B148C8D1057F4B49A24A003C /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -252,7 +252,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SmartFarmer/Pods-SmartFarmer-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		80EC9FC5E0214BE38E5177EF /* [Expo Dev Launcher] Strip Local Network Keys for Release */ = {
+		65FA12A9AC8E44CD8062C5F5 /* [Expo Dev Launcher] Strip Local Network Keys for Release */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (

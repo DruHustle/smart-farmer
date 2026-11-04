@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ApiError,audit,checkReplay,manageRoles,writeRoles,type Context} from './context.js';
 import {sha256} from './security.js';
+import {propagateRestrictions} from './product/restrictions.js';
 
 export const uuid=z.string().uuid();
 export const when=z.iso.datetime({offset:true});
@@ -62,7 +63,7 @@ export async function assertReleaseAllowed(client:pg.PoolClient,farmId:string,pr
   if(r.rowCount)throw new ApiError('treatment_restriction',409,{until:r.rows[0].ends_at});
 }
 export async function stockMovement(client:pg.PoolClient,o:{farmId:string,itemId:string,projectId:string|null,actorId:string,kind:string,quantity:number,unit:string,sourceType:string,sourceId:string,observedAt:string,note?:string,requireProject?:boolean}) {
-  const r=await client.query('SELECT * FROM stock_items WHERE farm_id=$1 AND id=$2 FOR UPDATE',[o.farmId,o.itemId]);
+  const r=await client.query('SELECT * FROM stock_items WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[o.farmId,o.itemId]);
   if(!r.rowCount)throw new ApiError('stock_not_found',404);const item=r.rows[0];
   if(o.requireProject&&item.project_id!==o.projectId)throw new ApiError('stock_project_mismatch',409);
   const delta=convertQuantity(o.quantity,o.unit,item.unit);
@@ -107,15 +108,15 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/farms/:farmId/activities',async(req,reply)=>{
     const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const canFinance=await member(farmId,actor,manageRoles);
-    const q=pageQuery.parse(req.query);const r=await db.query('SELECT id,project_id,actor_id,kind,observed_at,recorded_at,note,quantity,unit,stock_item_id,task_id,amount,currency FROM activities WHERE farm_id=$1 AND ($4::boolean OR kind<>\'cost\') AND ($2::uuid IS NULL OR (observed_at,id)<(SELECT observed_at,id FROM activities WHERE farm_id=$1 AND id=$2)) ORDER BY observed_at DESC,id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1,canFinance]);return page(r.rows,q.limit);
+    const q=pageQuery.parse(req.query);const r=await db.query('SELECT id,project_id,actor_id,kind,observed_at,recorded_at,note,quantity,unit,stock_item_id,task_id,amount,currency FROM activities WHERE farm_id=$1 AND ($4::boolean OR (kind<>\'cost\' AND NOT EXISTS(SELECT 1 FROM financial_entries f WHERE f.farm_id=activities.farm_id AND f.receipt_activity_id=activities.id))) AND ($2::uuid IS NULL OR (observed_at,id)<(SELECT observed_at,id FROM activities WHERE farm_id=$1 AND id=$2)) ORDER BY observed_at DESC,id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1,canFinance]);return page(r.rows,q.limit);
   });
   app.post('/v1/farms/:farmId/activities',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,writeRoles))throw new ApiError('not_found',404);
-    const a=activityInput.parse(req.body);if(a.kind==='cost'&&!await member(farmId,actor,manageRoles))throw new ApiError('financial_permission_required',403);
+    const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,[...writeRoles,'adviser']))throw new ApiError('not_found',404);
+    const a=activityInput.parse(req.body);if(await member(farmId,actor,['adviser'])&&(!['observation','rain'].includes(a.kind)||a.stockItemId!==null||a.amount!==null||a.taskId!==null))throw new ApiError('adviser_observation_only',403);if(a.kind==='cost'&&!await member(farmId,actor,manageRoles))throw new ApiError('financial_permission_required',403);
     const hash=sha256(JSON.stringify(a));const outcome=await transaction(async c=>{
       const inserted=await c.query('INSERT INTO activities(id,farm_id,project_id,actor_id,kind,observed_at,note,quantity,unit,payload_hash,stock_item_id,amount,currency,task_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(farm_id,id) DO NOTHING RETURNING id',[a.id,farmId,a.projectId,actor,a.kind,a.observedAt,a.note,a.quantity,a.unit,hash,a.stockItemId,a.amount,a.currency,a.taskId]);
       if(!inserted.rowCount){const prev=await c.query('SELECT payload_hash,actor_id FROM activities WHERE farm_id=$1 AND id=$2',[farmId,a.id]);checkReplay(prev.rows[0],hash,actor);return false;}
-      const pr=await c.query('SELECT * FROM projects WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[farmId,a.projectId]);if(!pr.rowCount)throw new ApiError('project_not_found',404);if(pr.rows[0].status!=='active')throw new ApiError('project_closed',409);
+      const sourceProjectId=a.stockItemId?(await c.query('SELECT project_id FROM stock_items WHERE farm_id=$1 AND id=$2',[farmId,a.stockItemId])).rows[0]?.project_id:null;const locked=await c.query('SELECT * FROM projects WHERE farm_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR NO KEY UPDATE',[farmId,[...new Set([a.projectId,sourceProjectId].filter(Boolean))]]);const target=locked.rows.find(p=>p.id===a.projectId);if(!target)throw new ApiError('project_not_found',404);const pr={rows:[target]};if(target.status!=='active')throw new ApiError('project_closed',409);if(a.kind==='input_use'&&sourceProjectId&&sourceProjectId!==a.projectId){await assertReleaseAllowed(c,farmId,sourceProjectId,'transfer');await propagateRestrictions(c,farmId,sourceProjectId,a.projectId,actor);}
       if(a.kind==='harvest'&&pr.rows[0].enterprise_type!=='crop')throw new ApiError('animal_harvest_event_required',409);
       if(['harvest','input_use'].includes(a.kind)){
         if(a.kind==='harvest')await assertReleaseAllowed(c,farmId,a.projectId,'harvest');
@@ -184,13 +185,13 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/farms/:farmId/incidents',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query('SELECT * FROM incidents WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);});
   app.post('/v1/farms/:farmId/incidents',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,writeRoles))throw new ApiError('not_found',404);
+    const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor,[...writeRoles,'adviser']))throw new ApiError('not_found',404);
     const b=z.object({id:uuid,projectId:uuid.nullable().default(null),title:z.string().trim().min(1).max(200),description:z.string().max(4000).default(''),severity:z.enum(['low','medium','high','urgent']),assigneeId:uuid.nullable().default(null)}).strict().parse(req.body);if(b.assigneeId&&!await member(farmId,actor,manageRoles))throw new ApiError('assignment_permission_required',403);const hash=sha256(JSON.stringify(b));
     const r=await db.query('INSERT INTO incidents(id,farm_id,project_id,title,description,severity,assignee_id,created_by,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING RETURNING id',[b.id,farmId,b.projectId,b.title,b.description,b.severity,b.assigneeId,actor,hash]);
     if(!r.rowCount){const p=await db.query('SELECT payload_hash,created_by FROM incidents WHERE farm_id=$1 AND id=$2',[farmId,b.id]);if(!p.rowCount)throw new ApiError('idempotency_conflict',409);checkReplay(p.rows[0],hash,actor);}return reply.code(r.rowCount?201:200).send({id:b.id,version:1});
   });
   app.patch('/v1/farms/:farmId/incidents/:incidentId',async(req,reply)=>{
-    const actor=await user(req,reply);if(!actor)return;const {farmId,incidentId}=params.extend({incidentId:uuid}).parse(req.params);if(!await member(farmId,actor,writeRoles))throw new ApiError('not_found',404);
+    const actor=await user(req,reply);if(!actor)return;const {farmId,incidentId}=params.extend({incidentId:uuid}).parse(req.params);if(!await member(farmId,actor,[...writeRoles,'adviser']))throw new ApiError('not_found',404);
     const b=z.object({version:z.number().int().positive(),status:z.enum(['open','acknowledged','resolved']),note:z.string().max(4000).default(''),assigneeId:uuid.nullable().optional()}).strict().parse(req.body);const manager=await member(farmId,actor,manageRoles);
     return transaction(async c=>{
       const r=await c.query('SELECT * FROM incidents WHERE farm_id=$1 AND id=$2 FOR UPDATE',[farmId,incidentId]);if(!r.rowCount)throw new ApiError('not_found',404);const old=r.rows[0];if(old.version!==b.version)throw new ApiError('version_conflict',409,{current:old});

@@ -53,75 +53,62 @@ Expo SDK 58 regeneration replaces generated native output by default. Keep durab
 
 | Area | Native implementation |
 | --- | --- |
-| Account and farm access | Register a farm, sign in, accept a manager-issued invite, use a personal recovery code, generate a replacement code, list/revoke account sessions, switch farms and sign out. Owners/managers can issue role-scoped invitations. |
-| Languages | Shona `sn` and Zimbabwean Northern Ndebele `nd`, including offline language selection, forms, validation/error messages, task reminders and native permission descriptions. Catalogues currently contain 285 matching keys each. Preferences are synchronized to the user when online. |
-| Today and work | Downloaded task list, instructions and recent records; manager task creation; worker progress/evidence; optimistic-version conflict review. Only assigned worker tasks expose progress controls. |
-| Crops | Existing irrigated-maize entry, other crop projects, unknown optional facts kept null, and versioned fact changes requiring a reason. |
-| Field recording | Work, rain, irrigation, observations, input use, harvest and authorized costs. Input use and harvest select an actual stock item. A record can complete a related task in the backend transaction. Farm wall time is converted explicitly using the farm's timezone. |
-| Livestock | Onboarding for broilers, layers, breeders/hatchery, rabbit breeding/grow-out, fish and fish nursery. Species-specific event forms cover acquisitions, losses, transfers, feed, eggs, incubation/hatch, rabbit mating/kindling/fostering/weaning, fish water/growth observations, harvest, sales, care, reconciliation and closure as supported by the backend. Group counts, event history, identified animals/parents and configured restrictions are viewable; managers can add identities and verified restriction dates. |
-| Inventory | Opening-stock entry for managers, quantities/unit costs as authorized, selection for field and livestock records. Quantity and currency values are user-provided. |
-| Farm equipment | Authorized asset list with integration/freshness states and registration of unconfigured or explicit simulator assets. No native remote actuator command queue or unrestricted device writes. |
-| Marketplace and services | Public listing browse with actual available quantity/price/area and service rate information. Native purchase, fulfillment, payment and booking forms are **not implemented** in this slice; the screen states that confirmation occurs through the web workflows. |
-| Companion | Record-based missing-data and outstanding-work summary. It is labelled as deterministic guidance; an AI provider is not claimed. |
-| Native media | Camera or library photo capture, resize/re-encode to JPEG, and foreground voice notes in MP4 audio. Durable encrypted media queue is independent of the activity record. No speech recognition, translation or text-to-speech claim. |
-| Notifications | Opt-in local reminders for downloaded tasks assigned to the current user. Existing reminders are replaced on sync and canceled at sign-out. Private task text is not placed on the lock screen. No remote push delivery is configured. |
+| Account, people and farm | Registration, sign-in, invitation acceptance/creation/revocation, recovery codes, account sessions, farm switching, member role administration, locations and settings. Scoped advisers can record permitted observations without managerial stock/money/control powers. |
+| Shona and Ndebele | Independent `sn` and Zimbabwean Northern Ndebele `nd` catalogs, offline selector, typed form labels/validation, errors, reminders, provider/inbox states and farm-zone formatting. User preference synchronizes when connected. Original notes and units remain unchanged. |
+| Today and tasks | Urgent incidents/alerts, downloaded tasks and recent records, task creation/assignment, progress/evidence and version-conflict review. Role/assignment determines available actions. |
+| Crops and planning | Existing irrigated-maize and new seasons; unknown facts and reasoned edits; assessment/soil/husbandry records; eight-criterion crop comparisons; sourced versioned templates; reviewed draft/approval; reschedule impact/confirmation; history/performance/closure. |
+| Chickens, rabbits and fish | Complete species-specific lifecycle forms, optional fish breeding/hatchery/nursery, opening counts/estimates and balances, sourced pre-opening history, birth/litter cohorts and identities, parents/lineage, losses/transfers, feed and sampled measurements, output stock/sales, restrictions and reconciliation. |
+| Field evidence | Work/rain/irrigation/inputs/costs/harvests, typed project observations, weather observations, asset usage and incidents. Task-linked work uses the backend's atomic stock/cost/completion transaction. |
+| Inventory and money | Stock purchases/use/loss/adjustment, metadata and pack sizes, compatible transfers and valuation/history; budgets, documented costs/receipts, allocation append/replace/clear/history, reversals, opening-balance corrections and matched direct-sale receipts. |
+| Reports | Currency-separated recorded costs/revenue/cash/unpaid obligations, budget/performance/stock/count reconciliation, duplicate review/correction and authorized Shona/Ndebele PDF/CSV sharing. Unknown costs are disclosed; recorded margin is not claimed as complete profit. |
+| Marketplace | Search/detail/shareable listings, sourced stock/live animals, explicit price basis, publication/edit/archive, enquiries/offers and buying requests, reservation/fulfilment/cancellation/expiry, manual payments, moderation and completed-interaction reviews. Commercial actions require online authorization. |
+| Machinery and services | Discovery/listing, resource availability, request/quote/versioned acceptance, deposits/receipt acknowledgement, actual work, amendments, task/project-linked completion, charges/refunds/history/reviews. Booking conflicts remain server-enforced. |
+| Equipment | Unknown assets and relationships, identity/location/responsibility edits, private photo/audio/PDF documents, mapping/commissioning, telemetry/freshness, usage and recurring maintenance. Online reviewed expiring start/stop commands and explicit simulator feedback; no actuator outbox. |
+| Security | Camera configuration and permission grants, zones/schedules, event/source/delay history, snapshots, authenticated HLS live/event viewing through `expo-video`, acknowledgement and reviewed incident follow-up. No public camera URL or invented analytics capability. |
+| Companion, weather and notifications | Deterministic project/context/plans/references/history and optional read-only provider explanation; sourced forecasts distinct from measured weather; quiet hours/preferences, inbox/acknowledgements and ownership-verified channels. Native push registration is explicit and provider state remains visible. |
+| Native media | Camera/library image capture with compact JPEG option, foreground voice notes and private PDF selection. Separate encrypted durable attachment queue supports asset parents without invented activities. Authorized image/audio/PDF viewing and report sharing use native modules. |
 
-Native parity is incomplete. Incident management, financial ledger/payment/report/export screens, stock-adjustment/purchase screens, full marketplace/order and machinery-booking workflows, camera event/live-stream workflows, and equipment command operations remain web/API capabilities or further native work. Crop season closure/review and all financial reconciliation do not yet have complete native presentation. The native app must not be described as completing all 24 acceptance scenarios on devices.
+These are native screens and forms connected to the versioned backend. They are not a web view. Native UI acceptance is executed separately from the browser and from repository/unit tests; exact evidence is in the [acceptance matrix](../../smart-farmer-backend/docs/status.md).
 
 ## Offline behavior and data protection
 
-- A successful authenticated download is required before offline farm context is available. The downloaded windows are labelled as recent records, not an exhaustive farm history. Sync runs on foreground connectivity changes and explicit refresh; background execution is not guaranteed.
+- A successful authenticated download is required before offline farm context is available. Paginated reads follow cursors to retrieve the selected resource history; cached context and its last synchronization time stay visible. Sync runs on foreground connectivity changes and explicit refresh; background execution is not guaranteed.
 - Each API origin and user ID has a separate SQLCipher database and random key stored with device-only SecureStore accessibility. Native storage encryption is checked before any schema is created. Android backup and public file sharing are disabled.
 - SecureStore retains the current session. Cold starts and returns after at least 30 seconds in the background require the device's biometric/PIN unlock. Without an enrolled device lock, online sign-in remains available; the app does not bypass local unlock to expose offline data. Always sign out before handing a shared device to another person.
-- Persistent, farm-scoped drafts, outbox rows, photos and voice notes survive an application restart. Account switching retains encrypted drafts for the same account to recover after sign-in. It does not make them available to another account. Uninstalling the app or losing its secure-storage keys can lose unsynchronized work; synchronize before replacing a device.
+- Persistent, farm-scoped drafts, outbox rows, photos, voice notes and PDFs survive an application restart. Account switching retains encrypted drafts for the same account to recover after sign-in. It does not make them available to another account. Uninstalling the app or losing its secure-storage keys can lose unsynchronized work; synchronize before replacing a device.
 - Activity and animal event retries preserve the original client UUID and validated payload. The server applies stock/cost/count effects idempotently. Conflicts retain the original draft and are not silently overwritten. Task conflicts show the current server task before a user explicitly applies a reviewed change; retaining the server version archives the local proposal.
 - Field record metadata is acknowledged before dependent media can upload. A photo failure never causes accepted activity metadata to be recreated. Media uploads use stable IDs, names, bytes and MIME types, visible progress and a maximum of five automatic attempts. Explicit retry preserves identity. Files are capped at 5 MiB each and pending encrypted media at 50 MiB per account. Data-saving mode defaults to Wi-Fi for media; explicit upload allows the user's current connection.
 - Membership removal or a role change on reconnect clears cached farm reads and blocks pending work for review. A 401 locks the session and retains recoverable work. Session expiry is checked while the app is open and on foreground return.
-- Local sign-out immediately removes the saved session and closes the visible workspace. Server revocation is best-effort if offline; users can revoke old sessions through account session management when connected. Server expiry is still enforced.
+- Local sign-out removes the saved session, closes the workspace, cancels local reminders and unregisters native push where possible. Server/session/channel revocation is best-effort while offline; account session management remains available after reconnect. Ordinary push payloads contain a localized instruction to open the inbox, never private task/camera details.
 - Camera/audio modules first create app-private temporary files. After completed capture, the attachment is persisted to encrypted storage and the processed temporary file is removed. This does not assert that an interrupted in-progress recording survives process termination.
-- The typed and runtime-validated offline queue accepts only field activities, animal events and task progress. It has no equipment-command route. Native equipment control is not enabled.
+- The typed/runtime-validated outbox accepts field activities, animal events, task progress, typed project/weather/usage observations and incident creation. It refuses trade, payments, plan approvals, financial corrections, commissioning and equipment commands. These consequential workflows require explicit current online authorization.
 
 The secure cache uses SQLCipher in a native build. The automated tests below use real ordinary SQLite to verify the persistence/synchronization logic; they are **not** evidence that SQLCipher, Keychain/Keystore, device unlock or OS permissions have been exercised on hardware.
 
-## Verification performed
+## Verification and native acceptance
 
-- `npm run typecheck`: passed.
-- `npm test`: **14 passed, zero skipped**. These exercise actual SQLite file close/reopen, lost acknowledgements and stable retries, media independence, conflict retention, expired sessions, simultaneous sync calls, farm/account isolation, membership revocation, transaction rollback after an injected storage failure, bounded retries, refusal to queue actuator commands, farm timezone conversion across owner-device timezones, invalid/DST-ambiguous dates, numeric validation, language-key coverage and HTTPS-origin validation.
-- `npm run build`: iOS and Android Hermes exports passed, with 789 modules per platform at the review checkpoint. These are compilation checks, not native end-to-end runs.
-- `npm audit --omit=dev`: **zero reported vulnerabilities** after narrow `@expo/cli` / `@expo/fingerprint` overrides to `glob` 14.0.2 and `minimatch` 11.0.1. The overrides address [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) without downgrading Expo. Revisit the overrides when Expo adopts compatible patched versions.
-- Expo generated real iOS and Android project files. Generated native configuration has SQLCipher enabled, Android backup disabled and release cleartext traffic disabled. The Android wrapper is executable. No native binary was compiled, signed, installed or run here.
-- The patched Expo tooling completed native regeneration and `@expo/fingerprint.createFingerprintAsync` successfully, in addition to both platform exports.
+Latest local verification after the document-picker dependency:
 
-## Device acceptance still required
+- `npm run typecheck` passed.
+- `npm test`: **20 tests passed, zero skipped**. Tests cover actual SQLite close/reopen and rollback, stable retries/lost acknowledgements, separate media progress, task conflicts, expiry/revocation/account isolation, bounded retries, farm time/date/numeric validation, HTTPS origin, all-page reads, typed conditional forms, PDF asset-parent retry/restart/consent and full static form/catalog coverage. They also reject commerce/payment/control mutations from the offline field queue.
+- `npm run build`: both Hermes exports passed (817 iOS modules; 816 Android modules at this checkpoint). This validates code/bundling; it does not produce native app binaries.
+- `npm audit --omit=dev`: **zero reported vulnerabilities** after the document picker was added. Narrow Expo CLI/fingerprint `glob`/`minimatch` overrides remain in the lockfile; revisit them when compatible upstream patches make them unnecessary.
+- Native generation completed with document-picker, SQLCipher and private-storage configuration. Review and normalize generated changes before committing; platform generation alone does not establish device behavior.
 
-On an isolated API with test-only farms/accounts, run the following before native release:
+[Native acceptance CI](../../.github/workflows/native-acceptance.yml) uses Ubuntu/Android emulator and macOS/iPhone/iPad simulators with real compiled development apps. It starts a disposable PostgreSQL API, creates test fixtures through authenticated endpoints, and runs Maestro against the actual app. Its proxy creates a deliberate network outage without mocking the business API. The restart path preserves an encrypted offline record, reauthenticates, reconnects and checks that the server has exactly one record. Additional checks cover permission denial, account privacy, language and tablet layout; acceptance files describe the exact scope. Raw databases, credentials and key material are not uploaded as artifacts.
 
-1. Build/install Android and iOS development binaries; exercise iPhone and iPad layouts, large text, landscape, the keyboard and screen-reader labels. Confirm no routine horizontal overflow and comfortable controls on small screens.
-2. Verify SQLCipher at runtime, app restart with offline unlock, account switching, session expiry and farm access removal; inspect backups/device file access to confirm private data is not exported.
-3. Record a task-linked input-use activity with a photograph and voice note offline, terminate/relaunch, reconnect, and verify one activity, one stock/cost effect and authorized attachments. Exercise a lost response, an expired session, a storage error and a conflicting task version.
-4. Exercise native camera, photo picker, microphone denial/retry, local notification permission/receipt, data-saving behavior and low-storage handling. Verify completed audio encoding against the server's file-signature checks.
-5. Run the implemented livestock event forms against the API's checked lifecycles, including egg/reject counts, hatch traceability, rabbit parents/litters and fish count estimates. Verify that configured restrictions are enforced by the server.
-6. Validate the Shona and Northern Ndebele text with fluent agricultural users. All current translations are preliminary and **have not received native-speaker review**.
-7. Configure final app icons, signing/release identities and an approved deployment target. Remote push needs a separately configured provider/device registration path; ordinary local reminders do not prove remote alert delivery.
+The latest published pre-document-picker checkpoint compiled **both Android and iOS SQLCipher development binaries**. Its UI runs found an Expo first-run developer-menu blocker on iOS and exhausted ephemeral Android runner storage before emulator setup. The observed menu-close and runner-cleanup fixes are included for the next run. A compile success is not counted as a successful native journey. Final run links/results are maintained in the root acceptance matrix.
 
-No Android emulator/`adb` or Apple Xcode/simulator/signing environment was available during this review. No physical hardware, camera installation or farm controls were tested from this app.
+To reproduce in CI, dispatch the Native acceptance workflow for the review branch. The matching APK and simulator app are cached by OS/architecture/native dependencies/configuration/source; Metro serves JavaScript from the current revision. Android creates a disposable local debug identity. iOS simulator uses ad-hoc signing. No production keystore, Apple team or release profile is invented. Documentation-only edits do not rebuild native apps.
 
-## Language glossary and references
+## Physical release acceptance
 
-This preliminary glossary follows the same unreviewed catalogs as the app; it is included for a fluent reviewer to correct consistently.
+Before distributing a signed farm release, use the approved API and isolated test accounts to verify physical Android/iPhone/iPad behavior: device unlock and account switching, airplane-mode recording/restart, low storage, camera/library/microphone permissions, audio, file/report sharing, local and remote notifications, large fonts, keyboard and screen readers. Exercise the checked livestock/trade/service/equipment workflows with actual supported hardware only after commissioning.
 
-| Concept | Shona | Northern Ndebele |
-| --- | --- | --- |
-| Farm | Purazi | Ipulazi |
-| Irrigation | Kudiridza | Ukuthelelela |
-| Harvest | Kukohwa | Ukuvuna |
-| Stock | Zviripo mudura | Okusesitolo |
-| Broilers | Huku dzenyama | Inkukhu zenyama |
-| Layers | Huku dzemazai | Inkukhu zamaqanda |
-| Rabbit breeding | Tsuro dzekuberekesa | Imvundla zokuzalanisa |
-| Fish | Hove | Inhlanzi |
-| Observation | Zvakaonekwa | Okubonakeleyo |
-| Unknown | Hazvizivikanwi | Akwaziwa |
+The source includes the necessary provider/permission/configuration paths. Actual push credentials/device registration, HTTPS deployment, signing identities/distribution, hardware mappings and fluent language approval remain explicit external inputs. Speech recognition/text-to-speech are not claimed. No real farm device has been commissioned by these tests.
 
-Official version/configuration references used: [Expo SDK 58](https://expo.dev/changelog/sdk-58), [SDK compatibility](https://docs.expo.dev/versions/v58.0.0/), [SQLite/SQLCipher](https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/), [SecureStore](https://docs.expo.dev/versions/v58.0.0/sdk/securestore/), [native audio](https://docs.expo.dev/versions/v58.0.0/sdk/audio/), [ImagePicker](https://docs.expo.dev/versions/v58.0.0/sdk/imagepicker/), and [local notifications](https://docs.expo.dev/versions/v58.0.0/sdk/notifications/).
+## Language review and technical references
 
+Catalog completeness and form-key checks pass for Shona and Zimbabwean Northern Ndebele. **No fluent agricultural reviewer has signed off either language.** The shared review record and draft glossary are in [language-review.md](../../smart-farmer-backend/docs/language-review.md). Corrections must be applied independently to both client catalogs and any backend notification/report wording.
+
+Official references used: [Expo SDK 58](https://expo.dev/changelog/sdk-58), [SDK compatibility](https://docs.expo.dev/versions/v58.0.0/), [SQLite/SQLCipher](https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/), [SecureStore](https://docs.expo.dev/versions/v58.0.0/sdk/securestore/), [native audio](https://docs.expo.dev/versions/v58.0.0/sdk/audio/), [ImagePicker](https://docs.expo.dev/versions/v58.0.0/sdk/imagepicker/) and [notifications](https://docs.expo.dev/versions/v58.0.0/sdk/notifications/).

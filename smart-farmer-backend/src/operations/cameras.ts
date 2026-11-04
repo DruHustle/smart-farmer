@@ -916,6 +916,15 @@ export function registerCameras(app: FastifyInstance, ctx: Context) {
             new Date(old.observed_at).getTime() !== Date.parse(b.observedAt)
           )
             throw new ApiError("idempotency_conflict", 409);
+          const priorEvent =
+            (
+              await c.query(
+                "SELECT event_id FROM camera_event_segments WHERE segment_id=$1",
+                [b.id],
+              )
+            ).rows[0]?.event_id ?? null;
+          if (priorEvent !== b.eventId)
+            throw new ApiError("idempotency_conflict", 409);
           return { id: b.id, replayed: true };
         }
         let expiry: Date;

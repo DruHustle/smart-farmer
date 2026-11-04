@@ -5,23 +5,25 @@ import { formatFarmTime } from '../time';
 import type { Language, Mutation, Task } from '../types';
 import { Button, Card, Choice, Field, Notice, Sheet, Toggle, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
-import { c } from '../completion-ui';
-import { allPages } from '../product';
+import { Action, c, Form, options, selectField, usePanel, farmPath, Records } from '../completion-ui';
+import { allPages, type Row } from '../product';
 import { EquipmentPanel } from './EquipmentPanel';
 import { MarketplacePanel } from './MarketplacePanel';
 import { ServicesPanel } from './ServicesPanel';
 import { FinancePanel } from './FinancePanel';
 import { IncidentsPanel, WeatherPanel, NotificationsPanel, FarmSettingsPanel } from './OperationsPanel';
 import { SecurityPanel } from './SecurityPanel';
+import { MediaPanel } from './MediaPanel';
 
 type DeviceSession = { id: string; label: string; created_at: string; expires_at: string; current: boolean };
-export function MoreScreen({ work, language, onLogout, onLock }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void }) {
+export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void; onNativePrompt: (active: boolean) => void }) {
   const t = textFor(language);
   const [screen, setScreen] = useState<string | null>(null);
   const [role, setRole] = useState('worker'); const [code, setCode] = useState(''); const [inviteToken, setInviteToken] = useState('');
   const [password, setPassword] = useState(''); const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [conflict, setConflict] = useState<Mutation | null>(null);
   const [serverTask, setServerTask] = useState<Task | null>(null);
+  const invitations = usePanel(work, 'invitations', () => work.canManage ? allPages<Row>(work.api, farmPath(work, '/invitations')) : Promise.resolve([]));
   const pending = work.mutations.filter(item => item.state !== 'resolved');
   const pendingMedia = work.attachments.filter(item => item.state !== 'synced' && item.state !== 'draft');
   const timezone = work.snapshot?.farm.timezone || 'Africa/Harare';
@@ -32,7 +34,7 @@ export function MoreScreen({ work, language, onLogout, onLock }: { work: Workspa
   }, [screen]);
 
   async function invite() {
-    await work.onlineAction(async () => { const response = await work.api.request<{ token: string }>(`/v1/farms/${work.farmId}/invitations`, 'POST', { role }); setCode(response.token); });
+    await work.onlineAction(async () => { const response = await work.api.request<{ token: string }>(`/v1/farms/${work.farmId}/invitations`, 'POST', { role }); setCode(response.token); await invitations.reload(); });
   }
   async function acceptInvite() {
     const success = await work.onlineAction(async () => { await work.api.request('/v1/invitations/accept', 'POST', { token: inviteToken.trim() }); });
@@ -71,7 +73,7 @@ export function MoreScreen({ work, language, onLogout, onLock }: { work: Workspa
     <Text style={styles.title}>{t.more}</Text>
     <Card><Text style={styles.heading}>{work.session.username}</Text><Text style={styles.muted}>{label(language, work.selectedFarm?.role || '')} · {work.selectedFarm?.name}</Text><Text style={styles.caption}>{t.localPrivacy}</Text><View style={styles.row}><Button secondary title={t.lock} onPress={onLock} /><Button secondary title={t.logout} onPress={onLogout} /></View></Card>
     <View style={styles.grid}>
-      {[['sync', `${t.outbox} (${pending.length})`], ['equipment', t.equipment], ['security', c(language, 'security')], ['incidents', c(language, 'incidents')], ['weather', c(language, 'weather')], ['market', t.market], ['services', t.services], ...(work.canManage ? [['finance', c(language, 'finance')], ['settings', c(language, 'settings')]] : []), ['notifications', c(language, 'notifications')], ['team', t.team], ['sessions', t.sessions], ['recovery', t.recovery]].map(([value, title]) => <View key={value} style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}><Button testID={`more-${value}`} secondary title={title!} onPress={() => open(value!)} /></View>)}
+      {[['sync', `${t.outbox} (${pending.length})`], ['equipment', t.equipment], ['security', c(language, 'security')], ['incidents', c(language, 'incidents')], ['weather', c(language, 'weather')], ['market', t.market], ['services', t.services], ...(work.canManage ? [['finance', c(language, 'finance')], ['settings', c(language, 'settings')]] : []), ['media', c(language, 'media')], ['notifications', c(language, 'notifications')], ['team', t.team], ['sessions', t.sessions], ['recovery', t.recovery]].map(([value, title]) => <View key={value} style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}><Button testID={`more-${value}`} secondary title={title!} onPress={() => open(value!)} /></View>)}
     </View>
     <Card title={t.configuration}><Toggle label={t.dataSaver} hint={t.dataSaverHint} value={work.dataSaver} onChange={value => { void work.setDataSaver(value).catch(work.setError); }} /><Toggle label={t.taskReminders} hint={t.remindersHint} value={work.reminders} onChange={value => { void work.setReminders(value); }} /><Text style={styles.caption}>{t.translations}</Text></Card>
     <Sheet title={screen === 'sync' ? t.outbox : screen ? c(language, screen) : t.more} visible={Boolean(screen)} onClose={() => { setScreen(null); setCode(''); setPassword(''); }} closeLabel={t.close}>
@@ -88,14 +90,14 @@ export function MoreScreen({ work, language, onLogout, onLock }: { work: Workspa
           {item.lastError !== 'access_revoked' ? <Button secondary title={t.retry} disabled={work.busy} onPress={() => { void retry(item).catch(work.setError); }} /> : null}
         </Card>)}
         {pendingMedia.length ? <Card title={`${t.media} (${pendingMedia.length})`}><Text style={styles.caption}>{t.mediaHint}</Text>
-          {pendingMedia.map(item => <View key={item.id} style={styles.item}><Text style={styles.text}>{item.mimeType.startsWith('image/') ? t.photos : t.voiceNote} · {Math.ceil(item.sizeBytes / 1024)} KiB · {label(language, item.state)}</Text>{item.lastError ? <Text style={styles.caption}>{errorText(language, new Error(item.lastError))}</Text> : null}
-            {['blocked', 'conflict'].includes(item.state) ? <Button secondary title={t.retry} onPress={() => { void work.repository.updateAttachment({ ...item, state: 'pending', attempts: 0, lastError: null }).then(() => work.reloadLocal()).catch(work.setError); }} /> : null}
+          {pendingMedia.map(item => <View key={item.id} style={styles.item}><Text style={styles.text}>{item.mimeType.startsWith('image/') ? t.photos : item.mimeType === 'application/pdf' ? c(language, 'document') : t.voiceNote} · {Math.ceil(item.sizeBytes / 1024)} KiB · {label(language, item.state)}</Text>{item.lastError ? <Text style={styles.caption}>{errorText(language, new Error(item.lastError))}</Text> : null}
+            {item.lastError !== 'access_revoked' && ['blocked', 'conflict'].includes(item.state) ? <Button secondary title={t.retry} onPress={() => { void work.repository.updateAttachment({ ...item, state: 'pending', attempts: 0, lastError: null }).then(() => work.reloadLocal()).catch(work.setError); }} /> : null}
           </View>)}
           {work.progress ? <Text style={styles.text}>{work.progress.percent}%</Text> : null}<Button title={t.upload} busy={work.busy} onPress={() => { void work.sync(true); }} /></Card> : null}
         <Text style={styles.caption}>{t.conflictHint}</Text>
         {work.mutations.filter(item => item.state === 'resolved').map(item => <Text key={item.id} style={styles.caption}>{t.resolved} · {item.id.slice(0, 8)}</Text>)}
       </> : null}
-      {screen === 'equipment' ? <EquipmentPanel work={work} language={language} /> : null}
+      {screen === 'equipment' ? <EquipmentPanel work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
       {screen === 'market' ? <MarketplacePanel work={work} language={language} /> : null}
       {screen === 'services' ? <ServicesPanel work={work} language={language} /> : null}
       {screen === 'finance' && work.canManage ? <FinancePanel work={work} language={language} /> : null}
@@ -103,10 +105,12 @@ export function MoreScreen({ work, language, onLogout, onLock }: { work: Workspa
       {screen === 'weather' ? <WeatherPanel work={work} language={language} /> : null}
       {screen === 'notifications' ? <NotificationsPanel work={work} language={language} /> : null}
       {screen === 'settings' && work.canManage ? <FarmSettingsPanel work={work} language={language} /> : null}
+      {screen === 'media' ? <MediaPanel work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
       {screen === 'security' ? <SecurityPanel work={work} language={language} /> : null}
       {screen === 'team' ? <>
-        {(work.snapshot?.members || []).map(member => <View key={member.id} style={styles.item}><Text style={styles.text}>{member.username} · {label(language, member.role)}</Text></View>)}
+        {(work.snapshot?.members || []).map(member => <View key={member.id} style={styles.item}><Text style={styles.text}>{member.username} · {label(language, member.role)}</Text>{work.selectedFarm?.role === 'owner' ? <><Form work={work} language={language} includeId={false} fields={[selectField('role', options(language, ['owner', 'manager', 'worker', 'adviser']), true)]} initial={{ role: member.role }} submit={body => work.api.request(`/v1/farms/${work.farmId}/members/${member.id}`, 'PATCH', body)} onSaved={work.refresh} /><Action work={work} language={language} danger title={t.revoke} detail={`${member.username} · ${c(language, 'revokeMemberHint')}`} action={() => work.api.request(`/v1/farms/${work.farmId}/members/${member.id}`, 'DELETE')} onSaved={work.refresh} /></> : null}</View>)}
         {work.canManage ? <Card title={t.invite}><Choice label={t.role} value={role} onChange={setRole} closeLabel={t.close} options={['worker', 'adviser', ...(work.selectedFarm?.role === 'owner' ? ['manager'] : [])].map(value => ({ value, label: label(language, value) }))} /><Button title={t.invite} busy={work.busy} onPress={() => { void invite(); }} />{code ? <><Text style={styles.text}>{t.invitationCreated}</Text><Text selectable style={styles.text}>{code}</Text></> : null}</Card> : null}
+        {work.canManage ? <Records items={invitations.value || []} language={language} timezone={timezone} fields={['role', 'created_at', 'expires_at', 'accepted_at']}>{item => !item.accepted_at ? <Action work={work} language={language} title={t.revoke} danger action={() => work.api.request(farmPath(work, `/invitations/${item.id}`), 'DELETE')} onSaved={invitations.reload} /> : null}</Records> : null}
         <Card title={t.join}><Field label={t.invitationCode} value={inviteToken} onChangeText={setInviteToken} secureTextEntry autoCapitalize="none" autoCorrect={false} /><Button title={t.join} busy={work.busy} disabled={!inviteToken.trim()} onPress={() => { void acceptInvite(); }} /></Card>
       </> : null}
       {screen === 'recovery' ? <><Text style={styles.muted}>{t.recoveryHint}</Text><Field label={t.password} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" maxLength={128} /><Button title={t.createRecovery} busy={work.busy} onPress={() => { void recover(); }} />{code ? <Card><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={styles.text}>{code}</Text></Card> : null}</> : null}

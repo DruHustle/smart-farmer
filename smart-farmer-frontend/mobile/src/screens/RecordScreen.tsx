@@ -14,8 +14,9 @@ export function RecordScreen({ work, language, nativeBusy, onNativePrompt }: { w
   const current = useRef<RecordDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const snapshot = work.snapshot;
+  const adviser = work.selectedFarm?.role === 'adviser';
   const projects = snapshot?.projects.filter(project => project.status !== 'closed') || [];
-  const newDraft = (): RecordDraft => ({ id: Crypto.randomUUID(), projectId: projects[0]?.id || '', kind: 'work', observedLocal: farmNow(snapshot?.farm.timezone || 'Africa/Harare'), note: '', quantity: '', unit: '', stockItemId: '', amount: '', currency: '', taskId: '' });
+  const newDraft = (): RecordDraft => ({ id: Crypto.randomUUID(), projectId: projects[0]?.id || '', kind: adviser ? 'observation' : 'work', observedLocal: farmNow(snapshot?.farm.timezone || 'Africa/Harare'), note: '', quantity: '', unit: '', stockItemId: '', amount: '', currency: '', taskId: '' });
 
   useEffect(() => {
     let active = true;
@@ -41,6 +42,7 @@ export function RecordScreen({ work, language, nativeBusy, onNativePrompt }: { w
     if (!value || !snapshot || saving || nativeBusy) return;
     setSaving(true); work.setNotice('');
     try {
+      if (adviser && (!['observation', 'rain'].includes(value.kind) || value.taskId || value.stockItemId || value.amount || value.currency)) throw new Error('adviser_observation_only');
       if (!projects.some(project => project.id === value.projectId)) throw new Error('required');
       const quantity = optionalNumber(value.quantity);
       const unit = value.unit.trim() || null;
@@ -76,12 +78,12 @@ export function RecordScreen({ work, language, nativeBusy, onNativePrompt }: { w
   const stock = snapshot.stock.filter(item => draft.kind !== 'harvest' || item.project_id === draft.projectId);
   return <Card title={t.record}>
     <Choice testID="record-project" label={t.project} value={draft.projectId} onChange={projectId => update({ projectId, taskId: '', stockItemId: '' })} closeLabel={t.close} options={projects.map(project => ({ value: project.id, label: project.name }))} />
-    <Choice label={t.kind} value={draft.kind} onChange={kind => update({ kind, stockItemId: '', quantity: '', unit: '', amount: '', currency: '' })} closeLabel={t.close} options={activityKinds.filter(kind => work.canManage || kind !== 'cost').map(value => ({ value, label: t[value] }))} />
+    <Choice label={t.kind} value={draft.kind} onChange={kind => update({ kind, stockItemId: '', quantity: '', unit: '', amount: '', currency: '' })} closeLabel={t.close} options={activityKinds.filter(kind => adviser ? ['observation', 'rain'].includes(kind) : work.canManage || kind !== 'cost').map(value => ({ value, label: t[value] }))} />
     <Field testID="record-when" label={`${t.when} · ${snapshot.farm.timezone}`} hint={t.farmTimeHint} value={draft.observedLocal} onChangeText={observedLocal => update({ observedLocal })} autoCapitalize="none" />
     <Field testID="record-note" label={t.note} value={draft.note} onChangeText={note => update({ note })} multiline maxLength={4000} />
     {draft.kind === 'input_use' || draft.kind === 'harvest' ? <Choice label={t.stockItem} value={draft.stockItemId} onChange={stockItemId => { const item = snapshot.stock.find(value => value.id === stockItemId); update({ stockItemId, unit: item?.unit || '' }); }} closeLabel={t.close} options={[{ value: '', label: t.choose }, ...stock.map(item => ({ value: item.id, label: `${item.name} · ${item.quantity} ${item.unit}` }))]} /> : null}
     {draft.kind === 'cost' ? <View style={{ gap: 12 }}><Field label={t.amount} keyboardType="decimal-pad" value={draft.amount} onChangeText={amount => update({ amount })} /><Field label={t.currency} value={draft.currency} onChangeText={currency => update({ currency: currency.toUpperCase() })} maxLength={3} autoCapitalize="characters" /><Text style={styles.caption}>{t.moneyHint}</Text></View> : <View style={styles.row}><View style={{ flex: 1, minWidth: 130 }}><Field label={t.quantity} value={draft.quantity} onChangeText={quantity => update({ quantity })} keyboardType="decimal-pad" /></View><View style={{ flex: 1, minWidth: 130 }}><Field label={t.unit} value={draft.unit} onChangeText={unit => update({ unit })} maxLength={40} /></View></View>}
-    {projectTasks.length ? <Choice label={t.task} value={draft.taskId} onChange={taskId => update({ taskId })} closeLabel={t.close} options={[{ value: '', label: '—' }, ...projectTasks.map(task => ({ value: task.id, label: `${task.title} · ${label(language, task.status)}` }))]} /> : null}
+    {!adviser && projectTasks.length ? <Choice label={t.task} value={draft.taskId} onChange={taskId => update({ taskId })} closeLabel={t.close} options={[{ value: '', label: '—' }, ...projectTasks.map(task => ({ value: task.id, label: `${task.title} · ${label(language, task.status)}` }))]} /> : null}
     <MediaCapture key={draft.id} repository={work.repository} farmId={work.farmId} activityId={draft.id} language={language} onChange={work.reloadLocal} onError={work.setError} onNativePrompt={onNativePrompt} />
     <Button testID="record-save" title={t.save} busy={saving} disabled={nativeBusy} onPress={() => { void submit(); }} />
   </Card>;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NetworkStateType, useNetworkState } from 'expo-network';
 import { ApiError, createApi } from './api';
+import { allPages } from './product';
 import { LocalRepository } from './repository';
 import { Synchronizer } from './sync';
 import { clearReminders, enableReminders, scheduleTaskReminders } from './reminders';
@@ -46,12 +47,12 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   async function download(farm: Farm) {
     const base = `/v1/farms/${farm.id}`;
     const [projects, tasks, activities, stock, members, assets] = await Promise.all([
-      api.request<Items<Project>>(`${base}/projects`), api.request<Items<Task>>(`${base}/tasks`),
-      api.request<Items<Activity>>(`${base}/activities`), api.request<Items<Stock>>(`${base}/stock`),
-      api.request<Items<Member>>(`${base}/members`), api.request<Items<Asset>>(`${base}/assets`),
+      allPages<Project>(api, `${base}/projects`), allPages<Task>(api, `${base}/tasks`),
+      allPages<Activity>(api, `${base}/activities`), allPages<Stock>(api, `${base}/stock`),
+      allPages<Member>(api, `${base}/members`), allPages<Asset>(api, `${base}/assets`),
     ]);
     if (!alive.current) return;
-    const next: FarmSnapshot = { farm, projects: projects.items, tasks: tasks.items, activities: activities.items, stock: stock.items, members: members.items, assets: assets.items, syncedAt: new Date().toISOString() };
+    const next: FarmSnapshot = { farm, projects, tasks, activities, stock, members, assets, syncedAt: new Date().toISOString() };
     await repository.saveSnapshot(next);
     if (alive.current && currentFarm.current === farm.id) setSnapshot(next);
     if (settings.current.reminders) await scheduleTaskReminders(next.tasks.filter(task => task.assignee_id === session.userId), settings.current.language);

@@ -10,6 +10,9 @@ import { Button, Card, Choice, Notice, Sheet, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
 import type { AnimalIdentity } from './AnimalEventForm';
 import { FinancePanel } from './FinancePanel';
+import { ProjectForm } from './ProjectForm';
+import { IncidentsPanel } from './OperationsPanel';
+import { completionText } from '../completion-i18n';
 
 type Props = { work: Workspace; language: Language; project: Project; animals?: AnimalIdentity[] };
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
@@ -19,7 +22,7 @@ export function ProjectWorkspace(props: Props) {
   const { work, language } = props;
   const [tab, setTab] = useState('companion');
   return <Card title={c(language, 'details')}><Choice testID="project-workspace" label={c(language, 'details')} value={tab} onChange={setTab} closeLabel={textFor(language).close} options={options(language, ['companion', 'planning', 'assessments', 'performance', 'history', ...(work.canManage ? ['finance'] : [])])} />
-    {tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} /> : <CompanionPanel {...props} />}
+    {tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} /> : <CompanionPanel {...props} onNavigate={setTab} />}
   </Card>;
 }
 
@@ -54,8 +57,8 @@ function PlanningPanel({ work, language, project }: Props) {
       {versions.length ? <Card title={c(language, 'history')}><Records items={versions.map(item => ({ ...object(item.snapshot), id: `${item.template_id}:${item.version}`, reason: item.reason }))} language={language} timezone={zone(work)} titleKey="name" fields={['version', 'reason', 'source', 'source_date']} /></Card> : null}
     </> : null}
     {mode === 'comparisons' ? <>
-      <Notice text={c(language, 'estimatesOnly')} /><Records items={data.value?.comparisons || []} language={language} timezone={zone(work)} titleKey="objective" fields={['budget', 'currency', 'selected_crop']}>{comparison => <Records items={rows(comparison.candidates)} language={language} timezone={zone(work)} titleKey="crop" fields={['reason', 'source', 'estimatedCost', 'currency', 'waterFit', 'labourFit', 'assumptions', 'score']} />}</Records>
-      {work.canManage ? <Form work={work} language={language} title={c(language, 'add')} fields={[textField('objective', true), numericField('budget'), textField('currency', false, { maxLength: 3 }), textField('selectedCrop'), { key: 'candidates', type: 'rows', required: true, fields: [textField('crop', true), textField('reason', true), textField('source', true), numericField('estimatedCost'), textField('currency', false, { maxLength: 3 }), selectField('waterFit', options(language, ['unknown', 'suitable', 'unsuitable']), true), selectField('labourFit', options(language, ['unknown', 'suitable', 'unsuitable']), true), textField('assumptions', false, { multiline: true })] }]} submit={body => work.api.request(`${base}/comparisons`, 'POST', body)} onSaved={data.reload} /> : null}
+      <Notice text={c(language, 'estimatesOnly')} /><Records items={data.value?.comparisons || []} language={language} timezone={zone(work)} titleKey="objective" fields={['budget', 'currency', 'selected_crop']}>{comparison => <Records items={rows(comparison.candidates)} language={language} timezone={zone(work)} titleKey="crop" fields={['reason', 'source', 'estimatedCost', 'currency', 'waterFit', 'labourFit', 'soilFit', 'areaFit', 'equipmentFit', 'marketFit', 'pastCropFit', 'locationFit', 'assumptions', 'score']}>{candidate => Array.isArray(candidate.missing) ? <Text style={styles.caption}>{c(language, 'missingData')}: {candidate.missing.map(key => c(language, string(key))).join(' · ')}</Text> : null}</Records>}</Records>
+      {work.canManage ? <Form work={work} language={language} title={c(language, 'add')} fields={[textField('objective', true), numericField('budget'), textField('currency', false, { maxLength: 3 }), textField('selectedCrop'), { key: 'candidates', type: 'rows', required: true, fields: [textField('crop', true), textField('reason', true), textField('source', true), numericField('estimatedCost'), textField('currency', false, { maxLength: 3 }), selectField('waterFit', options(language, ['unknown', 'suitable', 'unsuitable']), true), selectField('labourFit', options(language, ['unknown', 'suitable', 'unsuitable']), true), ...['soilFit', 'areaFit', 'equipmentFit', 'marketFit', 'pastCropFit', 'locationFit'].map(key => ({ ...selectField(key, options(language, ['unknown', 'suitable', 'unsuitable'])), initial: 'unknown' })), textField('assumptions', false, { multiline: true })] }]} submit={body => work.api.request(`${base}/comparisons`, 'POST', body)} onSaved={data.reload} /> : null}
     </> : null}
   </>;
 }
@@ -79,12 +82,12 @@ export function recordDetailFields(type: string, work: Workspace, language: Lang
 }
 
 function ProjectRecords({ work, language, project, animals = [] }: Props) {
-  const types = ['assessment', 'soil_test', 'readiness', ...(project.enterprise_type === 'crop' ? ['crop_stage'] : ['husbandry', 'housing', 'pregnancy', 'hatch_observation']), 'grading', 'storage', 'fuel', 'labour', 'irrigation_session'];
+  const types = ['assessment', 'soil_test', ...(work.selectedFarm?.role === 'adviser' ? [] : ['readiness']), ...(project.enterprise_type === 'crop' ? ['crop_stage'] : ['husbandry', 'housing', 'pregnancy', 'hatch_observation']), ...(work.selectedFarm?.role === 'adviser' ? [] : ['grading', 'storage', 'fuel', 'labour', 'irrigation_session'])];
   const [type, setType] = useState('assessment'); const t = textFor(language);
   const data = usePanel(work, `records:${project.id}`, () => allPages<Row>(work.api, projectPath(work, project, '/records')));
   const fields = recordDetailFields(type, work, language);
   return <><Choice label={t.kind} value={type} onChange={setType} options={options(language, types)} closeLabel={t.close} />
-    {['owner', 'manager', 'worker'].includes(work.selectedFarm?.role || '') ? <Form key={`${project.id}:${type}`} work={work} language={language} title={t.record} offline confirmation={false} draftKey={`records:${project.id}:${type}`} fields={[dateField('observedAt'), textField('note', false, { multiline: true }), ...(animals.length ? [selectField('animalId', animals.map(animal => ({ value: animal.id, label: animal.identifier })))] : []), ...fields]} initial={{ observedAt: farmNow(zone(work)) }} submit={async body => {
+    {['owner', 'manager', 'worker', 'adviser'].includes(work.selectedFarm?.role || '') ? <Form key={`${project.id}:${type}`} work={work} language={language} title={t.record} offline confirmation={false} draftKey={`records:${project.id}:${type}`} fields={[dateField('observedAt'), textField('note', false, { multiline: true }), ...(animals.length ? [selectField('animalId', animals.map(animal => ({ value: animal.id, label: animal.identifier })))] : []), ...fields]} initial={{ observedAt: farmNow(zone(work)) }} submit={async body => {
       const { id, observedAt, note, animalId, ...details } = body;
       await work.repository.enqueue({ id: string(id), farmId: work.farmId, resourceId: project.id, kind: 'project-record', body: { id, type, observedAt, note: note || '', ...(animalId ? { animalId } : {}), details }, state: 'pending', attempts: 0, lastError: null, createdAt: new Date().toISOString() });
       await work.reloadLocal(); work.setNotice('savedLocally'); if (work.online) await work.sync();
@@ -94,12 +97,16 @@ function ProjectRecords({ work, language, project, animals = [] }: Props) {
 }
 
 export function PerformancePanel({ work, language, project }: Props) {
-  const data = usePanel(work, `performance:${project.id}`, () => work.api.request<Row>(projectPath(work, project, '/performance')));
+  const [filters, setFilters] = useState<Row>({});
+  const query = new URLSearchParams(Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, string(value)]))).toString();
+  const data = usePanel(work, `performance:${project.id}:${query}`, () => work.api.request<Row>(projectPath(work, project, `/performance?${query}`)));
   const value = data.value;
-  return <><Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void data.reload(); }} /><Notice text={textFor(language).unknownHint} />{value ? <>
+  return <><Form work={work} language={language} includeId={false} confirmation={false} fields={[dateField('from', false), dateField('to', false)]} submit={async body => { setFilters(body); }} /><Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void data.reload(); }} /><Notice text={textFor(language).unknownHint} />{value ? <>
     <Facts value={value} fields={['openingCount', 'currentCount', 'reservedCount', 'countBasis', 'recordedMortality', 'mortalityRate', 'mortalityDenominator', 'incomingRecordedCount', 'acquiredRecordedCount', 'liveHatched', 'eggsProcessed', 'hatchRate', 'eggLoss', 'feedKg', 'harvestKg', 'harvestCount', 'salesCount', 'estimatedBiomassKg', 'feedPerHarvestKg']} language={language} timezone={zone(work)} />
     <Card title={c(language, 'samples')}><Facts value={object(value.latestWeightSample)} fields={['observedAt', 'sampleSize', 'averageKg', 'basis']} language={language} timezone={zone(work)} /><Text style={styles.caption}>{c(language, 'estimatesOnly')}</Text></Card>
     <Card title={c(language, 'production')}><Records items={rows(value.output)} language={language} timezone={zone(work)} fields={['kind', 'quantity', 'unit']} /></Card>
+    <Card title={c(language, 'usage')}><Records items={rows(value.usage)} language={language} timezone={zone(work)} fields={['type', 'quantity', 'unit', 'records']} /></Card>
+    <Card title={c(language, 'workByDay')}><Records items={rows(value.workByDay)} language={language} timezone={zone(work)} titleKey="date" fields={['kind', 'quantity', 'unit', 'records']} /></Card>
     <Card title={c(language, 'tasks')}><Records items={rows(value.tasks)} language={language} timezone={zone(work)} fields={['status', 'count']} /></Card>
     <Card title={c(language, 'lineage')}><Records items={rows(value.breeding)} language={language} timezone={zone(work)} fields={['observed_at', 'live_count', 'stillborn']} /></Card>
     {Array.isArray(value.missing) ? <Card title={c(language, 'missingData')}>{value.missing.map(item => <Text key={string(item)} style={styles.text}>{c(language, string(item))}</Text>)}</Card> : null}
@@ -113,22 +120,38 @@ function ProjectHistory({ work, language, project, animals = [] }: Props) {
   });
   const [identity, setIdentity] = useState('');
   return <>{animals.length ? <Choice label={c(language, 'timeline')} value={identity} onChange={setIdentity} options={[{ value: '', label: c(language, 'all') }, ...animals.map(animal => ({ value: animal.id, label: animal.identifier }))]} closeLabel={textFor(language).close} /> : null}
-    {identity ? <IdentityTimeline key={identity} work={work} language={language} identity={identity} /> : <><Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void data.reload(); }} /><Records items={data.value || []} language={language} timezone={zone(work)} fields={['kind', 'type', 'observed_at', 'recorded_at', 'note', 'count', 'quantity', 'unit']} /></>}
+    {identity ? <IdentityTimeline key={identity} work={work} language={language} identity={identity} /> : <><Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void data.reload(); }} /><Records items={data.value || []} language={language} timezone={zone(work)} fields={['kind', 'type', 'observed_at', 'recorded_at', 'note', 'historical_only', 'count', 'quantity', 'unit']} /></>}
   </>;
 }
 
 function IdentityTimeline({ work, language, identity }: { work: Workspace; language: Language; identity: string }) {
   const data = usePanel<Row>(work, `identity:${identity}`, async () => { const path = farmPath(work, `/animals/${identity}/timeline`); const first = await work.api.request<Row>(path); return { ...first, items: await allPages<Row>(work.api, path) }; });
-  return <>{data.value ? <><Facts value={object(data.value.animal)} fields={['identifier', 'sex', 'birth_date', 'status']} language={language} timezone={zone(work)} /><Card title={c(language, 'parents')}><Records items={rows(data.value.parents)} language={language} timezone={zone(work)} titleKey="identifier" fields={['sex', 'birth_date', 'status']} /></Card><Card title={c(language, 'offspring')}><Records items={rows(data.value.children)} language={language} timezone={zone(work)} titleKey="identifier" fields={['sex', 'birth_date', 'status']} /></Card><Records items={rows(data.value.items)} language={language} timezone={zone(work)} fields={['type', 'observed_at', 'note', 'count']} >{item => <Text style={styles.caption}>{work.snapshot?.projects.find(project => project.id === item.project_id)?.name || '—'} → {work.snapshot?.projects.find(project => project.id === item.destination_project_id)?.name || '—'}</Text>}</Records></> : null}</>;
+  return <>{data.value ? <><Facts value={object(data.value.animal)} fields={['identifier', 'sex', 'birth_date', 'status']} language={language} timezone={zone(work)} /><Card title={c(language, 'parents')}><Records items={rows(data.value.parents)} language={language} timezone={zone(work)} titleKey="identifier" fields={['sex', 'birth_date', 'status']} /></Card><Card title={c(language, 'birthEventId')}><Facts value={object(data.value.birthEvent)} fields={['type', 'observed_at', 'count']} language={language} timezone={zone(work)} /></Card><Card title={c(language, 'siblings')}><Records items={rows(data.value.siblings)} language={language} timezone={zone(work)} titleKey="identifier" fields={['sex', 'birth_date', 'status']} /></Card><Card title={c(language, 'offspring')}><Records items={rows(data.value.children)} language={language} timezone={zone(work)} titleKey="identifier" fields={['sex', 'birth_date', 'status']} /></Card><Records items={rows(data.value.items)} language={language} timezone={zone(work)} fields={['type', 'observed_at', 'note', 'historical_only', 'count']} >{item => <Text style={styles.caption}>{work.snapshot?.projects.find(project => project.id === item.project_id)?.name || '—'} → {work.snapshot?.projects.find(project => project.id === item.destination_project_id)?.name || '—'}</Text>}</Records></> : null}</>;
 }
 
-function CompanionPanel({ work, language, project }: Props) {
+function CompanionPanel({ work, language, project, onNavigate }: Props & { onNavigate: (tab: string) => void }) {
   const data = usePanel(work, `companion:${project.id}:${language}`, async () => { const [context, references] = await Promise.all([work.api.request<Row>(projectPath(work, project, '/companion')), allPages<Row>(work.api, farmPath(work, '/references'))]); return { context, references }; });
   const [answer, setAnswer] = useState<Row | null>(null);
+  const [action, setAction] = useState('');
   return <><Notice text={c(language, 'proposalHint')} />
-    {data.value ? <><Text style={styles.caption}>{c(language, string(data.value.context.mode || 'record_based'))}</Text>{Array.isArray(data.value.context.missingFields) ? <Card title={c(language, 'missingData')}>{data.value.context.missingFields.map(value => <Text key={string(value)} style={styles.text}>{c(language, string(value))}: {textFor(language).unknown}</Text>)}</Card> : null}<Records items={rows(data.value.context.tasks)} language={language} timezone={zone(work)} fields={['due_at', 'status', 'instructions']} /></> : null}
+    {data.value ? <><Text style={styles.caption}>{c(language, string(data.value.context.mode || 'record_based'))}</Text>{Array.isArray(data.value.context.missingFields) ? <Card title={c(language, 'missingData')}>{data.value.context.missingFields.map(value => <Text key={string(value)} style={styles.text}>{c(language, string(value))}: {textFor(language).unknown}</Text>)}</Card> : null}<Records items={rows(data.value.context.nextTasks)} language={language} timezone={zone(work)} fields={['due_at', 'status', 'instructions']} /></> : null}
+    {data.value ? <>
+      <Card title={c(language, 'proposals')}><Records items={rows(data.value.context.nextActions)} language={language} timezone={zone(work)} fields={[]}>
+        {proposal => <Button secondary title={c(language, 'review')} onPress={() => { if (proposal.code === 'record_readiness') onNavigate('assessments'); else if (proposal.code === 'review_draft_plan') onNavigate('planning'); else setAction(string(proposal.code)); }} />}
+      </Records></Card>
+      <Card title={c(language, 'followUpQuestions')}>{rows(data.value.context.followUpQuestions).map((question, i) => <View key={i} style={styles.item}><Text style={styles.label}>{c(language, string(question.field))}</Text><Text style={styles.text}>{string(question.prompt)}</Text></View>)}</Card>
+      <Card title={c(language, 'relatedCycles')}><Records items={rows(data.value.context.relatedCycles)} language={language} timezone={zone(work)} titleKey="name" fields={['status', 'as_of_date', 'planting_date', 'current_count', 'count_basis']} /></Card>
+      {rows(data.value.context.draftPlans).length ? <Button secondary title={c(language, 'plans')} onPress={() => onNavigate('planning')} /> : null}
+    </> : null}
+    <Sheet title={c(language, 'review')} visible={Boolean(action)} onClose={() => setAction('')} closeLabel={textFor(language).close}>
+      {action === 'complete_project_details' && work.canManage ? <ProjectForm work={work} language={language} project={project} onSaved={() => { setAction(''); void data.reload(); }} /> : null}
+      {action === 'review_incident' ? <IncidentsPanel work={work} language={language} /> : null}
+      {action === 'review_overdue_task' ? <Records items={rows(data.value?.context.nextTasks)} language={language} timezone={zone(work)} fields={['status', 'due_at', 'instructions']}>{task => work.canManage ? <Form work={work} language={language} includeId={false} fields={[dateField('dueAt', false), textField('reason', true), selectField('assigneeId', memberOptions(work))]} initial={{ dueAt: task.due_at ? farmNow(zone(work), new Date(string(task.due_at))) : '', assigneeId: task.assignee_id }} submit={body => work.api.request(farmPath(work, `/tasks/${task.id}`), 'PATCH', { ...body, dueAt: body.dueAt ?? null, assigneeId: body.assigneeId ?? null, version: task.version })} onSaved={async () => { await work.refresh(); await data.reload(); }} /> : null}</Records> : null}
+      {action === 'add_sourced_reference' && work.canManage ? <Form work={work} language={language} fields={[textField('title', true), textField('sourceUrl', true), { key: 'publishedOn', type: 'date', required: true }, textField('version', true), textField('reviewedBy', true), textField('content', true, { multiline: true, maxLength: 15000 })]} submit={body => work.api.request(farmPath(work, '/references'), 'POST', { ...body, language })} onSaved={async () => { setAction(''); await data.reload(); }} /> : null}
+      {['complete_project_details', 'add_sourced_reference'].includes(action) && !work.canManage ? <Notice text={textFor(language).forbidden} /> : null}
+    </Sheet>
     <Form work={work} language={language} title={textFor(language).companion} includeId={false} fields={[textField('question', true, { multiline: true }), { key: 'referenceIds', type: 'multi', options: (data.value?.references || []).map(item => ({ value: string(item.id), label: `${item.title} · ${string(item.published_on).slice(0, 10)} · ${item.version}` })) }]} submit={body => work.api.request(projectPath(work, project, '/companion/chat'), 'POST', { ...body, language })} onSaved={result => setAnswer(object(result))} />
-    {answer ? <Card title={c(language, 'answer')}><Text style={styles.caption}>{c(language, string(answer.mode))} · {string(answer.provider)}</Text><Text selectable style={styles.text}>{string(answer.answer)}</Text>{Array.isArray(answer.limitations) ? answer.limitations.map(item => <Text key={string(item)} style={styles.muted}>{string(item)}</Text>) : <Text style={styles.muted}>{string(answer.limitations)}</Text>}<ProposalList work={work} language={language} project={project} proposals={rows(answer.proposals)} /></Card> : null}
+    {answer ? <Card title={c(language, 'answer')}><Text style={styles.caption}>{c(language, answer.mode === 'model' ? 'model_ai' : string(answer.mode))} · {string(answer.provider)}</Text><Text selectable style={styles.text}>{string(answer.answer)}</Text>{Array.isArray(answer.limitations) ? answer.limitations.map(item => <Text key={string(item)} style={styles.muted}>{completionText(language, string(item)) || string(item)}</Text>) : <Text style={styles.muted}>{string(answer.limitations)}</Text>}<ProposalList work={work} language={language} project={project} proposals={rows(answer.proposals)} /></Card> : null}
     <Card title={c(language, 'references')}><Records items={data.value?.references || []} language={language} timezone={zone(work)} fields={['source_url', 'published_on', 'version', 'reviewed_by', 'content']} /></Card>
   </>;
 }

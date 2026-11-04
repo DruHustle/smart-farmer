@@ -10,7 +10,7 @@ import { AnimalEventForm, type AnimalIdentity } from './AnimalEventForm';
 import { ProjectForm } from './ProjectForm';
 import { ProjectWorkspace } from './ProjectWorkspace';
 import { StockMovements } from './FinancePanel';
-import { c, Form, numericField, textField, selectField, projectOptions, usePanel, farmPath } from '../completion-ui';
+import { c, Form, numericField, textField, selectField, projectOptions, usePanel, farmPath, options } from '../completion-ui';
 import { allPages, string, type Row } from '../product';
 
 type Restriction = { id: string; starts_at: string; ends_at: string; scope: string; reason: string; authorized_by: string };
@@ -20,30 +20,18 @@ const emptyDetails: Details = { events: [], animals: [], restrictions: [], missi
 function StockForm({ work, language, onSaved }: { work: Workspace; language: Language; onSaved: () => void }) {
   const t = textFor(language);
   const locations = usePanel(work, 'locations', () => allPages<Row>(work.api, farmPath(work, '/locations')));
-  return <Form work={work} language={language} hint={t.stockHint} fields={[textField('name', true, { label: t.stockName }), numericField('quantity', true), selectField('unit', stockUnits.map(value => ({ value, label: value })), true), selectField('projectId', projectOptions(work)), numericField('unitCost'), textField('currency', false, { maxLength: 3 }), textField('grade'), selectField('locationId', (locations.value || []).map(item => ({ value: string(item.id), label: string(item.name) }))), numericField('packSize', false, { minimum: 0.000001 }), selectField('packUnit', stockUnits.map(value => ({ value, label: value })))]} initial={{ unit: 'kg' }} submit={body => work.api.request(farmPath(work, '/stock'), 'POST', body)} onSaved={async () => { onSaved(); await work.refresh(); }} />;
+  return <Form work={work} language={language} hint={t.stockHint} fields={[textField('name', true, { label: t.stockName }), numericField('quantity', true), selectField('unit', stockUnits.map(value => ({ value, label: ['kg', 'g', 'l', 'ml'].includes(value) ? value : c(language, value) })), true), selectField('projectId', projectOptions(work)), numericField('unitCost'), textField('currency', false, { maxLength: 3 }), textField('grade'), selectField('locationId', (locations.value || []).map(item => ({ value: string(item.id), label: string(item.name) }))), numericField('packSize', false, { minimum: 0.000001 }), selectField('packUnit', stockUnits.map(value => ({ value, label: ['kg', 'g', 'l', 'ml'].includes(value) ? value : c(language, value) })))]} initial={{ unit: 'kg' }} submit={body => work.api.request(farmPath(work, '/stock'), 'POST', body)} onSaved={async () => { onSaved(); await work.refresh(); }} />;
 }
 
 function IdentityForm({ work, language, project, animals, onSaved }: { work: Workspace; language: Language; project: Project; animals: AnimalIdentity[]; onSaved: () => void }) {
-  const t = textFor(language);
-  const id = useRef(Crypto.randomUUID());
-  const [identifier, setIdentifier] = useState('');
-  const [sex, setSex] = useState<'unknown' | 'female' | 'male'>('unknown');
-  const [birthDate, setBirthDate] = useState('');
-  const [damId, setDamId] = useState('');
-  const [sireId, setSireId] = useState('');
-  async function submit() {
-    const success = await work.onlineAction(async () => {
-      if (!identifier.trim()) throw new Error('required');
-      await work.api.request(`/v1/farms/${work.farmId}/projects/${project.id}/animals`, 'POST', { id: id.current, identifier: identifier.trim(), sex, ...(birthDate ? { birthDate } : {}), ...(damId ? { damId } : {}), ...(sireId ? { sireId } : {}) });
-    });
-    if (success) onSaved();
-  }
-  return <><Text style={styles.muted}>{t.identityHint}</Text><Field label={t.identifier} value={identifier} onChangeText={setIdentifier} maxLength={100} />
-    <Choice label={t.sex} value={sex} onChange={setSex} closeLabel={t.close} options={(['unknown', 'female', 'male'] as const).map(value => ({ value, label: t[value] }))} />
-    <Field label={t.birthDate} hint="YYYY-MM-DD" value={birthDate} onChangeText={setBirthDate} maxLength={10} />
-    <Choice label={t.dam} value={damId} onChange={setDamId} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...animals.filter(animal => animal.sex === 'female').map(animal => ({ value: animal.id, label: animal.identifier }))]} />
-    <Choice label={t.sire} value={sireId} onChange={setSireId} closeLabel={t.close} options={[{ value: '', label: t.unknown }, ...animals.filter(animal => animal.sex === 'male').map(animal => ({ value: animal.id, label: animal.identifier }))]} />
-    <Button title={t.save} busy={work.busy} onPress={() => { void submit(); }} /></>;
+  const family = (type: string) => type.startsWith('fish') ? 'fish' : type.startsWith('rabbit_') ? 'rabbit' : 'chicken';
+  const data = usePanel(work, `identity-options:${project.id}`, async () => {
+    const candidates = (work.snapshot?.projects || []).filter(item => item.enterprise_type !== 'crop' && family(item.enterprise_type) === family(project.enterprise_type));
+    const [births, related] = await Promise.all([allPages<Row>(work.api, farmPath(work, `/projects/${project.id}/cohort-births`)), Promise.all(candidates.map(item => allPages<AnimalIdentity>(work.api, farmPath(work, `/projects/${item.id}/animals`))))]);
+    return { births, animals: related.flat() };
+  });
+  const parents = data.value?.animals || animals;
+  return <Form work={work} language={language} hint={textFor(language).identityHint} fields={[textField('identifier', true, { maxLength: 100 }), selectField('sex', options(language, ['unknown', 'female', 'male']), true), { key: 'birthDate', type: 'date' }, selectField('birthEventId', (data.value?.births || []).filter(item => Number(item.remainingIdentities) > 0).map(item => ({ value: string(item.id), label: `${c(language, string(item.type))} · ${formatFarmTime(string(item.observed_at), work.snapshot!.farm.timezone, language)} · ${item.source_project_name} · ${item.remainingIdentities}` }))), selectField('damId', parents.filter(animal => animal.sex === 'female').map(animal => ({ value: animal.id, label: animal.identifier }))), selectField('sireId', parents.filter(animal => animal.sex === 'male').map(animal => ({ value: animal.id, label: animal.identifier })))]} initial={{ sex: 'unknown' }} submit={body => work.api.request(farmPath(work, `/projects/${project.id}/animals`), 'POST', body)} onSaved={onSaved} />;
 }
 
 function RestrictionForm({ work, language, project, onSaved }: { work: Workspace; language: Language; project: Project; onSaved: () => void }) {
@@ -111,7 +99,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
   return <>
     <View style={styles.between}><Text style={styles.title}>{t.farm}</Text>{work.canManage ? <Button title={filter === 'stock' ? t.newStock : t.newProject} onPress={() => { work.setError(null); filter === 'stock' ? setStockCreate(true) : setCreate(true); }} /> : null}</View>
     <View style={styles.row}>{(['crops', 'animals', 'stock'] as const).map(value => <Button key={value} title={t[value]} secondary={filter !== value} onPress={() => setFilter(value)} />)}</View>
-    <Text style={styles.caption}>{t.recentWindow}</Text>
+    <Text style={styles.caption}>{c(language, 'completeCachedHistory')}</Text>
     <View style={styles.grid}>
       {filter === 'stock' ? snapshot.stock.map(item => <Card key={item.id} title={item.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}><Text style={styles.heading}>{item.quantity} {item.unit}</Text><Text style={styles.caption}>{snapshot.projects.find(project => project.id === item.project_id)?.name || '—'}</Text>{item.unit_cost !== undefined && item.unit_cost !== null ? <Text style={styles.caption}>{t.unitCost}: {item.unit_cost} {item.currency}</Text> : null}<Button secondary title={c(language, 'movements')} onPress={() => setStockId(item.id)} /></Card>) : projects.map(project => <Card key={project.id} title={project.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}>
         <Text style={styles.muted}>{label(language, project.enterprise_type)} · {label(language, project.status || 'active')}</Text>
@@ -137,7 +125,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
       {selected && mode === 'detail' ? <>
         <Text style={styles.muted}>{label(language, selected.enterprise_type)} · {label(language, selected.status || 'active')}</Text>
         {selected.enterprise_type === 'crop' ? <Text style={styles.text}>{t.plantingDate}: {selected.planting_date?.slice(0, 10) || t.unknown}{'\n'}{t.variety}: {selected.variety || t.unknown}{'\n'}{t.area}: {selected.area_ha || t.unknown}{'\n'}{t.objective}: {selected.objective || t.unknown}</Text> : <Text style={styles.heading}>{t.currentCount}: {selected.current_count ?? t.unknown} · {label(language, selected.count_basis || 'unknown')}</Text>}
-        <View style={styles.row}>{work.canManage ? <Button secondary title={t.edit} onPress={() => setMode('edit')} /> : null}{selected.enterprise_type !== 'crop' && selected.status !== 'closed' && snapshot.farm.role !== 'adviser' ? <Button title={t.animalEvent} onPress={() => setMode('event')} /> : null}</View>
+        <View style={styles.row}>{work.canManage ? <Button secondary title={t.edit} onPress={() => setMode('edit')} /> : null}{selected.enterprise_type !== 'crop' && selected.status !== 'closed' ? <Button title={t.animalEvent} onPress={() => setMode('event')} /> : null}</View>
         <ProjectWorkspace key={selected.id} work={work} language={language} project={selected} animals={details.animals} />
         {selected.enterprise_type !== 'crop' ? <>
           <Card title={t.identities}>{details.animals.map(animal => <Text key={animal.id} style={styles.text}>{animal.identifier} · {label(language, animal.sex)}{animal.dam_id ? ` · ${t.dam}: ${details.animals.find(item => item.id === animal.dam_id)?.identifier || animal.dam_id.slice(0, 8)}` : ''}</Text>)}{!details.animals.length ? <Text style={styles.muted}>{t.empty}</Text> : null}{work.canManage ? <Button secondary title={t.record} onPress={() => setMode('identity')} /> : null}</Card>

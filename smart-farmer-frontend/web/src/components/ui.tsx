@@ -57,8 +57,8 @@ export function StockSelect({name = 'stockItemId', required = false, value, onCh
 }
 export function MemberSelect({name = 'assigneeId'}: {name?: string}) {const {data, t} = useFarm(); return <Field label={t.assignee}><select name={name}><option value="">{t.unassigned}</option>{data.members.map(m => <option key={m.id} value={m.id}>{m.username} · {label(t, m.role)}</option>)}</select></Field>;}
 export function Form({onSubmit, children, className = ''}: {onSubmit: (data: FormData, form: HTMLFormElement) => void | Promise<void>; children: ReactNode; className?: string}) {
-  const {t, notify} = useFarm();
-  const submit = (e: FormEvent<HTMLFormElement>) => {e.preventDefault(); const form = e.currentTarget; const invalid = [...form.elements].find(element => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? !element.validity.valid : false) as HTMLElement | undefined; if (invalid) {notify(t.invalid_input); invalid.focus(); return;} void onSubmit(new FormData(form), form);};
+  const {t, notify} = useFarm(); const submitting = useRef(false);
+  const submit = async (e: FormEvent<HTMLFormElement>) => {e.preventDefault(); if (submitting.current) return; const form = e.currentTarget; const invalid = [...form.elements].find(element => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? !element.validity.valid : false) as HTMLElement | undefined; if (invalid) {notify(t.invalid_input); invalid.focus(); return;} submitting.current=true; try {await onSubmit(new FormData(form),form);} finally {submitting.current=false;}};
   return <form noValidate className={`form-grid ${className}`} onSubmit={submit}>{children}</form>;
 }
 export function Submit({children}: {children?: ReactNode}) {const {busy, t} = useFarm(); return <button type="submit" className="primary" disabled={busy}>{children ?? t.save}</button>;}

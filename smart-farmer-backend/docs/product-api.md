@@ -44,6 +44,7 @@ New enterprise types: `fish_breeder`, `fish_hatchery` (hatchery current_count re
 ## Marketplace extensions
 
 Existing stock listing/order/payment routes retain shapes and gain:
+
 - Listing create: existing fields plus optional `animalProjectId` **instead of** `stockItemId`, `category:produce|input|animal|equipment|other`, `grade`, `condition`, `priceBasis`, `availabilityAt`, `expiresAt`, `expectedHarvest:boolean` (defaultfalse), `photoMediaIds:uuid[]`. Expected harvest is explicitly provisional and cannot reserve unproduced stock. Animal listings derive live count and use `bird|rabbit|fish`, not duplicate stock inventory.
 - GET public listings returns version, public fields, available quantity, publication status, public photo URLs and review aggregates; never exact private farm location or project/animal IDs. Own farm listing feed includes private linkage for managers.
 - `PATCH /v1/farms/:farmId/listings/:listingId` M `{version,reason,title?,price?,currency?,collectionArea?,terms?,grade?,condition?,priceBasis?,availabilityAt?,expiresAt?,photoMediaIds?,status?:active|archived}`. Financial/order snapshots remain unchanged; expired/archived listings cannot accept orders.
@@ -68,3 +69,77 @@ Existing stock listing/order/payment routes retain shapes and gain:
 ## Release and maintenance
 
 `registerProduct(app,ctx)` registers additive product routes. `runProductMaintenance(client)` expires listings/buyer requests/offers and releases expired reservations transactionally; root maintenance worker calls it. Core/livestock/commerce list endpoints gain cursor support without removing existing fields. No fixture farm records or production messages are seeded.
+
+## Final refinements and integrity rules
+
+### Scoped adviser participation
+
+`adviser` remains the existing membership role (a veterinary adviser uses that role). In addition to reading permitted farm context, advisers may write observation/rain activities without stock, money or task-completion fields; sourced assessment, soil, husbandry, pregnancy, hatch-observation, crop-stage and housing records; observation/care/water-observation/growth-sample animal events without count, stock, transfer or money effects; and incidents. They may update incident notes/status only where they are the creator or assigned responder. They may upload their own non-financial evidence. They cannot change project counts, stocks, finances, assignments, plans, equipment controls or private farm commercial commitments. Public personal buyer participation belongs to the authenticated account and is independent of a membership's farm role.
+
+An activity linked by `financial_entries.receipt_activity_id` is financial evidence even when its original kind was `observation`. Non-managers cannot list/read its activity or media, or append media to it. Explicit financial asset attachments follow the same rule. Public listing photos require deliberate publication of a same-farm non-financial image. Public image responses re-encode a bounded, orientation-corrected WebP and discard EXIF/GPS/other metadata; private originals are unchanged. Camera stream segments are never listing-photo objects.
+
+### Explicit prices and physical reservations
+
+Listing POST/PATCH accepts `priceQuantity`: the positive number of the listing's **base units** covered by `price`. It defaults to one only for `priceBasis: "unit"`; a custom bag/lot basis requires an explicit quantity. For example, a 50 kg bag priced at USD 20 is `{price:20, priceBasis:"bag", priceQuantity:50}` for a kg stock item. The public response includes `price_quantity`; an order for 50 kg costs USD 20. Automatic totals are rounded to the currency's stored two-decimal money precision. A negotiated offer's `amount` remains an explicit total. Existing accepted orders retain their price/currency snapshots when a listing changes.
+
+Public animal listings include `count_basis`. Counts marked estimated never become verified merely by listing, reserving, transferring or fulfilling them. Reserving live animals locks their project and reserves the same `current_count` used by direct events. Selected identities are reserved with that order; where anonymous counts are exhausted, available identities are selected within the transaction. Direct sales/transfers cannot consume reserved animals. An identified mortality or verified count correction cancels incompatible commitments with `physical_loss_or_count_correction` before recording the physical fact. Identifying an otherwise anonymous reserved animal is rejected until that commitment is resolved. Expiry releases reservations in the same transaction and rechecks status after locks.
+
+### Existing animal history and birth cohorts
+
+Animal-event POST additionally accepts `historicalOnly: true` with `metadata.historySource` (a nonempty documented source). This is manager-only, must precede the project's opening `as_of_date` in the farm timezone, and writes historical evidence **without** current count, stock, financial or scheduled-task effects. Do not pass amount/currency, cost allocations or a follow-up task for a historical-only record. Ordinary count/stock mutations before the opening date return `409 historical_record_required` instead of counting the history a second time. Historical-only rows are visible in history and excluded from current-cycle flow metrics.
+
+Animal creation additionally accepts optional `birthEventId`. It must identify an actual same-farm/same-species kindling or hatch with a positive live count. Recorded rabbit parents must agree with the mating record when provided. Concurrent identification cannot exceed the live count recorded for that birth; transfers retain this cohort link. `GET /projects/:projectId/cohort-births` returns a paginated selection of direct/upstream birth cohorts with `id`, `type`, `observed_at`, `note`, `source_project_name`, `count`, `historical_only`, `destination_project_id`, and `remainingIdentities`. Individual timeline responses additionally expose `birthEvent` and `siblings` alongside `parents`, `children` and events.
+
+### Stock metadata, transfers and documented valuation
+
+| Endpoint under `/v1/farms/:farmId` | Permission / input                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `PATCH /stock/:itemId`             | M; `{version,reason,name?,grade?,locationId?,packSize?,packUnit?}`. Base unit/project do not change.               |
+| `GET /stock/:itemId/transfers`     | R; paginated incoming and outgoing movements.                                                                      |
+| `POST /stock/:itemId/transfers`    | M; `{id,destinationStockItemId,quantity,unit,observedAt,reason}`.                                                  |
+| `GET /stock/:itemId/valuations`    | M; paginated documented valuation history.                                                                         |
+| `POST /stock/:itemId/valuations`   | M; `{id,version,unitCost,currency,source,reason}`. `unitCost` is a number or null; `currency` is a string or null. |
+| `GET /reconciliation`              | M; stock balances against movements/reservations and animals against version-ordered event/opening ledgers.        |
+
+A stock transfer records equal physical quantities after explicit compatible-unit conversion, keeps origin/destination, carries applicable treatment restrictions, and transfers recorded inventory value without an external purchase or sale. A linked source project requires a traceable destination project. Opposite-direction transfers lock projects and stocks in a consistent order. Whole-count stocks never acquire fractional heads/eggs/items.
+
+Inventory purchases use weighted documented unit cost only when the prior value and purchase currency are compatible. Unknown prior value or mixed currencies leaves the result unvalued; no exchange rate is invented. A documented valuation affects future consumption/loss costs and the current stock-value view; it does not silently reprice past unvalued movements. Consumption and known-cost losses each recognize cost once. Inventory purchases are reported separately so their cost is not counted again with input consumption. Animal reconciliation marks unavailable legacy sequence/opening information as incomplete instead of manufacturing a balanced ledger.
+
+### Financial corrections, receivables and report interpretation
+
+| Endpoint under `/v1/farms/:farmId`                       | Permission / input                                                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `PATCH /projects/:projectId/opening-balances/:balanceId` | M; `{version,amount,asOfDate,source,reason}`; old/new values retained in audit.                             |
+| `POST /expenses/:entryId/reallocate`                     | M; `{id,reason,allocations:[{projectId,amount,basis}]}`; empty array clears attribution.                    |
+| `GET /expenses/:entryId/allocations/history`             | M; pagination; includes current and explicitly reversed rows.                                               |
+| `POST /expenses/:entryId/corrections`                    | M; `{id,reason}`; compensates one `documented_expense` and reverses its active allocations atomically.      |
+| `POST /projects/:projectId/payments`                     | M; `{id,revenueId,amount,currency,observedAt,note?}` for direct animal/egg sale revenue; manual provenance. |
+| `GET /projects/:projectId/ledger`                        | M; pagination; revenue rows include matched `paid` and `outstanding`; other rows return null.               |
+
+Expenses feed includes `reversed`. The normal allocations feed returns active attribution; history keeps previous attribution and reversal actor/time. Corrections create compensating ledger entries and retain the original expense. Retrying cannot compensate twice, and a reversed expense cannot be allocated again. Activity-based cost corrections use the activity correction endpoint so linked stock and completion evidence are handled together. If a reversed activity was a task's sole completion evidence, the task becomes blocked with an audit reason.
+
+A summary contains currency-separated `byCurrency` with `recordedCosts`, `recordedSales`, `cashReceived`, `cashPaid`, `inventoryPurchases`, `inputConsumption`, `recordedMargin`, `outstandingRecordedSales`, `receivablesAsOf`, and `unearnedServiceDeposits`. **Outstanding sales are matched to their own obligations and receipts as of the report end**, including older unpaid sales. They are not calculated by subtracting unrelated period cash from period sales. Accepted but unperformed service deposits remain unearned cash; cancellation does not manufacture job revenue or an expense. Refunds reduce recorded cash and cannot exceed previously acknowledged receipts.
+
+`recordedMargin` is a partial comparison of documented sales and documented costs, not a complete profit claim. `profit` remains null and `missing` identifies unpriced input/loss movements, unvalued current stock and unknown unrecorded costs. Opening balances are sourced facts, not fabricated historical events. Reports apply the latest documented corrections/attribution. `from` is inclusive, `to` exclusive; daily/weekly buckets and date-only opening facts use the farm timezone. Stock is a current snapshot at report generation, clearly labelled in the PDF. No exchange rates are applied. PDF exports embed the licensed Noto Sans font and preserve original entered names; PDF/CSV headings and missing-data explanations use the requested `sn`/`nd` language.
+
+### Service payment acknowledgement and cancellation
+
+Customer POST `/bookings/:bookingId/payments` creates a `declared` manual claim and no cash ledger effect. A provider POST records the receipt directly. A provider may acknowledge a customer claim with `POST /bookings/:bookingId/payments/:paymentId/acknowledge {}`. The booking lock serializes acknowledgement, overpayment and refund checks. Retrying acknowledgement is safe. All these records retain `providerVerified:false`; human acknowledgement is not payment-processor settlement.
+
+GET payments returns `items`, `manuallyRecordedPaid`, `outstanding`, `depositOutstanding`, `cancelledHeldPayment`, and `providerVerified:false`. Only the provider records refunds. Cancellation retains the actual acknowledged cash until an actual refund is recorded and rejects pending amendments. It creates neither a completed-job expense nor earned service revenue. Customer amendment `/accept` and `/reject` both take `{version,confirmed:true}`; completion requires any proposal to be resolved. Task-linked completion also requires a recorded actual-work row.
+
+### Companion, observations and history
+
+The deterministic GET Companion now returns project facts, `nextTasks`, localized `nextActions` and `followUpQuestions`, current assessment/readiness, recent records, sourced templates, approved/draft plans, reference metadata, comparisons and related farm cycles. `finance` is manager-only. It returns `mode:"record_based"`, `provider:"deterministic_templates"`; it does not pretend to be a live model response. Plan approval remains a separate explicit authenticated write. Root operational `/companion/chat` is a separate read-only provider boundary.
+
+Comparison candidates accept optional `soilFit`, `areaFit`, `equipmentFit`, `marketFit`, `pastCropFit`, and `locationFit`, in addition to water/labour fit and a documented cost estimate. Each fit is `unknown|suitable|unsuitable` and defaults to unknown. Unknown criteria and market assumptions are exposed. Scores are a transparent comparison of entered judgments and comparable budget data, not a universal crop/yield/profit model.
+
+Project performance also includes `usage` (fuel/labour/irrigation-session quantities grouped by their recorded units) and farm-local `workByDay`. Counters omit reversed activities and historical-only animal flows. An estimated weight sample stays labelled as a sample; estimated biomass is not a census, and no feed-conversion ratio is asserted without measured cohort weight gain. `GET /incidents/:incidentId/history` returns paginated follow-up audit entries with actor, old/new states, reason and timestamps.
+
+Invitation listing now follows `{items,nextCursor}`, with `limit` and UUID `cursor`; invitation secrets are never included in that feed.
+
+### Migration and verification
+
+Published migrations 001–006 remain immutable. Asset evidence is in operational migration 007; the additive financial correction/price-basis fields are in `008_product_refinements.sql`. Tests apply all migrations to disposable databases and additionally run the real migration command against a populated 001–006 schema, then run it again to verify it is a no-op. No production data or deployed schema was modified during implementation.
+
+Cross-project input use and feed consumption lock source and destination projects in order, enforce the source’s recorded transfer/all hold, and carry the original restriction scope, dates and authorizer to the destination. Same-project feeding does not release the held animals and remains available. Stock quantity locks permit foreign-key readers while still serializing balance updates, so two legitimate input records need not deadlock each other.

@@ -32,24 +32,20 @@ export function buildApp(db: pg.Pool, origin: string) {
   });
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof ApiError)
-      return reply
-        .code(error.status)
-        .send({
-          error: error.code,
-          ...(error.details && typeof error.details === "object"
-            ? error.details
-            : {}),
-        });
+      return reply.code(error.status).send({
+        error: error.code,
+        ...(error.details && typeof error.details === "object"
+          ? error.details
+          : {}),
+      });
     if (error instanceof z.ZodError)
-      return reply
-        .code(400)
-        .send({
-          error: "invalid_input",
-          details: error.issues.map((i) => ({
-            path: i.path,
-            message: i.message,
-          })),
-        });
+      return reply.code(400).send({
+        error: "invalid_input",
+        details: error.issues.map((i) => ({
+          path: i.path,
+          message: i.message,
+        })),
+      });
     const pgError = error as { code?: string; detail?: string };
     if (pgError.code === "23503")
       return reply.code(404).send({ error: "related_record_not_found" });
@@ -71,7 +67,7 @@ export function buildApp(db: pg.Pool, origin: string) {
   app.get("/ready", async (_req, reply) => {
     try {
       const r = await db.query(
-        "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AS ready",
+        "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
       );
       if (!r.rows[0].ready) throw new Error("Schema not ready");
       return { status: "ok" };

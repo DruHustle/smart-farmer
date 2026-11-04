@@ -58,7 +58,9 @@ The gateway posts typed telemetry, camera segments and detected events through p
 
 ## Media and retention
 
-Existing private-media endpoints remain. Object storage is selected server-side (`file` or `s3`); clients never receive bucket credentials. `GET /media-policy` returns quota/usage/retention and provider mode. `PATCH /media-policy`: O `{retentionDays:null|integer,confirmed:true}`. Null retains ordinary field evidence indefinitely. Expiry is audited and garbage collection respects active backup locks. Camera segments use the separate camera policy. Production off-host encrypted backup configuration and scheduled restore checks live under backend operations tooling.
+Private-media uploads accept exactly one `activityId` or `assetId`, with optional `financial` classification. This supports equipment photographs, voice notes, manuals and receipts without inventing an activity. PDFs and supported image/audio formats are bounded to 5 MiB. Financial evidence requires management; camera-asset evidence requires camera permission; advisers may attach their own non-financial evidence. Both parent and permissions are checked again on an idempotent replay and download. Complete schema is in [integrations-api.md](integrations-api.md).
+
+Object storage is selected server-side (`file` or `s3`); clients never receive bucket credentials. `GET /media-policy` returns quota/usage/retention and provider mode. `PATCH /media-policy`: O `{retentionDays:null|integer,confirmed:true}`. Null retains ordinary field evidence indefinitely. Expiry is audited and garbage collection respects active backup locks. Camera segments use the separate camera policy. Production off-host encrypted backup configuration and scheduled restore checks live under backend operations tooling.
 
 
 ### Recovery and camera follow-up additions
@@ -69,6 +71,6 @@ Existing private-media endpoints remain. Object storage is selected server-side 
 
 `GET /cameras/:assetId/snapshot` queues an on-demand gateway capture and returns the latest recent snapshot if available, with `X-Observed-At` and `X-Media-Source`; a client can retry while capture is pending. These headers are exposed through CORS. Simulation images are labeled explicitly.
 
-`GET /media` now accepts `cursor` and `limit` in addition to `activityId`, returning `items` and `nextCursor`. Media policy adds `pendingDeletionBytes` and `cameraPendingDeletionBytes`; quotas include pending-deletion objects until the worker confirms removal.
+`GET /media` accepts `cursor` and `limit` in addition to either `activityId` or `assetId`, returning `items` and `nextCursor`. Media policy adds `pendingDeletionBytes` and `cameraPendingDeletionBytes`; quotas include pending-deletion objects until the worker confirms removal.
 
 Gateway camera demand includes the farm `timezone` for local schedule enforcement. `/edge/camera/segments` accepts optional `discontinuity:boolean` (default false); set it on the first segment of a new encoder capture. With configured detection zones, events without an explicitly mapped zone return `ignored_unmapped_zone`. Gateways must discard associated footage rather than present it as an accepted event.

@@ -1,5 +1,9 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -54,29 +58,7 @@ jobs:
           path: ${{ runner.temp }}/smart-farmer-browser
           if-no-files-found: ignore
           retention-days: 7
-      - name: Validate local container configuration and build runtime image
-        run: |
-          POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
-          docker build --tag smart-farmer-api:ci smart-farmer-backend
-          docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
-      - name: Use matching PostgreSQL 17 backup clients
-        env:
-          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
-        run: |
-          cat > "$RUNNER_TEMP/pg_dump" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_dump "$@"
-          SH
-          cat > "$RUNNER_TEMP/pg_restore" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_restore "$@"
-          SH
-          chmod 700 "$RUNNER_TEMP/pg_dump" "$RUNNER_TEMP/pg_restore"
-          printf 'PG_DUMP_BIN=%s/pg_dump\nPG_RESTORE_BIN=%s/pg_restore\nPOSTGRES_CONTAINER_ID=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_ENV"
-      - name: Restore encrypted database and attachments into isolated target
-        run: npm run test:backup --prefix smart-farmer-backend
+
   native:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -96,3 +78,55 @@ jobs:
         run: npm test
       - name: Typecheck and export iOS and Android JavaScript bundles
         run: npm run build
+
+  storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: smart_farmer
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: smart_farmer_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U smart_farmer -d smart_farmer_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      LOG_LEVEL: silent
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix smart-farmer-backend
+      - run: npm run build --prefix smart-farmer-backend
+      - name: Validate local container configuration and build runtime image
+        run: |
+          POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
+          docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
+          docker run --rm --entrypoint node smart-farmer-backup:ci --version
+          docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
+      - name: Use matching PostgreSQL 17 backup clients
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          cat > "$RUNNER_TEMP/pg_dump" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_dump "$@"
+          SH
+          cat > "$RUNNER_TEMP/pg_restore" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_restore "$@"
+          SH
+          chmod 700 "$RUNNER_TEMP/pg_dump" "$RUNNER_TEMP/pg_restore"
+          printf 'PG_DUMP_BIN=%s/pg_dump\nPG_RESTORE_BIN=%s/pg_restore\nPOSTGRES_CONTAINER_ID=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_ENV"
+      - name: Restore encrypted database and attachments into isolated target
+        run: npm run test:backup --prefix smart-farmer-backend

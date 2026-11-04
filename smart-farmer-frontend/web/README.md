@@ -1,107 +1,126 @@
-# Smart Farmer web 0.2
+# Smart Farmer web
 
-An independent React/TypeScript client for the Smart Farmer HTTP API. The phone layout has five primary destinations: today, farm, market, services, and more. Larger screens use a sidebar. The interface supports Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`). The translation catalog is complete for the implemented labels, but it still needs review by native speakers before a farm rollout.
+An independent React/TypeScript client for the Smart Farmer HTTP API. It does not import backend or native-app implementation code. The primary destinations are Today, Farm, Market, Services, and More; a sidebar replaces the bottom navigation on larger screens. Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`) are the only interface catalogs. The catalogs are machine-authored and still require fluent agricultural review before a farm rollout.
 
-## Run locally
+## Build and run
 
-Use Node.js 24 and install the locked dependencies:
+Use Node.js 24 and the locked dependencies:
 
 ```bash
 npm ci
 cp .env.example .env.local
 npm run dev
-```
-
-Start the API separately using the backend README. Set `VITE_API_URL` to its origin and allow the web origin in the API's `WEB_ORIGIN`. The example API origin is `http://localhost:3000`. Production builds embed this URL, so set it before building.
-
-```bash
-npm run build
-npm exec vite preview -- --host 127.0.0.1
-```
-
-Serve `dist/` through HTTPS in production. The browser requires a secure context for encryption, service workers, and microphone recording. Localhost development is supported. The service worker is generated only for production builds; use the preview server to test offline loading.
-
-## Implemented workflows
-
-- Register an owner account or join a farm with an invitation. Display the single-use recovery code and require acknowledgement before entering the app. Sign in, recover without email, manage invitations and active sessions, or rotate a recovery code.
-- Create and edit crop projects, including an existing irrigated maize crop. Optional planting date, area, variety, stage, and objective stay unknown until supplied. Updates carry the server version and a reason.
-- Create broiler, layer, breeder, hatchery, rabbit breeding/growout, fish, and fish nursery projects. Record the opening count, its date, and whether it is verified, estimated, or unknown. Forms expose the enterprise's supported events and their required facts, including hatch, mating, kindling, water observations, growth sampling, transfers, mortality, sales, care, and restrictions.
-- Record work, rain, irrigation, observations, stock-linked input use and harvest, and manager costs. Attach a photograph or voice note. Images are resized to at most 1600 pixels on their longest side and encoded as JPEG. The API's five-megabyte file limit applies.
-- Create and assign tasks, record progress and completion evidence, and raise or resolve incidents. Worker and manager controls follow the currently known farm role; the API remains the authorization authority.
-- Manage stock, purchases, losses, consumption, and audited adjustments. Managers can read reports separated by currency and export the report data to CSV.
-- Register equipment and inspect freshness and telemetry. Unknown hardware remains unconfigured. Simulator controls visibly identify the simulated equipment, request explicit command confirmation, and show acknowledgement separately from feedback-confirmed execution. Camera simulation events have a separate acknowledgement flow.
-- Publish stock-backed produce listings, reserve stock, fulfil or cancel orders, record manual payments, and leave eligible reviews. Live animal marketplace listings remain blocked by the API; direct animal sales use the livestock event ledger.
-- Publish services with an optional registered equipment resource, request a time slot, quote, confirm, complete or cancel a booking, and review completed services. Selecting the same resource on different listings lets the API reject overlapping bookings for that machine. Booking times use the farm timezone.
-
-The companion panel uses the recorded facts and deterministic guidance. It does not claim live AI, verified agronomic diagnosis, or measured conditions that have not been supplied.
-
-## Offline storage and recovery
-
-`src/lib/vault.ts` stores an encrypted account snapshot and separately encrypted attachment blobs in IndexedDB. The partition includes API origin and normalized username. AES-GCM uses an account-specific key derived from the login password with PBKDF2. Context-bound authenticated encryption keeps records from being read under another account or attachment key.
-
-The unencrypted browser preference is the chosen language. Session tokens, farm data, photographs and voice files do not enter plaintext localStorage or service-worker caches. A running session necessarily keeps decrypted information in memory; locking drops the mounted session and returns to the unlock screen. Logging out also marks the local vault as requiring online authentication and attempts to revoke the current server session.
-
-A saved activity and all its attachment references enter the outbox in one encrypted write. Attachment bytes are saved before that write. A failed storage write therefore cannot leave a half-queued activity/media action. Metadata synchronizes first; larger media uploads require the explicit sync action. Retries reuse the original payload and ID. Conflicts remain visible and stop automatic retry. Network failures back off, and five unsuccessful attempts require review. Authentication failures request sign-in again.
-
-Only activities, livestock events, incidents, media, and task progress can queue. Equipment commands, marketplace actions, bookings, permissions and financial management operations require an online connection. This prevents a delayed start/stop action from executing after reconnection.
-
-After a server password reset, an existing encrypted cache may still require the previous password. The app offers two explicit choices:
-
-1. Supply the previous password to preserve and re-encrypt cached records and queued attachments.
-2. Start a fresh online cache while retaining the previous ciphertext as an archive. The account screen can later recover its pending records with the previous password.
-
-Neither choice silently deletes the old drafts. Browser storage clearing, profile deletion, and device loss can still destroy local-only records. A strong password and the device's own screen lock remain important on shared equipment.
-
-When a refresh discovers revoked farm access, it drops that farm's cached data. When a manager becomes a worker or adviser, it removes cached financial reports, stock valuations, cost activities, bookings and seller-order data before fetching the rest of the farm again. An offline device cannot discover server-side permission changes until it reconnects.
-
-## Dates, localization and accessibility
-
-All farm date/time input uses the farm's IANA timezone, normally `Africa/Harare`. `src/lib/time.ts` converts that wall time to UTC explicitly, independently of the owner's phone or laptop timezone. Date-only facts stay date-only. Invalid calendar dates and nonexistent local times are rejected.
-
-Labels live in `src/locales.ts`. `nd` is Northern Ndebele; there is no `nr` catalog. Native-speaker review, especially livestock and booking terminology, remains a release prerequisite. Form controls have explicit accessible names and descriptions, visible focus states, and touch targets suitable for a phone. Dialogs use the native dialog element. The interface avoids invented farm examples in the active account.
-
-## PWA behavior
-
-The manifest supplies 192- and 512-pixel icons plus the vector source. The generated service worker caches the exact built shell, scripts, styles and icons. It does not cache API responses or authenticated requests. Offline loading uses the saved application shell; unlocking an account requires its local password. Browser installation availability varies by platform.
-
-## Tests
-
-```bash
 npm test
 npm run build
 ```
 
-The unit suite covers both catalogs, encrypted account isolation, restart and concurrent writes, response-loss retry with stable IDs, metadata/media ordering, conflict and revoked-session behavior, unsafe outbox rejection, both password-recovery paths, atomic record/media queue persistence, and farm timezone conversion with invalid-date rejection.
-
-The browser suite requires a disposable PostgreSQL database and builds both applications. It launches the API, Vite preview, and Chromium as children of one process. It binds the API to `127.0.0.1` and does not rely on a machine-specific repository path.
+Run the backend separately according to its README. `VITE_API_URL` must identify that API, and `WEB_ORIGIN` on the API must match the website. The API URL is embedded when the client builds. Preview the production shell for offline testing:
 
 ```bash
+npm exec vite preview -- --host 127.0.0.1
+```
+
+Serve `dist/` using HTTPS in production. Localhost is supported for development. Encryption, service workers, microphone access, and clipboard sharing require a secure context. The service worker is generated during production builds. It precaches the application shell, scripts, styles and icons, excludes authenticated/API responses, and loads the HLS player only when a person requests video.
+
+### Private camera deployment
+
+Chrome/Firefox use a lazily loaded HLS player with short-lived, camera-session-scoped Bearer credentials. Requests outside the same API origin and session path are rejected by the player. Safari native HLS uses the backend's HttpOnly session cookie and therefore requires the website and API under the same HTTPS origin, normally through a reverse proxy for `/v1/`. The server rechecks membership and camera grants on every playlist and segment request. Private stream tokens, snapshots, and clips are never put into a public URL or browser cache. Switching farm or role unmounts the private viewers and revokes local blob URLs.
+
+## Workflow inventory
+
+| Area | Implemented web behavior |
+| --- | --- |
+| Identity and people | Owner registration; invitation join in either language; recovery-code acknowledgement; login and mailbox-free recovery; encrypted old-cache rekey or recoverable archive; session revocation; owner role changes and membership revocation; invitation revocation. |
+| Existing operations | Existing crop facts may remain unknown. Animal projects record opening count, date, source and verified/estimated basis. Documented financial opening balances remain separate from later activity. Explicit pre-opening historical animal entries require a source and cannot change current counts, stock or money. |
+| Crop planning | Sourced field assessments, soil tests, readiness checklists, crop-stage/grading/storage records, fuel/labour/irrigation sessions; comparison of water, labour, soil, area, equipment, market, previous crop and location fit; sourced/versioned templates; explicit anchor date; draft previews and separate approval; rescheduling previews bound to an impact token. |
+| Daily work | Work, observations, measured rain/irrigation, stock-linked inputs/harvest, photos and voice notes; task-linked completion; assignment, progress, evidence and reasoned rescheduling; incidents with assignment, acknowledgement, follow-up, history and resolution. |
+| Poultry | Broiler placement, feed, growth, loss, transfer, partial sales, closure; layers/breeders with egg collection/rejects/consumption/sales; recorded egg incubation, hatch results, downstream chick transfer and count/cost traceability. |
+| Rabbits | Identified parents, mating, kindling, stillbirths, litter-linked individual identity, fostering, weaning, grow-out, sale, care, restrictions, parents/offspring/sibling timelines and performance. |
+| Fish | Broodstock, hatchery, nursery and grow-out projects; spawning, hatch results, explicit count basis, stocking, sourced water measurements/calibration, feed, growth samples, transfer, weighed partial/final harvest and reconciliation. |
+| Inventory and accounting | Opening stock; purchases, consumption, losses and reasoned adjustments; grade/location/pack metadata; explicit pack conversion; traceable stock-to-stock transfer; sourced valuation that changes future costs only; movement and valuation histories; budgets, actual expenses, linked receipts, shared-cost allocations, reasoned replacements/clearing with retained history, documented-expense reversals, versioned opening-balance corrections and direct animal-sale receipts. |
+| Reports | Project/date/period filters; currency-separated expenditure, consumption, sales, cash and unpaid amounts; budget variance; recorded margin with missing-cost qualifications; stock/count reconciliation; duplicate review/corrections; authorized Shona/Ndebele CSV and PDF export. |
+| Equipment | Unknown-asset registration; linked assets; make/model/controller/firmware/location/responsible person; telemetry mappings, command mappings, explicit commissioning evidence and reauthentication; one-time gateway credential rotation; source/freshness-aware readings; usage, recurring maintenance and maintenance costs; private asset photographs, voice evidence and PDF documents with manager-only financial files. |
+| Commands | Explicit confirmation; separate requested, dispatched, acknowledged and feedback-confirmed states; stale/uncommissioned controls disabled; simulator actions visibly separate. Actuator commands cannot enter the offline outbox. The server and gateway enforce interlocks and expiry. |
+| Cameras | Capability configuration, zones, farm-time active schedules, duplicate suppression and retention; protected snapshot request/retry with truthful source/time; short-lived private live/event playback; grants/revocation; delayed motion/person events, acknowledgement and explicitly reviewed farm-visible incident follow-up. |
+| Marketplace | Deliberate stock or live-animal publication; count basis; explicit base-unit quantity covered by the price (including bags/lots); provisional expected harvest; photos; availability/expiry; category search; edit/archive; shareable `/?listing=ID` links; enquiries and replies; offers; reservations, fulfilment, cancellation, manual receipts, eligible reviews, buyer requests/responses/edit/close and authorized moderation. |
+| Machinery/services | Capability, area, rate basis, minimum/mobilisation charges, availability, cancellation terms and equipment resource; project/task-linked request; quote and acceptance; resource conflict rejection; work records; separately approved amendments; declared deposit versus provider-recorded manual receipt, balance/refund; completion, linked project cost and task; review/history. |
+| Notifications/weather | Measured weather distinct from forecasts; source/time/location/calibration; honest provider configuration; user quiet hours and channel preferences; inbox/acknowledgement/delivery attempts; email/SMS ownership verification and resend; simulation codes explicitly identified. |
+| Farm Companion | Context from recorded facts, tasks, observations, incidents, sourced references, templates and related cycles; missing-data follow-up; structured template proposals create a draft only, then require approval. Optional server-side AI remains read-only and clearly unavailable when not configured. |
+| Adviser participation | Sourced observations, permitted assessments, non-financial animal observations and own/assigned incident follow-up. Count, stock, money, assignment, planning approval and control mutations remain unavailable to this farm role. An account's personal marketplace buyer activity remains separate from its farm role. |
+
+The source of each operational fact is visible where it matters. The UI does not infer an agronomic timeline, treatment dose, historical stock effect, missing cost, physical hardware compatibility, or provider settlement from an unverified statement.
+
+## Offline storage, synchronization and recovery
+
+`src/lib/vault.ts` encrypts the account snapshot and separate attachment blobs in IndexedDB using AES-GCM and a password-derived PBKDF2 key. The partition includes the API origin and normalized username. The language preference is the only account preference stored in plaintext localStorage. Tokens, private data, and attachments do not enter the service worker cache. Locking drops the decrypted session; logout marks the vault as requiring online authentication and attempts to revoke the session.
+
+An activity and its attachment references enter the encrypted outbox atomically. Attachment bytes are encrypted before that queue write. Observations can be recorded without waiting for media. Metadata synchronizes first, and larger media uploads are manual by default. Settings allow compact photos and automatic media upload independently. Upload state reports real transferred bytes, pending/failed status and retry. Photos are compacted to a maximum 1600-pixel edge and JPEG quality 0.8 when compact mode is enabled.
+
+The queue permits activities, livestock observations/events, sourced project records, weather observations, asset usage, incidents, media, and task progress. Purchases, stock transfers/valuations, permissions, plan approval, bookings, payment operations and camera/actuator sessions require an online connection. Asset documents use the same encrypted queue; authorized PDF downloads are explicit and are never embedded as active page content. A request retains its original ID when a response is lost. Transient errors back off; material conflicts stop and preserve the draft. Task conflicts expose the current server version and evidence, and require an explicit reason before reapplying an eligible draft. Final tasks cannot be silently reopened by a worker. Discarding a draft removes only that draft and its dependent media.
+
+Password recovery offers either the previous password to re-encrypt existing drafts, or a fresh online cache while preserving the old ciphertext as a recoverable archive. Neither choice silently destroys the archived drafts. Clearing browser storage or losing a device can still destroy local-only data. An offline device learns about server-side membership revocation only after reconnecting.
+
+On refresh, revoked farm caches are removed. Role changes purge role-scoped feature caches, and loss of financial access also removes cached costs, valuations, finance-bearing animal metadata, reports and bookings. Core working lists follow all API cursors; long feature histories expose explicit load-more controls. Feature caches include farm, role and retrieval time. Switching identities or farms cannot reuse a previous private viewer.
+
+## Language, time and accessibility
+
+`src/locales.ts`, `src/completion-locales.ts`, and `src/validation-locales.ts` contain the local catalogs. There is no `nr` catalog. Known API error codes and notification/provider states map to localized messages; unknown internal codes do not appear verbatim in interface labels. User-entered names, notes, source material and measurement units remain as recorded. Fluent review, especially agricultural and commercial terminology, is tracked separately and is not claimed here.
+
+All datetime input uses the farm's IANA timezone, normally `Africa/Harare`. `src/lib/time.ts` converts farm wall time to UTC independently of device timezone. Date-only facts remain date-only. Numeric dates avoid silently falling back to English month names on browsers without `sn`/`nd` ICU data. Missing monetary values remain unknown, rather than displaying zero. Amounts always retain their recorded currency.
+
+Forms provide accessible labels/descriptions, translated validation, keyboard focus, native modal semantics and phone-sized controls. Tables scroll inside their own labelled region. The browser suite performs separate small-phone, tablet and desktop overflow checks and axe WCAG A/AA scans in both languages. Browser viewport evidence does not demonstrate a native iOS or Android build, screen-reader usability or physical-device microphone behavior.
+
+## Tests and acceptance evidence
+
+```bash
+npm test
+npm run build
 npx playwright install --with-deps chromium
 TEST_DATABASE_URL=postgresql://user:password@127.0.0.1:5432/smart_farmer_test \
   npm run test:e2e
 ```
 
-Optional environment variables:
+The database must be isolated and disposable. Accelerated journeys honor the real API rate-limit response headers and pause near exhaustion; the harness does not raise production limits or mock responses. The harness builds both applications, migrates that database, and launches the API, Vite preview and real Chromium as children of one process. It never mocks the production API or treats a missing browser as a pass. Each build has a 60-second limit, normal actions use bounded 10–20-second timeouts, and the suite has a 12-minute watchdog. `CHROMIUM_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` can select a known installed executable. `TEST_ARTIFACTS_DIR` sets the artifact directory; otherwise a temporary directory is created.
 
-| Variable | Purpose |
-| --- | --- |
-| `CHROMIUM_PATH` | Use an explicitly installed Chromium executable. |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE` | Compatibility alias for the executable override. |
-| `TEST_ARTIFACTS_DIR` | Directory for screenshots, results, and failure logs; created automatically. The default is a fresh temporary directory. |
+Artifacts include `results.json`, step/error/request/server logs, failure page text/screenshot, phone/tablet/desktop screenshots, axe JSON reports, and an actual downloaded report PDF. `test/browser.mjs` covers the established identity/offline/recovery/command path; `test/browser-completion.mjs` adds the wider operating workflows. The unit suite additionally checks encryption/account isolation, response-loss replay, atomic queue/media persistence, metadata/media ordering, material conflicts, transient transaction retry, unsafe queue rejection, recovery, pagination/cursor loops, and numeric farm-time formatting.
 
-The authored browser journey covers owner registration and recovery-code acknowledgement, unknown-fact maize onboarding, stock-linked offline activity with photo, restart and unlock, both interface languages, Harare entry from a Los Angeles browser, exactly-once stock/cost effects, password recovery and cache re-encryption, and the equipment simulator acknowledgement/feedback sequence. It also checks 320px and desktop layout overflow and browser runtime errors. It exits nonzero on failure; missing browser or database support is not reported as a pass. Each build command has a 60-second deadline, ordinary browser actions have a 10-second timeout, service-worker control has a 15-second timeout, and the entire harness has a four-minute watchdog. Step, console, failed-request, and server diagnostics accompany failures.
+### Full brief traceability
 
-### Verification in this development environment
+The matrix describes the authored checks and where their execution evidence must be obtained. A listed check is not itself a claim that its latest CI execution passed.
 
-The production build and unit suite pass. The real PostgreSQL browser harness reaches API and web readiness, but the supplied execution sandbox denies Chromium's process-singleton socket (`Operation not permitted`) before a page opens. Consequently no browser journey or screenshot is claimed as passed here. CI installs its own Chromium and runs the same `test:e2e` entry point; its result must be reviewed before treating the browser journey as accepted.
+| Brief acceptance | Browser check | Complementary gate |
+| --- | --- | --- |
+| 1 | Owner recovery; worker invitation/Ndebele join, permissions, adviser downgrade | Backend identity and membership tests; native journeys |
+| 2 | Existing irrigated maize unknown facts; later confirmed facts without invented planting | Backend audit/version checks |
+| 3 | Offline stock-linked input and photo, restart/unlock, exact one stock/cost effect; assigned irrigation completion | Native offline photo/restart test; backend idempotency |
+| 4 | Two actors update one task; preserved conflict, current-state review and reasoned reapply | Backend overlapping record/correction tests |
+| 5 | Assessment/plan, irrigation, incident/follow-up, partial harvest, stock sale/payment, budget/reports | Backend season/accounting integration |
+| 6 | Broiler placement/feed/observation/loss/partial sales/closure | Animal ledger invariants |
+| 7 | Layer collection/rejects/consumption/sale and continuing production | Egg ledger invariants |
+| 8 | Recorded eggs incubate and hatch into traceable chicks | No duplicated counts/costs; stale/replay tests |
+| 9 | Mating/kindling, litter-linked identity, fostering/weaning/grow-out/sale and lineage | Birth capacity and identity-transfer checks |
+| 10 | Stocking, water source/calibration, feed, mean sample, transfer, partial/final harvest | Estimate/reconciliation and restriction checks |
+| 11 | Fish broodstock → hatchery → nursery → grow-out | Fish hatch counts and transaction tests |
+| 12 | Assign/acknowledge/follow up/resolve crop incident; camera event follow-up | Incident audit/escalation tests |
+| 13 | Unknown asset, explicit simulated mapping, maintenance/usage; private asset PDF upload/download with financial role denial; baseline telemetry | Gateway transport and commissioning tests |
+| 14 | Explicit simulated command, separate acknowledgement and confirmed feedback | Backend/edge rejection, timeout, expiry, replay, missing feedback and reconnect matrix |
+| 15 | Private camera config/snapshot; delayed person event/source; protected access | Session, segment, grants, retention/deduplication/ONVIF tests |
+| 16 | Crop/live listing, enquiry, reserve, fulfil, manual payment, cancellation, concurrent oversell rejection | Offer, buyer-request, moderation, expiry/review tests |
+| 17 | Quote/request/accept, declared deposit/acknowledgement, work, completion/task/cost | Resource overlap, amendment, cancellation/refund tests |
+| 18 | Budget, actual cost, counts/stock, dual-currency reports, protected PDF | Reasoned allocation replacement/retained history, opening correction and expense reversal in browser; packs, transfers, valuation and reconciliation tests |
+| 19 | Cross-farm camera/export denial; role/cache behavior | Backend/API/media tenant boundary; encrypted cache unit tests |
+| 20 | Language switch online/offline; validation/notification catalog; numeric dates | Android/iOS language journeys |
+| 21 | 320px phone, 768px tablet, 1280px desktop, keyboard and axe scans | Separate Android/iOS/iPad build and device automation |
+| 22 | No browser substitute | Isolated PostgreSQL and media backup/restore test |
+| 23 | Documented opening count and balance; no inferred history | Historical-only records and opening ledger tests |
+| 24 | Treatment restriction rejects live reservation; counts remain protected | Transfer, partial harvest, reservation/fulfilment/direct-sale restriction propagation tests |
 
-## Deliberate limits
+### Current local verification boundary
 
-- The web browser client is independent from the native app. It has no backend or native implementation imports.
-- Native installation, real-device camera/audio, background sync and screen-reader usability need device testing. A source build does not demonstrate those outcomes.
-- Only a commissioned adapter may operate real equipment. These UI simulator tests are not proof that a borehole, pump, pivot or camera works in the field.
-- Individual animal identity/restriction selectors require their online lookup; cached project events and normal field recording work offline. The UI does not promise offline access to every management operation.
-- Cached lists are bounded by the API response. There is no full-history pagination or enterprise reconciliation UI yet.
-- Manual payment records are bookkeeping; there is no payment gateway or escrow integration.
+The latest production build and 12 unit tests pass in the development workspace. Local Chromium launch is blocked by the execution sandbox's process-singleton socket permission, before a page can open. The wider browser suite is therefore executed in repository CI, and its concrete run/artifacts determine acceptance. No local browser, native-device, live-provider, physical-hardware, or fluent-language review is claimed from a TypeScript build.
 
-See the backend's `docs/core-api.md`, `docs/integrations-api.md`, and `docs/hardware-and-commissioning.md` for the authoritative server contract and deployment boundaries.
+## Activation and external prerequisites
+
+Farm record workflows work without AI, weather or notification credentials. Settings show the configured/unconfigured provider mode and the needed opt-ins. Production weather, AI, external notification delivery, live payment settlement and physical equipment/camera operation require their documented server configuration and commissioning. Manual payment records explicitly remain manual. Native build/signing/device checks and backup recovery belong to their separate repository gates.
+
+Authoritative contracts and operating instructions are in the backend `docs/product-api.md`, `docs/operations-api.md`, `docs/core-api.md`, `docs/integrations-api.md`, `docs/hardware-and-commissioning.md`, and `docs/operations.md`.
