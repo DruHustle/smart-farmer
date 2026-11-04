@@ -1,11 +1,11 @@
-FROM node:24-bookworm-slim AS build
+FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
-FROM postgres:17-trixie
+FROM postgres:17.11-trixie@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
 RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app

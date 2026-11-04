@@ -45,6 +45,19 @@ jobs:
         run: npm test --prefix smart-farmer-backend/edge
       - name: Python edge HMAC, replay and durable spool tests
         run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
+      - name: Validate isolated production candidate configuration
+        run: |
+          set -euo pipefail
+          export FARMER_RUNTIME_ENV_FILE="$RUNNER_TEMP/farm-runtime.env"
+          printf 'PGHOST=db\nPGUSER=farm\nPGPASSWORD=ci-only\nPGDATABASE=farm\n' > "$FARMER_RUNTIME_ENV_FILE"
+          chmod 600 "$FARMER_RUNTIME_ENV_FILE"
+          export FARMER_API_IMAGE="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          export FARMER_WEB_IMAGE="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          export FARMER_SOURCE_REVISION="cccccccccccccccccccccccccccccccccccccccc"
+          export FARMER_WEB_ORIGIN="https://farmer.onesa.eu" FARMER_API_PORT=18131 FARMER_WEB_PORT=18132
+          export FARMER_POSTGRES_USER=farm FARMER_POSTGRES_PASSWORD=ci-only FARMER_POSTGRES_DB=farm
+          node smart-farmer-backend/deploy/onesa/validate.mjs
+          docker compose -f smart-farmer-backend/deploy/onesa/compose.yml --profile local-db --profile ops config --quiet
       - name: Validate Node-RED demonstration flow format
         run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
       - name: Install browser

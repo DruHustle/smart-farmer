@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
+import { isIP } from "node:net";
 import type pg from "pg";
 import { ApiError, createContext } from "./context.js";
 import { registerProduct } from "./product.js";
@@ -20,7 +21,16 @@ export function buildApp(
   origin: string,
   integrations: IntegrationOptions = {},
 ) {
+  // Forwarded client addresses are accepted only from explicitly named proxy
+  // IPs; a deployment must also ensure its ingress replaces untrusted headers.
+  const trustedProxies = (process.env.TRUST_PROXY_IPS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (trustedProxies.length > 8 || trustedProxies.some((value) => !isIP(value)))
+    throw new Error("TRUST_PROXY_IPS must contain at most eight exact IP addresses");
   const app = Fastify({
+    trustProxy: trustedProxies.length ? trustedProxies : false,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
       redact: ["req.headers.authorization", "req.headers.cookie"],
@@ -72,25 +82,34 @@ export function buildApp(
     app.log.error(error);
     return reply.code(500).send({ error: "internal_error" });
   });
-  app.get("/health", async () => ({ status: "ok" }));
-  app.get("/ready", async (_req, reply) => {
-    try {
-      const r = await db.query(
-        "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
-      );
-      if (!r.rows[0].ready) throw new Error("Schema not ready");
-      return { status: "ok" };
-    } catch {
-      return reply.code(503).send({ status: "unavailable" });
-    }
+  // The rate-limit plugin installs an onRoute hook during registration. Routes
+  // must be added after that hook exists, including their per-route limits.
+  app.after(() => {
+    app.get("/health", async () => ({ status: "ok" }));
+    app.get("/version", async () => ({
+      revision: /^[a-f0-9]{40}$/.test(process.env.APP_REVISION ?? "")
+        ? process.env.APP_REVISION
+        : null,
+    }));
+    app.get("/ready", async (_req, reply) => {
+      try {
+        const r = await db.query(
+          "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
+        );
+        if (!r.rows[0].ready) throw new Error("Schema not ready");
+        return { status: "ok" };
+      } catch {
+        return reply.code(503).send({ status: "unavailable" });
+      }
+    });
+    const ctx = createContext(db);
+    registerIdentity(app, ctx);
+    registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
+    registerCore(app, ctx);
+    registerLivestock(app, ctx);
+    registerIntegrations(app, ctx, integrations);
+    registerProduct(app, ctx);
+    registerOperations(app, ctx);
   });
-  const ctx = createContext(db);
-  registerIdentity(app, ctx);
-  registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
-  registerCore(app, ctx);
-  registerLivestock(app, ctx);
-  registerIntegrations(app, ctx, integrations);
-  registerProduct(app, ctx);
-  registerOperations(app, ctx);
   return app;
 }
