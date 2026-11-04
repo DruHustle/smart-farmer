@@ -124,7 +124,9 @@ jobs:
             smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/*.apk
             ${{ runner.temp }}/native-evidence
   ios:
-    runs-on: macos-26
+    # Standard Intel capacity avoids repeated arm64 runner-acquisition cancellations.
+    # Keep the same macOS release and the complete iPhone/iPad acceptance journeys.
+    runs-on: macos-26-intel
     timeout-minutes: 75
     concurrency:
       group: native-ios-${{ github.ref }}
