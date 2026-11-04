@@ -27,3 +27,7 @@ jobs:
       - run: npm run build --prefix smart-farmer-frontend/web
       - run: npm test --prefix smart-farmer-backend
       - run: npm test --prefix smart-farmer-frontend/web
+      - name: Check independent Python edge agent
+        run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
+      - name: Check Node-RED example flow JSON
+        run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
