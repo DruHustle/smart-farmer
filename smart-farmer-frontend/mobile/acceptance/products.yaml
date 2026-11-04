@@ -1,0 +1,9 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: product-project.yaml
+- runFlow: product-finance.yaml
+- runFlow: product-market.yaml
+- runFlow: product-services.yaml
+- runFlow: product-security.yaml
+- runFlow: product-language.yaml
+- runFlow: product-equipment.yaml

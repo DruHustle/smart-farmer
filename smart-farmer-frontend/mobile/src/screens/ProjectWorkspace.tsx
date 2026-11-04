@@ -22,7 +22,7 @@ export function ProjectWorkspace(props: Props) {
   const { work, language } = props;
   const [tab, setTab] = useState('companion');
   return <Card title={c(language, 'details')}><Choice testID="project-workspace" label={c(language, 'details')} value={tab} onChange={setTab} closeLabel={textFor(language).close} options={options(language, ['companion', 'planning', 'assessments', 'performance', 'history', ...(work.canManage ? ['finance'] : [])])} />
-    {tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} /> : <CompanionPanel {...props} onNavigate={setTab} />}
+    <View testID={`project-panel-${tab}`} collapsable={false} style={{ gap: 14 }}>{tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} /> : <CompanionPanel {...props} onNavigate={setTab} />}</View>
   </Card>;
 }
 
@@ -43,7 +43,7 @@ function PlanningPanel({ work, language, project }: Props) {
       <Notice text={c(language, 'previewHint')} />
       <Records items={data.value?.plans || []} language={language} timezone={zone(work)} fields={['status', 'template_version', 'anchor_at', 'note']}>
         {plan => <><Records items={rows(plan.preview)} language={language} timezone={zone(work)} fields={['dueAt', 'instructions', 'requiredEvidence']} />{work.canManage ? <>
-          {plan.status === 'draft' ? <Action work={work} language={language} title={c(language, 'approve')} detail={c(language, 'previewHint')} action={() => work.api.request(`${base}/plans/${plan.id}/approve`, 'POST', { id: Crypto.randomUUID(), version: plan.version, confirmed: true })} onSaved={async () => { await data.reload(); await work.refresh(); }} /> : <Reschedule work={work} language={language} project={project} plan={plan} onSaved={data.reload} />}
+          {plan.status === 'draft' ? <Action testID={`plan-approve-${plan.id}`} work={work} language={language} title={c(language, 'approve')} detail={c(language, 'previewHint')} action={() => work.api.request(`${base}/plans/${plan.id}/approve`, 'POST', { id: Crypto.randomUUID(), version: plan.version, confirmed: true })} onSaved={async () => { await data.reload(); await work.refresh(); }} /> : <Reschedule work={work} language={language} project={project} plan={plan} onSaved={data.reload} />}
         </> : null}</>}
       </Records>
       {work.canManage ? <Form work={work} language={language} title={c(language, 'add')} fields={[selectField('templateId', templates.map(item => ({ value: `${item.id}:${item.version}`, label: `${item.name} · ${item.version}` })), true), dateField('anchorAt'), selectField('assigneeId', memberOptions(work)), textField('note')]} submit={body => { const { templateId, ...rest } = body; const [id, version] = string(templateId).split(':'); return work.api.request(`${base}/plans`, 'POST', { ...rest, templateId: id, templateVersion: Number(version) }); }} onSaved={data.reload} /> : null}

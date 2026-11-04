@@ -1,0 +1,23 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "workspace-language"
+- tapOn:
+    id: "workspace-language-option-nd"
+- assertVisible: Lamuhla
+- assertVisible: Bhala
+- assertVisible: Okunye
+- takeScreenshot: northern-ndebele-native-workspace
+- tapOn:
+    id: "workspace-language"
+- tapOn:
+    id: "workspace-language-option-sn"
+- assertVisible: Nhasi
+- assertVisible: Nyora

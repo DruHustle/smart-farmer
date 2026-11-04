@@ -1,0 +1,83 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "more-services"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-services"
+- scrollUntilVisible:
+    element:
+      id: "service-open-${SERVICE_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "service-open-${SERVICE_ID}"
+- scrollUntilVisible:
+    element:
+      id: "form-projectId"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-projectId"
+- scrollUntilVisible:
+    element:
+      id: "form-projectId-option-${PROJECT_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-projectId-option-${PROJECT_ID}"
+- scrollUntilVisible:
+    element:
+      id: "form-note"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-note"
+- inputText: "Native accepted booking request"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "product-review"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-review"
+- scrollUntilVisible:
+    element:
+      id: "product-confirm"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "product-confirm"
+    timeout: 45000
+- tapOn:
+    id: "sheet-close"
+- scrollUntilVisible:
+    element:
+      id: "service-tabs"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "service-tabs"
+- tapOn:
+    id: "service-tabs-option-bookings"
+- scrollUntilVisible:
+    element:
+      text: "Native acceptance tractor"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: service-request-awaits-provider-quote
+- tapOn:
+    id: "sheet-close"

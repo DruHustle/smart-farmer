@@ -16,5 +16,6 @@ python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$RUNNER_TEMP/native-encryp
 rm "$NATIVE_OFFLINE_FLAG"
 maestro test --format junit --output "$EVIDENCE/android-reconcile.xml" --test-output-dir "$EVIDENCE/android-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/android-exactly-once.txt"
+bash "$NATIVE_DIR/acceptance/product-smoke.sh" android
 # Never upload raw databases, session credentials, or key material as evidence.
 rm -rf "$RUNNER_TEMP/native-encryption"

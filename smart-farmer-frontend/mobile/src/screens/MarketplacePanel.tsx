@@ -24,7 +24,7 @@ export function MarketplacePanel({ work, language }: Props) {
   const requestFields: FormField[] = [textField('title', true), selectField('category', options(language, categories), true), numericField('quantity', true, { minimum: 0.000001 }), textField('unit', true), textField('area', true, { label: c(language, 'collectionArea') }), textField('details', true, { multiline: true }), dateField('expiresAt')];
   async function reload() { await data.reload(); await work.refresh(); }
   return <>
-    <Notice text={c(language, 'onlineOnly')} /><Choice label={t.market} value={tab} onChange={setTab} options={options(language, ['listings', 'orders', 'requests', ...(work.canManage ? ['ownListings', 'moderation'] : [])])} closeLabel={t.close} />
+    <Notice text={c(language, 'onlineOnly')} /><Choice testID="market-tabs" label={t.market} value={tab} onChange={setTab} options={options(language, ['listings', 'orders', 'requests', ...(work.canManage ? ['ownListings', 'moderation'] : [])])} closeLabel={t.close} />
     <Field label={c(language, 'search')} value={query} onChangeText={setQuery} maxLength={100} /><View style={styles.row}><Button secondary title={c(language, 'search')} onPress={() => setSearch(query.trim())} /><Button secondary title={t.refresh} busy={data.loading} onPress={() => { void data.reload(); }} /></View>
     {tab === 'listings' || tab === 'ownListings' ? <>
       <Records items={(tab === 'listings' ? data.value?.listings : data.value?.own) || []} language={language} timezone={zone(work)} fields={['category', 'available_quantity', 'remaining_quantity', 'unit', 'count_basis', 'expected_harvest', 'expected_quantity', 'price', 'currency', 'price_basis', 'price_quantity', 'collection_area', 'grade', 'status', 'expires_at']}>

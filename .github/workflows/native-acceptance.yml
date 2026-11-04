@@ -10,7 +10,9 @@ permissions:
   contents: read
 concurrency:
   group: native-acceptance-${{ github.ref }}
-  cancel-in-progress: true
+  # Let a costly native compile finish and populate its dependency-keyed binary cache.
+  # GitHub evaluates PR path filters over the whole PR, including web-only follow-ups.
+  cancel-in-progress: false
 env:
   CI: 'true'
   EXPO_NO_TELEMETRY: '1'
