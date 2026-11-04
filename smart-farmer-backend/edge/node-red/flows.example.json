@@ -1,0 +1,77 @@
+[
+  {
+    "id": "smart-farmer-tab",
+    "type": "tab",
+    "label": "Smart Farmer - read-only test fixture",
+    "disabled": true,
+    "info": "Explicitly simulated example. Replace with a reviewed machine connector and commissioning identity before enabling."
+  },
+  {
+    "id": "manual-example",
+    "type": "inject",
+    "z": "smart-farmer-tab",
+    "name": "Manual SIMULATION only",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "true",
+    "payloadType": "bool",
+    "once": false,
+    "onceDelay": 0.1,
+    "wires": [
+      [
+        "make-event"
+      ]
+    ]
+  },
+  {
+    "id": "make-event",
+    "type": "function",
+    "z": "smart-farmer-tab",
+    "name": "Build candidate observation",
+    "func": "// Demonstration only. Not a real sensor measurement.\nconst crypto = global.get('crypto');\nmsg.payload = {schemaVersion:1,eventId:crypto.randomUUID(),sourceId:'demo-pivot',\n  observedAt:new Date().toISOString(),kind:'measurement',\n  data:{assetId:'demo-pivot',metric:'demo_pressure',value:0,unit:'bar'}};\nmsg.headers = {'Content-Type':'application/json',\n  'Authorization':'Bearer '+env.get('EDGE_INGRESS_TOKEN')};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "send-agent"
+      ]
+    ]
+  },
+  {
+    "id": "send-agent",
+    "type": "http request",
+    "z": "smart-farmer-tab",
+    "name": "Python edge agent",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "http://127.0.0.1:18777/ingest",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "senderr": false,
+    "wires": [
+      [
+        "result"
+      ]
+    ]
+  },
+  {
+    "id": "result",
+    "type": "debug",
+    "z": "smart-farmer-tab",
+    "name": "Queued or rejected by Python",
+    "active": true,
+    "tosidebar": true,
+    "complete": "true",
+    "targetType": "full",
+    "wires": []
+  }
+]
