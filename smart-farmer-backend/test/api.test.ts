@@ -14,6 +14,16 @@ test('farm isolation, unknown crop facts and idempotent field records', async()=
  const db=new pg.Pool({connectionString:url,options:`-c search_path=${schema}`});
  const app=buildApp(db,'http://localhost:5173');
  try {
+  for(const method of ['PATCH','DELETE']) {
+   const preflight=await app.inject({method:'OPTIONS',url:'/v1/me/preferences',headers:{origin:'http://localhost:5173','access-control-request-method':method,'access-control-request-headers':'authorization,content-type'}});
+   assert.equal(preflight.statusCode,204,preflight.body);
+   assert.equal(preflight.headers['access-control-allow-origin'],'http://localhost:5173');
+   assert.equal(preflight.headers['access-control-allow-credentials'],'true');
+   assert.ok(String(preflight.headers['access-control-allow-methods']).split(',').map(x=>x.trim()).includes(method));
+   assert.match(String(preflight.headers['access-control-allow-headers']),/authorization/i);
+  }
+  const foreignOrigin=await app.inject({method:'OPTIONS',url:'/v1/me/preferences',headers:{origin:'https://unrelated.invalid','access-control-request-method':'PATCH'}});
+  assert.equal(foreignOrigin.headers['access-control-allow-origin'],undefined,'unrelated browser origins receive no CORS grant');
   for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort()) await db.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
   const reg=async(username:string)=>{const response=await app.inject({method:'POST',url:'/v1/register',payload:{username,password:'a-long-password-123',language:'sn',farmName:'Test farm'}});assert.equal(response.statusCode,201);return response.json();};
   const one=await reg('farmer_one'), two=await reg('farmer_two');

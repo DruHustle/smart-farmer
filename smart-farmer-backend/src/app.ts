@@ -20,7 +20,8 @@ export function buildApp(db: pg.Pool, origin: string) {
     bodyLimit: 32_768,
   });
   app.register(cors, {
-    origin,
+    origin: [origin],
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     exposedHeaders: ["X-Observed-At", "X-Media-Source", "Content-Disposition"],
   });
