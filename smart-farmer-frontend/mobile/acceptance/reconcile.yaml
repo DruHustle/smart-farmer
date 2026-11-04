@@ -13,15 +13,21 @@ appId: eu.onesa.smartfarmer
     timeout: 45000
 - tapOn:
     id: tab-record
-- setPermissions:
-    permissions:
-      camera: deny
 - scrollUntilVisible:
     element:
       id: media-camera
     direction: DOWN
 - tapOn:
     id: media-camera
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      # A denied launch may still permit the first OS permission request.
+      # Explicitly deny that camera request; never grant access in this flow.
+      - tapOn:
+          id: '^(com[.]android|com[.]google[.]android)[.]permissioncontroller:id/permission_deny(_and_dont_ask_again)?_button$'
+          optional: true
 - scrollUntilVisible:
     element:
       text: '.*Mvumo haina kupiwa.*'

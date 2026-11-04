@@ -42,7 +42,12 @@ appId: eu.onesa.smartfarmer
 - stopApp
 - launchApp:
     stopApp: false
-- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081
+    # Android revocation terminates a live process. Configure denial at this
+    # existing cold-start boundary, before reauthentication and reconciliation.
+    permissions:
+      all: allow
+      camera: deny
+- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1
 - tapOn:
     text: Open
     optional: true
