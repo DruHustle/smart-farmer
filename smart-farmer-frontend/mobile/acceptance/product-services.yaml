@@ -8,6 +8,7 @@ appId: eu.onesa.smartfarmer
     direction: UP
     timeout: 30000
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "more-services"
     direction: DOWN
@@ -15,6 +16,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "more-services"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "service-open-${SERVICE_ID}"
     direction: DOWN
@@ -22,6 +24,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "service-open-${SERVICE_ID}"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "form-projectId"
     direction: DOWN
@@ -36,6 +39,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-projectId-option-${PROJECT_ID}"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "form-note"
     direction: DOWN
@@ -53,6 +57,7 @@ appId: eu.onesa.smartfarmer
     id: "form-note"
     text: '^Native accepted booking request$'
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "product-review"
     direction: DOWN
@@ -60,6 +65,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "product-review"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "product-confirm"
     direction: DOWN
@@ -73,6 +79,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "sheet-close"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "service-tabs"
     direction: UP

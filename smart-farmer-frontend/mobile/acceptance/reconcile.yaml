@@ -14,6 +14,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: tab-record
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: media-camera
     direction: DOWN

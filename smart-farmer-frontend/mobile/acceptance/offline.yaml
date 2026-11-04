@@ -13,6 +13,7 @@ appId: eu.onesa.smartfarmer
     id: "record-note"
     text: '^Native durable offline observation$'
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: record-save
     direction: DOWN
@@ -25,6 +26,7 @@ appId: eu.onesa.smartfarmer
       id: workspace-language
     direction: UP
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: more-sync
     direction: DOWN

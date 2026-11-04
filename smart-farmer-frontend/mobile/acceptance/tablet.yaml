@@ -7,6 +7,7 @@ appId: eu.onesa.smartfarmer
       id: workspace-language
     direction: UP
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: project-open-${PROJECT_ID}
     direction: DOWN
@@ -14,6 +15,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: project-open-${PROJECT_ID}
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: project-workspace
     direction: DOWN
@@ -36,6 +38,7 @@ appId: eu.onesa.smartfarmer
       id: workspace-language
     direction: UP
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: more-finance
     direction: DOWN

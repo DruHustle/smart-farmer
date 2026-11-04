@@ -8,6 +8,7 @@ appId: eu.onesa.smartfarmer
     direction: UP
     timeout: 30000
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "more-security"
     direction: DOWN
@@ -15,6 +16,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "more-security"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "camera-playback-${CAMERA_EVENT_ID}"
     direction: DOWN
@@ -33,6 +35,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "sheet-close"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "camera-ack-${CAMERA_EVENT_ID}"
     direction: UP

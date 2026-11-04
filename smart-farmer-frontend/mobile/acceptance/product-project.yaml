@@ -8,6 +8,7 @@ appId: eu.onesa.smartfarmer
     direction: UP
     timeout: 30000
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-open-${PROJECT_ID}"
     direction: DOWN
@@ -15,6 +16,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "project-open-${PROJECT_ID}"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-workspace"
     direction: DOWN
@@ -29,6 +31,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "project-workspace-option-planning"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "plan-approve-${PLAN_ID}"
     direction: DOWN
@@ -43,6 +46,7 @@ appId: eu.onesa.smartfarmer
     timeout: 45000
 - takeScreenshot: sourced-plan-approved-once
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-workspace"
     direction: UP
@@ -60,6 +64,7 @@ appId: eu.onesa.smartfarmer
 - assertVisible:
     id: project-panel-assessments
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-workspace"
     direction: UP
@@ -78,6 +83,7 @@ appId: eu.onesa.smartfarmer
     id: project-panel-performance
 - takeScreenshot: project-performance-and-missing-data
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-workspace"
     direction: UP
@@ -95,6 +101,7 @@ appId: eu.onesa.smartfarmer
 - assertVisible:
     id: project-panel-history
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "project-workspace"
     direction: UP

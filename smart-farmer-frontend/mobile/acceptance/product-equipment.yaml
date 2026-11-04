@@ -8,6 +8,7 @@ appId: eu.onesa.smartfarmer
     direction: UP
     timeout: 30000
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "more-equipment"
     direction: DOWN
@@ -15,6 +16,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "more-equipment"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "asset-open-${ASSET_ID}"
     direction: DOWN
@@ -22,6 +24,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "asset-open-${ASSET_ID}"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "equipment-tabs"
     direction: DOWN
@@ -36,6 +39,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "equipment-tabs-option-commands"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "command-start"
     direction: DOWN
@@ -43,6 +47,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "command-start"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "command-confirm"
     direction: DOWN
