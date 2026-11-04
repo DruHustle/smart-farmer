@@ -42,6 +42,20 @@ Messages are localized using the account language. User-authored titles/notes re
 
 Official references: [Expo sending and receipt handling](https://docs.expo.dev/push-notifications/sending-notifications/), [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys).
 
+## Payment provider activation
+
+The payment boundary is implemented in `src/integrations/payments.ts`. Its default adapter is explicitly unconfigured: it cannot create a processor intent, verify settlement, or change a ledger. `GET /v1/farms/:farmId/payment-provider` reports this state to authenticated farm members. Manual market, animal and service receipts remain usable with their existing permissions, source records and `providerVerified: false`; a service supplier's manual acknowledgement is not processor settlement.
+
+No processor is selected, no payment network call is made, and no environment flag enables a pretend live integration. To integrate a specific processor later:
+
+1. Supply an authorized merchant account, supported currencies and settlement terms, reviewed HTTPS API/webhook origins, and server-only credentials. Keep test and live accounts separate. Currency minor-unit conventions and provider amount limits must be explicit.
+2. Implement `PaymentProvider` and inject it at the trusted application composition root. `getStatus` must remain local and return truthful capabilities and `test` or `live` mode. `createIntent` receives an authorized farm/obligation reference, actor, stable idempotency key, expiry and exact `bigint` minor-unit amount; validate ranges before transport encoding and never round through floating-point arithmetic. An accepted intent is not a payment receipt.
+3. Implement `verifySettlement` using independently authenticated provider API responses or a separately signature-verified webhook. Match the provider reference to the correct farm, obligation, amount and currency; retain provider transaction/event IDs and event/check times. Pending, failed, timed-out or ambiguous observations cannot become settled cash. Test-mode results must never enter live ledgers.
+4. Add the processor-specific authorized intent/settlement orchestration and durable event deduplication before exposing live operations. Persist distinct provider provenance transactionally under the relevant obligation lock, enforce balances/refunds and uniqueness, and retain the original manual records. Browser claims, redirect URLs and a customer saying they paid are not verification. This release deliberately exposes only the read-only capability route; injection alone does not add settlement endpoints or financial writes.
+5. Run the processor's isolated contract checks for signature/authentication failure, wrong farm/reference/currency/amount, duplicate and out-of-order events, expiry, cancellation/refund and uncertain outcomes. Review the reconciliation and activation procedure with the account owner before production use.
+
+The current payment tests exercise default refusal, capability authentication/isolation, absence of financial effects, explicit test-mode reporting, and unchanged idempotent manual receipts for all three obligation types. They do not claim that any external processor has been commissioned.
+
 ## Private media and cameras
 
 `MEDIA_PROVIDER=file` uses a private persistent `MEDIA_ROOT`; immutable filenames include farm ID, object ID and SHA-256. `MEDIA_PROVIDER=s3` uses a private bucket, `S3_BUCKET`, optional HTTPS `S3_ENDPOINT`, region and server-only AWS credentials or workload identity. Temporary AWS credentials may include `AWS_SESSION_TOKEN`. Block public bucket access and configure encryption/retention according to the deployment's requirements. No presigned public camera URL is generated.

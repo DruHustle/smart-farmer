@@ -9,9 +9,16 @@ import { registerOperations } from "./operations.js";
 import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
 import { registerLivestock } from "./livestock.js";
-import { registerIntegrations } from "./integrations.js";
+import {
+  registerIntegrations,
+  type IntegrationOptions,
+} from "./integrations.js";
 
-export function buildApp(db: pg.Pool, origin: string) {
+export function buildApp(
+  db: pg.Pool,
+  origin: string,
+  integrations: IntegrationOptions = {},
+) {
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
@@ -80,7 +87,7 @@ export function buildApp(db: pg.Pool, origin: string) {
   registerIdentity(app, ctx);
   registerCore(app, ctx);
   registerLivestock(app, ctx);
-  registerIntegrations(app, ctx);
+  registerIntegrations(app, ctx, integrations);
   registerProduct(app, ctx);
   registerOperations(app, ctx);
   return app;

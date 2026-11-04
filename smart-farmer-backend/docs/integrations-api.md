@@ -35,6 +35,27 @@ Signed-in buyers reserve with `POST /v1/market/listings/:listingId/orders` and `
 
 Seller-only `POST /v1/market/orders/:orderId/payments` records `{id,amount,currency,note?}` against a fulfilled order. Payments are explicitly manual, cannot exceed the outstanding balance, and must use the order currency. Revenue and cash received are separate entries. No payment provider is configured.
 
+## Payment provider boundary
+
+Authenticated farm members may read `GET /v1/farms/:farmId/payment-provider`. It rechecks current membership, exposes no amounts or credentials, and reports the installed adapter's capabilities. The default response is:
+
+```json
+{
+  "provider": null,
+  "mode": "unconfigured",
+  "configured": false,
+  "capabilities": { "createIntents": false, "verifySettlements": false },
+  "supportedCurrencies": [],
+  "manualReceipts": { "available": true, "provenance": "manual", "providerVerified": false }
+}
+```
+
+This capability response does not grant financial permissions. Existing market, animal-sale and service-payment endpoints keep their management/participant checks and manual provenance. A customer's unacknowledged service payment remains a manual declaration; the service supplier's acknowledgement is still not processor verification. Client-supplied `providerVerified` fields are rejected by the strict payment schemas.
+
+`src/integrations/payments.ts` defines the server-only `PaymentProvider` contract, `createPaymentProvider` factory and `UnconfiguredPaymentProvider`. The trusted composition root may inject a reviewed adapter using `buildApp(db, origin, { paymentProvider })`; requests and environment flags cannot select a processor. The default adapter refuses both `createIntent` and `verifySettlement` with `PaymentProviderUnavailableError` (`code: payment_provider_unconfigured`, status 503, non-retryable until configured). This is an internal adapter error: this release exposes no HTTP intent, settlement or provider-activation route.
+
+The internal contract uses exact `bigint` minor units plus currency, farm-scoped obligation references, stable idempotency/intent/event/transaction identifiers, and explicit `test` versus `live` mode. Intent creation is separate from independently verified settlement. Adapter calls do not write financial entries; existing manual receipts never call this interface. [Provider activation requirements](operational-integrations.md#payment-provider-activation) describe the additional processor-specific work needed for live settlement.
+
 ## Machinery and services
 
 `GET /v1/services?q=` is public. Manager `POST /v1/farms/:farmId/services` accepts `{id,name,description,serviceArea,rate,currency,rateBasis,operatorIncluded,fuelIncluded,terms?,resourceAssetId?}`. Link listings for the same physical machine to the same provider-owned asset when applicable.

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+NATIVE_PLATFORM="${1:?Pass android or ios}"
+case "$NATIVE_PLATFORM" in android|ios) ;; *) exit 2 ;; esac
 mkdir -p "$RUNNER_TEMP/native-evidence"
 npm run migrate --prefix smart-farmer-backend
 npm run build --prefix smart-farmer-backend
@@ -10,3 +12,5 @@ node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/n
 cd smart-farmer-frontend/mobile
 npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
 node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("http://127.0.0.1:8081/status");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("Metro not ready");}run();'
+# Avoid compiling the first development bundle while the emulator is still settling.
+curl --fail --show-error --silent --max-time 180 --output /dev/null "http://127.0.0.1:8081/index.bundle?platform=$NATIVE_PLATFORM&dev=true&minify=false&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1"

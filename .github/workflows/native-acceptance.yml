@@ -93,7 +93,7 @@ jobs:
           rm -rf smart-farmer-frontend/mobile/android/app/.cxx smart-farmer-frontend/mobile/android/app/build/intermediates/cxx smart-farmer-frontend/mobile/node_modules/react-native/ReactAndroid/.cxx
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - name: Start isolated API and Metro
-        run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
+        run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh android
       - name: Install pinned Maestro CLI
         run: |
           curl --fail --location --retry 3 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
@@ -175,7 +175,7 @@ jobs:
           ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
           codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
       - name: Start isolated API and Metro
-        run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh
+        run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh ios
       - name: Install pinned Maestro CLI
         run: |
           curl --fail --location --retry 3 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"

@@ -6,26 +6,7 @@ appId: eu.onesa.smartfarmer
     visible:
       id: auth-username
     timeout: 20000
-- tapOn:
-    id: auth-username
-- inputText: native_owner
-- tapOn:
-    id: auth-password
-- inputText: NativeAcceptanceOnly!2026
-- scrollUntilVisible:
-    element:
-      id: "auth-password-label"
-    direction: UP
-    timeout: 20000
-- tapOn:
-    id: "auth-password-label"
-- scrollUntilVisible:
-    element:
-      id: auth-submit
-    direction: DOWN
-    timeout: 20000
-- tapOn:
-    id: auth-submit
+- runFlow: credentials.yaml
 - extendedWaitUntil:
     visible:
       id: tab-record
