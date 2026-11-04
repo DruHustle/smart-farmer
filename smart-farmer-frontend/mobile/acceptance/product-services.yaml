@@ -23,8 +23,9 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "service-open-${SERVICE_ID}"
+# Stop when the project control enters the sheet viewport. An extra centering
+# swipe can move it behind the fixed iOS sheet header.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "form-projectId"
     direction: DOWN
