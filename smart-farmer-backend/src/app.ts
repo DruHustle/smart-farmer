@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type pg from 'pg';
 import {hashPassword, verifyPassword, sha256, token} from './security.js';
+import {registerFarmEdgeRoutes} from './edge.js';
 
 const uuid = z.string().uuid();
 const credentials = z.object({username:z.string().trim().min(3).max(80).regex(/^[a-zA-Z0-9._-]+$/).transform(s=>s.toLowerCase()), password:z.string().min(12).max(128)});
@@ -47,5 +48,6 @@ export function buildApp(db: pg.Pool, origin: string) {
  app.post('/v1/farms/:farmId/activities',async(req,reply)=>{const id=await user(req,reply); if(!id)return; const {farmId}=z.object({farmId:uuid}).parse(req.params); if(!await member(farmId,id,['owner','manager','worker'])) return reply.code(404).send({error:'not_found'}); const a=activity.parse(req.body); const hash=sha256(JSON.stringify(a));
   try {const result=await db.query('INSERT INTO activities(id,farm_id,project_id,actor_id,kind,observed_at,note,quantity,unit,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (farm_id,id) DO NOTHING RETURNING id',[a.id,farmId,a.projectId,id,a.kind,a.observedAt,a.note,a.quantity,a.unit,hash]); if(result.rowCount) return reply.code(201).send({id:a.id}); const previous=await db.query('SELECT payload_hash,actor_id FROM activities WHERE farm_id=$1 AND id=$2',[farmId,a.id]); if(previous.rows[0].payload_hash!==hash || previous.rows[0].actor_id!==id) return reply.code(409).send({error:'idempotency_conflict'}); return {id:a.id};} catch(e) {if((e as {code?:string}).code==='23503') return reply.code(404).send({error:'project_not_found'}); throw e;}
  });
+ registerFarmEdgeRoutes(app,db,user,member);
  return app;
 }
