@@ -43,6 +43,10 @@ jobs:
         run: npm test --prefix smart-farmer-frontend/web
       - name: Edge replay and interlock tests
         run: npm test --prefix smart-farmer-backend/edge
+      - name: Python edge HMAC, replay and durable spool tests
+        run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
+      - name: Validate Node-RED demonstration flow format
+        run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
       - name: Install browser
         working-directory: smart-farmer-frontend/web
         run: npx playwright install --with-deps chromium

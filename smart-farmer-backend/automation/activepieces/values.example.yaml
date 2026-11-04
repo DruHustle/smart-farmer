@@ -1,0 +1,26 @@
+# CANDIDATE: validate against a pinned official Activepieces Helm chart.
+# Smart Farmer owns its own namespace, auth secrets, PostgreSQL and Redis.
+activepieces:
+  edition: ce
+frontendUrl: https://REPLACE_WITH_SMART_FARMER_ONLY_AUTOMATION_ORIGIN
+postgresql:
+  enabled: false
+  host: REPLACE_WITH_SMART_FARMER_AUTOMATION_POSTGRES_HOST
+  port: 5432
+  useSSL: true
+  auth:
+    database: smart_farmer_activepieces
+    username: smart_farmer_automation
+    externalSecret:
+      name: smart-farmer-activepieces-postgres
+      key: password
+redis:
+  enabled: false
+  host: REPLACE_WITH_SMART_FARMER_AUTOMATION_REDIS_HOST
+  port: 6379
+  useSSL: true
+  auth:
+    enabled: true
+    externalSecret:
+      name: smart-farmer-activepieces-redis
+      key: password
