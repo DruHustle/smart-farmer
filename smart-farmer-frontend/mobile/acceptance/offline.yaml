@@ -3,20 +3,42 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: record-note
 - inputText: Native durable offline observation
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "record-note-label"
+      id: "record-note"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "record-note-label"
+- assertVisible:
+    id: "record-note"
+    text: '^Native durable offline observation$'
 - scrollUntilVisible:
     element:
       id: record-save
     direction: DOWN
 - tapOn:
     id: record-save
-- assertVisible: '.*Zvachengetwa pamudziyo.*'
+- tapOn:
+    id: tab-more
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+- scrollUntilVisible:
+    element:
+      id: more-sync
+    direction: DOWN
+- assertVisible:
+    id: more-sync
+    text: '.*\(1\)$'
+- tapOn:
+    id: more-sync
+- scrollUntilVisible:
+    element:
+      text: '^Native durable offline observation$'
+    direction: DOWN
+- assertVisible: '^Native durable offline observation$'
+- takeScreenshot: durable-pending-record-before-restart
 - stopApp
 - launchApp:
     stopApp: false

@@ -60,7 +60,7 @@ The queue permits activities, livestock observations/events, sourced project rec
 
 Password recovery offers either the previous password to re-encrypt existing drafts, or a fresh online cache while preserving the old ciphertext as a recoverable archive. Neither choice silently destroys the archived drafts. Clearing browser storage or losing a device can still destroy local-only data. An offline device learns about server-side membership revocation only after reconnecting.
 
-On refresh, revoked farm caches are removed. Role changes purge role-scoped feature caches, and loss of financial access also removes cached costs, valuations, finance-bearing animal metadata, reports and bookings. Core working lists follow all API cursors; long feature histories expose explicit load-more controls. Feature caches include farm, role and retrieval time. Switching identities or farms cannot reuse a previous private viewer.
+On refresh, revoked farm caches are removed. Any role change clears the farm's entire cached read snapshot, including ordinary observation notes that may have become private financial receipt evidence, while retaining drafts separately. Lists are rebuilt only from fresh reads permitted by the current role; a failed refresh cannot retain formerly permitted private data. Responses started under an older role cannot restore that cache. Core working lists follow all API cursors; long feature histories expose explicit load-more controls. Feature caches include farm, role and retrieval time. Switching identities or farms cannot reuse a previous private viewer.
 
 ## Language, time and accessibility
 
@@ -104,7 +104,7 @@ The matrix describes the authored checks and where their execution evidence must
 | 12 | Assign/acknowledge/follow up/resolve crop incident; camera event follow-up | Incident audit/escalation tests |
 | 13 | Unknown asset, explicit simulated mapping, maintenance/usage; private asset PDF upload/download with financial role denial; baseline telemetry | Gateway transport and commissioning tests |
 | 14 | Explicit simulated command, separate acknowledgement and confirmed feedback | Backend/edge rejection, timeout, expiry, replay, missing feedback and reconnect matrix |
-| 15 | Private camera config/snapshot; delayed person event/source; protected access | Session, segment, grants, retention/deduplication/ONVIF tests |
+| 15 | Private camera config/snapshot; delayed person event/source; authenticated live and event HLS manifests/segments decode into actual video; navigation pauses/detaches the private player; anonymous access denied | Session, segment, grants, retention/deduplication/ONVIF tests |
 | 16 | Crop/live listing, enquiry, reserve, fulfil, manual payment, cancellation, concurrent oversell rejection | Offer, buyer-request, moderation, expiry/review tests |
 | 17 | Quote/request/accept, declared deposit/acknowledgement, work, completion/task/cost | Resource overlap, amendment, cancellation/refund tests |
 | 18 | Budget, actual cost, counts/stock, dual-currency reports, protected PDF | Reasoned allocation replacement/retained history, opening correction and expense reversal in browser; packs, transfers, valuation and reconciliation tests |
@@ -115,9 +115,19 @@ The matrix describes the authored checks and where their execution evidence must
 | 23 | Documented opening count and balance; no inferred history | Historical-only records and opening ledger tests |
 | 24 | Treatment restriction rejects live reservation; counts remain protected | Transfer, partial harvest, reservation/fulfilment/direct-sale restriction propagation tests |
 
-### Current local verification boundary
+### Verified browser checkpoint
 
-The latest production build and 12 unit tests pass in the development workspace. Local Chromium launch is blocked by the execution sandbox's process-singleton socket permission, before a page can open. The wider browser suite is therefore executed in repository CI, and its concrete run/artifacts determine acceptance. No local browser, native-device, live-provider, physical-hardware, or fluent-language review is claimed from a TypeScript build.
+On 4 November 2026, commit `d1f5b89888ba7c6d3638cb70292fc376b2b48160` passed all **18 browser journey groups** in [CI run 41749922313, workflows job 126312189672](https://github.com/DruHustle/smart-farmer/actions/runs/41749922313/job/126312189672). The production clients used the real API and an isolated PostgreSQL database. This checkpoint includes the listing whole-count validation fix, documented rabbit-parent inheritance, complete farm-cache removal on role change even when the activity refresh fails, and accessible mobile navigation contrast.
+
+The passing groups include the full crop season, poultry/rabbit/fish production, live-animal and crop reservations/fulfilment/manual receipts, service deposits/work/completion/accounting, private asset documents, treatment restrictions, currency-separated exports, offline recovery and two-actor conflict handling. Camera checks fetched authenticated live and event manifests and segments, played them until nonzero video dimensions and ready state were observed, rejected anonymous access, and verified that navigating away paused the detached player and removed its media source.
+
+Four axe WCAG A/AA reports contain **zero violations**: Shona settings at 320×740, 768×1024 and 1280×900; and Ndebele notifications at 1280×900. The suite also checks horizontal overflow at those sizes, keyboard focus, and absence of runtime page errors. Automated scans cover those recorded screens; they do not substitute for fluent agricultural review, screen-reader evaluation or a native device journey.
+
+Manual review of the same Ndebele artifact found seven empty notification-delivery tables under axe's `th-has-data-cells` **incomplete** category. The follow-up patch replaces only those empty delivery tables with a localized heading and empty-state text, retaining populated tables. A focused browser assertion checks that delivery tables have data cells and that empty deliveries render text without a table. This follow-up awaits its CI rerun; the 18-group pass above identifies the earlier checkpoint precisely. Final screenshot filenames now use `desktop-notifications.png` and `small-phone-notifications.png` to match the page captured.
+
+The [browser-acceptance artifact, ID 13284714261](https://github.com/DruHustle/smart-farmer/actions/runs/41749922313/artifacts/13284714261), contains `results.json` with all 18 passes, the four axe reports, phone/tablet/desktop screenshots, and the downloaded report/private-evidence PDFs. GitHub retains this artifact for seven days. The workflow log retains the named journey results and checkpoint identity. The same workflows job passed the web's 12 unit tests and its production build.
+
+Local Chromium launch remains blocked by the development sandbox's process-singleton socket permission before a page can open; the browser execution above occurred in CI. Native-device, live-provider, physical-hardware and fluent-language verification remain separate repository or rollout gates.
 
 ## Activation and external prerequisites
 

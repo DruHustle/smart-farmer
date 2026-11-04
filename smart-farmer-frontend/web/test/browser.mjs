@@ -160,10 +160,10 @@ try {
 
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
 
-  checkpoint('Phone and desktop visual evidence');
-  await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-equipment.png');
+  checkpoint('Phone and desktop notifications evidence');
+  await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-notifications.png');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
-  await page.setViewportSize({width: 320, height: 740}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false); await screenshot('small-phone-equipment.png');
+  await page.setViewportSize({width: 320, height: 740}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false); await screenshot('small-phone-notifications.png');
   await page.setViewportSize({width: 390, height: 844});
   assert.deepEqual(errors, []); pass('Small-phone and desktop layouts have no horizontal overflow or runtime errors');
   await writeFile(resolve(artifacts, 'results.json'), JSON.stringify({status: 'passed', passed: steps, generatedAt: new Date().toISOString(), viewport: '390x844 + 320x740 + 1280x900', backend: 'real PostgreSQL; isolated fixture only'}, null, 2));

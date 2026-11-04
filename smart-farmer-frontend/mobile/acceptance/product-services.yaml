@@ -43,13 +43,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-note"
 - inputText: "Native accepted booking request"
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "form-note-label"
+      id: "form-note"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "form-note-label"
+- assertVisible:
+    id: "form-note"
+    text: '^Native accepted booking request$'
 - scrollUntilVisible:
     element:
       id: "product-review"

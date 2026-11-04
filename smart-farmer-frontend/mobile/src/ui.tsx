@@ -59,7 +59,7 @@ export function Sheet({ title, visible, onClose, closeLabel, children, dismissib
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen">
     <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modal}>
       <View style={[styles.between, styles.modalHeader]}><Text style={[styles.heading, { flex: 1 }]} accessibilityRole="header">{title}</Text>{dismissible ? <Button testID="sheet-close" title={closeLabel} onPress={onClose} secondary /> : null}</View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>{children}</ScrollView>
+      <ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>{children}</ScrollView>
     </KeyboardAvoidingView></SafeAreaView>
   </Modal>;
 }

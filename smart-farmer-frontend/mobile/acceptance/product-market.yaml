@@ -29,13 +29,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-quantity"
 - inputText: "2"
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "form-quantity-label"
+      id: "form-quantity"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "form-quantity-label"
+- assertVisible:
+    id: "form-quantity"
+    text: "^2$"
 - scrollUntilVisible:
     element:
       id: "product-review"

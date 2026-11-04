@@ -64,13 +64,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-amount"
 - inputText: "12.50"
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "form-amount-label"
+      id: "form-amount"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "form-amount-label"
+- assertVisible:
+    id: "form-amount"
+    text: "^12\\.50$"
 - scrollUntilVisible:
     element:
       id: "form-currency"
@@ -79,13 +81,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-currency"
 - inputText: "USD"
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "form-currency-label"
+      id: "form-currency"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "form-currency-label"
+- assertVisible:
+    id: "form-currency"
+    text: "^USD$"
 - scrollUntilVisible:
     element:
       id: "form-note"
@@ -94,13 +98,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-note"
 - inputText: "Native accepted expense"
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
-      id: "form-note-label"
+      id: "form-note"
     direction: UP
     timeout: 20000
-- tapOn:
-    id: "form-note-label"
+- assertVisible:
+    id: "form-note"
+    text: '^Native accepted expense$'
 - scrollUntilVisible:
     element:
       id: "product-review"

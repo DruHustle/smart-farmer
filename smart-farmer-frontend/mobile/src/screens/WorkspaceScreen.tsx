@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { errorText, label, textFor } from '../i18n';
 import { LocalRepository } from '../repository';
 import { formatFarmTime } from '../time';
@@ -13,13 +14,14 @@ import { TodayScreen } from './TodayScreen';
 
 export function WorkspaceScreen({ session, repository, language, onLanguage, onExpired, onLogout, onLock, nativeBusy, onNativePrompt }: { session: Session; repository: LocalRepository; language: Language; onLanguage: (value: Language) => void; onExpired: () => void; onLogout: () => void; onLock: () => void; nativeBusy: boolean; onNativePrompt: (value: boolean) => void }) {
   const [tab, setTab] = useState<'today' | 'farm' | 'record' | 'more'>('today');
+  const insets = useSafeAreaInsets();
   const work = useWorkspace(session, repository, language, onExpired);
   const t = textFor(language);
   const pending = work.mutations.filter(item => item.state !== 'resolved').length;
   const stale = !work.online || !work.snapshot?.syncedAt || Date.now() - Date.parse(work.snapshot.syncedAt) > 15 * 60_000;
 
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={work.busy} onRefresh={() => { if (!nativeBusy) void work.refresh(); }} tintColor={colors.green} />}>
+  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+    <ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={work.busy} onRefresh={() => { if (!nativeBusy) void work.refresh(); }} tintColor={colors.green} />}>
       <View style={styles.between}><View><Text style={styles.brand}>Smart Farmer</Text><Text style={styles.caption}>{session.username} · {label(language, work.selectedFarm?.role || '')}</Text></View><Choice testID="workspace-language" label={t.language} value={language} onChange={onLanguage} closeLabel={t.close} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /></View>
       {work.farms.length > 1 ? <Choice label={t.farm} value={work.farmId} onChange={id => { if (!nativeBusy) void work.selectFarm(id).catch(work.setError); }} closeLabel={t.close} options={work.farms.map(farm => ({ value: farm.id, label: farm.name }))} /> : <Text style={styles.label}>{work.selectedFarm?.name || t.noFarm}</Text>}
       <View style={styles.between}><View style={[styles.pill, !work.online && styles.warning]}><Text style={styles.caption}>{work.online ? t.online : t.offline}{pending ? ` · ${pending} ${t.pending}` : ''}</Text></View><Button testID="workspace-sync" secondary title={t.sync} disabled={nativeBusy} busy={work.busy} onPress={() => { void work.sync(); }} /></View>

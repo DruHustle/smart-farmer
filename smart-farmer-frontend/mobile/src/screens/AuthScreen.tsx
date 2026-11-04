@@ -40,7 +40,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
     } catch (value) { setError(value); } finally { setBusy(false); }
   }
 
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { maxWidth: 580, paddingTop: 28 }]}>
+  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { maxWidth: 580, paddingTop: 28 }]}>
     <View style={styles.between}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} value={language} onChange={onLanguage} closeLabel={t.close} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /></View>
     <Text style={styles.title} accessibilityRole="header">{t.welcome}</Text><Text style={styles.muted}>{t.intro}</Text>
     {error ? <Notice text={errorText(language, error)} error /> : null}
