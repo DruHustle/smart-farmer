@@ -1,4 +1,4 @@
-# Smart Farmer standalone industrial/irrigation edge
+# Optional Smart Farmer Python / Node-RED edge
 
 **Status: software candidate, not commissioned.** Smart Farmer has its *own* Node-RED,
 Python Edge Agent, databases, secrets and operating procedures. It does not rely on
@@ -13,7 +13,7 @@ outbox, optional future passive security/AI analysis)
 → signed HTTPS/TLS delivery
 → Smart Farmer API → farm-scoped PostgreSQL.
 
-This first independently testable slice uses **signed HTTPS** from Python to the
+Alongside the existing standalone Node.js equipment and camera gateways, this independent Python path uses **signed HTTPS** from Python to the
 backend, not a commissioned MQTT/TLS uplink. MQTT is supported as a Node-RED source;
 a broker-backed cloud uplink must not be claimed until a matching subscriber and
 operational acceptance exist. The application remains authoritative; the event
@@ -45,7 +45,7 @@ MQTT or this JSON observation endpoint.
   \`{"pi-farm-1":{"farmId":"<actual-farm-uuid>","secret":"<32+ random chars>","sources":["pivot-1"]}}\`.
   The gateway \`EDGE_OUTBOUND_SECRET\` must match the entry. The field \`farmId\`
   must be an existing farm. Keep the mapping in a secret store.
-- Apply \`migrations/002_edge_observations.sql\` through the normal migration
+- Apply \`migrations/010_edge_observations.sql\` through the normal migration
   process after an independent database backup; do **not** reapply 001.
 - Run from \`smart-farmer-backend/edge\`: \`python3 agent.py\`. Supply environment
   through a protected systemd unit or explicitly export it from the protected
