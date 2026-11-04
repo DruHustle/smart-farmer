@@ -22,7 +22,18 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: auth-password
 - inputText: NativeAcceptanceOnly!2026
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "auth-password-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "auth-password-label"
+- scrollUntilVisible:
+    element:
+      id: auth-submit
+    direction: DOWN
+    timeout: 20000
 - tapOn:
     id: auth-submit
 - extendedWaitUntil:

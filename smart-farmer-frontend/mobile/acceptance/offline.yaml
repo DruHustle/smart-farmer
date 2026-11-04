@@ -3,7 +3,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: record-note
 - inputText: Native durable offline observation
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "record-note-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "record-note-label"
 - scrollUntilVisible:
     element:
       id: record-save

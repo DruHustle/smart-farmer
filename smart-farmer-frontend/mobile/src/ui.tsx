@@ -40,7 +40,7 @@ export function Button({ title, onPress, secondary = false, danger = false, disa
 }
 
 export function Field({ label, hint, ...props }: TextInputProps & { label: string; hint?: string }) {
-  return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} accessibilityHint={hint} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
+  return <View style={{ gap: 6 }}><Text testID={props.testID ? `${props.testID}-label` : undefined} style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} accessibilityHint={hint} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
 }
 
 export function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void }) {

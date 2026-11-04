@@ -52,7 +52,7 @@ export function App() {
       for (const id of Object.keys(next.data)) {
         const membership = farms.items.find(f => f.id === id);
         if (!membership) {delete next.data[id]; continue;}
-        if (oldRoles.get(id) !== membership.role) delete next.data[id].resources;
+        if (oldRoles.get(id) !== membership.role) {delete next.data[id]; continue;}
         if (!['owner', 'manager'].includes(membership.role)) {
           delete next.data[id].report; delete next.data[id].resources;
           next.data[id].bookings = [];
@@ -71,6 +71,7 @@ export function App() {
     const responses = await Promise.allSettled(keys.map(key => allPages<unknown>(call, `${base}/${key}`).then(items => ({items}))));
     if (responses.some(r => r.status === 'rejected' && r.reason instanceof ApiError && r.reason.status === 401)) throw new ApiError('unauthorized', 401);
     await vault.mutate(next => {
+      if (next.farms.find(membership => membership.id === current.id)?.role !== current.role) return;
       const data = next.data[current.id] ?? emptyFarmData();
       data.partial = [];
       responses.forEach((result, index) => {const key = keys[index]; if (result.status === 'fulfilled') Object.assign(data, {[key]: result.value.items}); else data.partial!.push(key);});

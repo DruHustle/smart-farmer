@@ -43,7 +43,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-note"
 - inputText: "Native accepted booking request"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "form-note-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "form-note-label"
 - scrollUntilVisible:
     element:
       id: "product-review"

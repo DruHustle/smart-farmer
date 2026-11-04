@@ -1617,6 +1617,108 @@ test("historical-only animal evidence preserves opening balances and identified 
   }
 });
 
+test("birth-linked rabbit identities inherit documented parents, reject conflicting lineage and replay without duplicating counts", async () => {
+  const f = await fixture();
+  try {
+    const breeders = await f.project("rabbit_breeding", 3),
+      kits = await f.project("rabbit_growout"),
+      unrelated = await f.project("rabbit_growout", 1);
+    const dam = await f.post(`/projects/${breeders.id}/animals`, {
+        id: randomUUID(),
+        identifier: "Recorded doe",
+        sex: "female",
+      }),
+      sire = await f.post(`/projects/${breeders.id}/animals`, {
+        id: randomUUID(),
+        identifier: "Recorded buck",
+        sex: "male",
+      }),
+      differentDam = await f.post(`/projects/${breeders.id}/animals`, {
+        id: randomUUID(),
+        identifier: "Other doe",
+        sex: "female",
+      });
+    const mating = await f.event(breeders.id, "mating", {
+        metadata: { damId: dam.id, sireId: sire.id },
+      }),
+      birth = await f.event(breeders.id, "kindling", {
+        count: 2,
+        destinationProjectId: kits.id,
+        metadata: { matingEventId: mating.id, stillborn: 0 },
+      });
+    const first = {
+      id: randomUUID(),
+      identifier: "Kit with blank selectors",
+      birthEventId: birth.id,
+      damId: null,
+      sireId: null,
+    };
+    await f.post(`/projects/${kits.id}/animals`, first);
+    await f.post(`/projects/${kits.id}/animals`, first);
+    await f.post(`/projects/${kits.id}/animals`, {
+      ...first,
+      damId: dam.id,
+      sireId: sire.id,
+    });
+    const conflict = await f.send("POST", `/projects/${kits.id}/animals`, {
+      id: randomUUID(),
+      identifier: "Conflicting lineage",
+      birthEventId: birth.id,
+      damId: differentDam.id,
+    });
+    assert.equal(conflict.statusCode, 409);
+    assert.equal(conflict.json().error, "birth_parent_mismatch");
+    const second = await f.post(`/projects/${kits.id}/animals`, {
+      id: randomUUID(),
+      identifier: "Kit with omitted parents",
+      birthEventId: birth.id,
+    });
+    await f.post(`/projects/${kits.id}/animals`, first);
+    const timeline = await f.get(`/animals/${first.id}/timeline`);
+    assert.equal(timeline.birthEvent.id, birth.id);
+    assert.equal(timeline.animal.dam_id, dam.id);
+    assert.equal(timeline.animal.sire_id, sire.id);
+    assert.deepEqual(
+      timeline.parents.map((item: any) => item.id).sort(),
+      [dam.id, sire.id].sort(),
+    );
+    assert.deepEqual(
+      timeline.siblings.map((item: any) => item.id),
+      [second.id],
+    );
+    assert.equal(
+      Number(
+        (
+          await f.db.query(
+            "SELECT count(*) AS n FROM animal_identities WHERE birth_event_id=$1",
+            [birth.id],
+          )
+        ).rows[0].n,
+      ),
+      2,
+    );
+    assert.equal(
+      await f.count(kits.id),
+      2,
+      "Identity registration never creates extra live animals",
+    );
+    const unknown = await f.post(`/projects/${unrelated.id}/animals`, {
+      id: randomUUID(),
+      identifier: "Parentage not recorded",
+    });
+    const unknownTimeline = await f.get(`/animals/${unknown.id}/timeline`);
+    assert.equal(unknownTimeline.animal.dam_id, null);
+    assert.equal(unknownTimeline.animal.sire_id, null);
+    assert.deepEqual(
+      unknownTimeline.parents,
+      [],
+      "Unlinked parentage stays unknown",
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test("identification cannot consume an anonymous animal reservation; cancellation and refunds preserve unearned cash", async () => {
   const f = await fixture();
   try {

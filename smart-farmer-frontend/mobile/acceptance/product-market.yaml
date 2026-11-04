@@ -29,7 +29,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-quantity"
 - inputText: "2"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "form-quantity-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "form-quantity-label"
 - scrollUntilVisible:
     element:
       id: "product-review"

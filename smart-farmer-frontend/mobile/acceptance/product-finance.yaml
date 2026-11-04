@@ -64,7 +64,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-amount"
 - inputText: "12.50"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "form-amount-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "form-amount-label"
 - scrollUntilVisible:
     element:
       id: "form-currency"
@@ -73,7 +79,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-currency"
 - inputText: "USD"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "form-currency-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "form-currency-label"
 - scrollUntilVisible:
     element:
       id: "form-note"
@@ -82,7 +94,13 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-note"
 - inputText: "Native accepted expense"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "form-note-label"
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: "form-note-label"
 - scrollUntilVisible:
     element:
       id: "product-review"
