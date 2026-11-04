@@ -1,0 +1,15 @@
+# Only these build inputs may enter the context. Local configuration stays outside.
+*
+!Dockerfile
+!nginx.conf
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!index.html
+!src/
+!src/**
+!public/
+!public/**
+!scripts/
+!scripts/validate-container-api.mjs

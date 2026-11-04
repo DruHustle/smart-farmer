@@ -1,9 +1,46 @@
+# Local development stack. No public database or unconfigured production deployment.
+x-backend: &backend
+  build: .
+  environment:
+    HOST: 0.0.0.0
+    PORT: 3000
+    PGHOST: db
+    PGPORT: 5432
+    PGUSER: smart_farmer
+    PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a private .env}
+    PGDATABASE: smart_farmer
+    WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+    MEDIA_ROOT: /data/media
+    MEDIA_PROVIDER: ${MEDIA_PROVIDER:-file}
+    MEDIA_FARM_QUOTA_BYTES: ${MEDIA_FARM_QUOTA_BYTES:-262144000}
+    CAMERA_FARM_QUOTA_BYTES: ${CAMERA_FARM_QUOTA_BYTES:-524288000}
+    S3_BUCKET: ${S3_BUCKET:-}
+    S3_ENDPOINT: ${S3_ENDPOINT:-}
+    AWS_REGION: ${AWS_REGION:-us-east-1}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    WEATHER_PROVIDER: ${WEATHER_PROVIDER:-unconfigured}
+    OPEN_METEO_API_KEY: ${OPEN_METEO_API_KEY:-}
+    AI_BASE_URL: ${AI_BASE_URL:-}
+    AI_MODEL: ${AI_MODEL:-}
+    AI_API_KEY: ${AI_API_KEY:-}
+    NOTIFICATION_MODE: ${NOTIFICATION_MODE:-disabled}
+    PROVIDER_SECRET_KEY: ${PROVIDER_SECRET_KEY:-}
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    NOTIFICATION_FROM: ${NOTIFICATION_FROM:-}
+    EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+    SMS_WEBHOOK_URL: ${SMS_WEBHOOK_URL:-}
+    SMS_WEBHOOK_TOKEN: ${SMS_WEBHOOK_TOKEN:-}
+    MARKET_MODERATOR_USER_IDS: ${MARKET_MODERATOR_USER_IDS:-}
+    DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
 services:
   db:
     image: postgres:17
     environment:
       POSTGRES_USER: smart_farmer
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a private .env}
       POSTGRES_DB: smart_farmer
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
@@ -12,5 +49,33 @@ services:
       timeout: 3s
       retries: 10
     ports: ["127.0.0.1:5432:5432"]
+  migrate:
+    <<: *backend
+    command: ["node", "dist/migrate.js"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+  api:
+    <<: *backend
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: ["media_data:/data/media"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+  worker:
+    <<: *backend
+    volumes: ["media_data:/data/media"]
+    command: ["node", "dist/worker.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/worker-health.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
 volumes:
   postgres_data:
+  media_data:

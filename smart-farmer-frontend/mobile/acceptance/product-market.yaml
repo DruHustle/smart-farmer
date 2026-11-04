@@ -1,0 +1,83 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "more-market"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-market"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "listing-open-${LISTING_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "listing-open-${LISTING_ID}"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-quantity"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-quantity"
+- inputText: "2"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "form-quantity"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "form-quantity"
+    text: "^2$"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-review"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-review"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-confirm"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "product-confirm"
+    timeout: 45000
+- tapOn:
+    id: "sheet-close"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "market-tabs"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "market-tabs"
+- tapOn:
+    id: "market-tabs-option-orders"
+- scrollUntilVisible:
+    element:
+      text: "Zvakachengeterwa odha"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: bag-priced-reservation-keeps-physical-stock
+- tapOn:
+    id: "sheet-close"

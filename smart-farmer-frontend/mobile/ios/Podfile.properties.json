@@ -1,0 +1,8 @@
+{
+  "expo.jsEngine": "hermes",
+  "EX_DEV_CLIENT_NETWORK_INSPECTOR": "true",
+  "expo.inlineModules.watchedDirectories": "[]",
+  "expo.inlineModules.xcodeProjectTargets": "{\"mainTarget\":\"SmartFarmer\",\"targets\":[]}",
+  "expo.sqlite.enableFTS": "false",
+  "expo.sqlite.useSQLCipher": "true"
+}

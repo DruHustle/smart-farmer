@@ -1,0 +1,1083 @@
+import type { FastifyInstance } from "fastify";
+import type pg from "pg";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import {
+  ApiError,
+  audit,
+  manageRoles,
+  writeRoles,
+  type Context,
+} from "../context.js";
+import {
+  uuid,
+  when,
+  quantity,
+  money,
+  currency,
+  enterpriseTypes,
+  stockMovement,
+  finance,
+} from "../core.js";
+import { sha256 } from "../security.js";
+import {
+  auth,
+  idempotent,
+  listQuery,
+  page,
+  project,
+  row,
+  text,
+  validateMember,
+} from "./common.js";
+const pp = z.object({ farmId: uuid, projectId: uuid });
+const translated = z.string().trim().min(1).max(2000);
+const step = z
+  .object({
+    key: z.string().regex(/^[a-zA-Z0-9_-]{1,60}$/),
+    title: translated,
+    instructions: z.string().max(4000),
+    offsetDays: z.number().int().min(-365).max(3650),
+    requiredEvidence: z.string().max(1000).default(""),
+  })
+  .strict();
+const template = z
+  .object({
+    id: uuid,
+    name: z.string().trim().min(1).max(200),
+    enterpriseType: enterpriseTypes,
+    source: text,
+    sourceDate: z.iso.date(),
+    steps: z.array(step).min(1).max(100),
+    language: z.enum(["sn", "nd"]),
+  })
+  .strict()
+  .refine(
+    (v) => new Set(v.steps.map((s) => s.key)).size === v.steps.length,
+    "duplicate_step_key",
+  );
+const recordKinds = [
+  "assessment",
+  "soil_test",
+  "readiness",
+  "husbandry",
+  "crop_stage",
+  "housing",
+  "pregnancy",
+  "hatch_observation",
+  "grading",
+  "storage",
+  "fuel",
+  "labour",
+  "irrigation_session",
+] as const;
+const recordInput = z
+  .object({
+    id: uuid,
+    type: z.enum(recordKinds),
+    observedAt: when,
+    note: z.string().max(4000).default(""),
+    animalId: uuid.nullable().default(null),
+    details: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+const field = z.string().trim().max(2000).optional();
+function validateDetails(type: (typeof recordKinds)[number], value: unknown) {
+  if (type === "assessment")
+    return z
+      .object({
+        soilType: field,
+        waterAvailability: field,
+        labourAvailability: field,
+        equipmentAvailable: field,
+        pastCrops: field,
+        objective: field,
+        location: field,
+        usableAreaHa: z.number().positive().max(1e8).optional(),
+        source: text,
+      })
+      .strict()
+      .parse(value);
+  if (type === "soil_test")
+    return z
+      .object({
+        measurement: z.enum([
+          "pH",
+          "nitrogen",
+          "phosphorus",
+          "potassium",
+          "other",
+        ]),
+        value: z.number().finite(),
+        unit: z.string().min(1).max(40),
+        sampleLocation: text,
+        source: text,
+        reportDate: z.iso.date(),
+        testMethod: field,
+      })
+      .strict()
+      .parse(value);
+  if (type === "readiness")
+    return z
+      .object({
+        checks: z
+          .array(z.object({ label: translated, done: z.boolean() }).strict())
+          .min(1)
+          .max(100),
+        source: text,
+      })
+      .strict()
+      .parse(value);
+  if (["fuel", "labour", "irrigation_session"].includes(type)) {
+    const d = z
+      .object({
+        quantity: quantity.refine((v) => v > 0),
+        unit: z.string().min(1).max(40),
+        source: text,
+        startedAt: when.optional(),
+        endedAt: when.optional(),
+        assetId: uuid.optional(),
+      })
+      .strict()
+      .parse(value);
+    if (
+      (type === "fuel" && !["l", "ml"].includes(d.unit)) ||
+      (type === "labour" && d.unit !== "hour")
+    )
+      throw new ApiError("incompatible_units");
+    if (
+      d.endedAt &&
+      (!d.startedAt || Date.parse(d.endedAt) <= Date.parse(d.startedAt))
+    )
+      throw new ApiError("invalid_record_dates");
+    return d;
+  }
+  return z
+    .object({
+      finding: text,
+      source: text,
+      grade: field,
+      location: field,
+      quantity: quantity.optional(),
+      unit: z.string().min(1).max(40).optional(),
+    })
+    .strict()
+    .refine(
+      (d) => (d.quantity === undefined) === (d.unit === undefined),
+      "quantity_unit_pair_required",
+    )
+    .parse(value);
+}
+function localParts(value: number, zone: string) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(value))
+      .filter((p) => p.type !== "literal")
+      .map((p) => [p.type, Number(p.value)]),
+  );
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+}
+export function addFarmDays(anchor: string | Date, days: number, zone: string) {
+  const start = new Date(anchor).getTime(),
+    wanted = localParts(start, zone) + days * 86400000;
+  let guess = start + days * 86400000;
+  for (let i = 0; i < 5; i++) {
+    const delta = wanted - localParts(guess, zone);
+    if (delta === 0) return new Date(guess).toISOString();
+    guess += delta;
+  }
+  throw new ApiError("invalid_local_schedule");
+}
+function preview(plan: any, zone: string) {
+  return plan.template_snapshot.steps.map((s: any) => ({
+    key: s.key,
+    title: s.title,
+    instructions: s.instructions,
+    requiredEvidence: s.requiredEvidence ?? "",
+    dueAt: addFarmDays(plan.anchor_at, s.offsetDays, zone),
+    assigneeId: plan.assignee_id,
+  }));
+}
+export function rankCropCandidates(
+  candidates: any[],
+  budget: number | null,
+  code: string | null,
+) {
+  return candidates
+    .map((c) => {
+      const reasons: string[] = [],
+        missing: string[] = [];
+      let score = 0;
+      for (const key of [
+        "waterFit",
+        "labourFit",
+        "soilFit",
+        "areaFit",
+        "equipmentFit",
+        "marketFit",
+        "pastCropFit",
+        "locationFit",
+      ]) {
+        if (c[key] === "suitable") {
+          score++;
+          reasons.push(`${key}:suitable`);
+        } else if (c[key] === "unsuitable") {
+          score--;
+          reasons.push(`${key}:unsuitable`);
+        } else missing.push(key);
+      }
+      if (c.estimatedCost === null || budget === null || c.currency !== code)
+        missing.push("comparable_budget");
+      else {
+        const affordable = c.estimatedCost <= budget;
+        score += affordable ? 1 : -1;
+        reasons.push(
+          affordable ? "within_recorded_budget" : "above_recorded_budget",
+        );
+      }
+      return { ...c, score, reasons, missing, estimate: true };
+    })
+    .sort((a, b) => b.score - a.score || a.crop.localeCompare(b.crop));
+}
+export function registerPlanning(app: FastifyInstance, ctx: Context) {
+  app.get("/v1/farms/:farmId/templates", async (req, reply) => {
+    const a = await auth(ctx, req, reply);
+    if (!a) return;
+    const q = listQuery.parse(req.query);
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT * FROM task_templates WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
+          [a.farmId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows,
+      q.limit,
+    );
+  });
+  app.post("/v1/farms/:farmId/templates", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const b = template.parse(req.body);
+    const out = await idempotent(
+      ctx,
+      a.farmId,
+      a.actor,
+      b.id,
+      { kind: "template", ...b },
+      async (c) => {
+        const t = (
+          await c.query(
+            "INSERT INTO task_templates(id,farm_id,created_by,name,enterprise_type,source,source_date,language,steps) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+            [
+              b.id,
+              a.farmId,
+              a.actor,
+              b.name,
+              b.enterpriseType,
+              b.source,
+              b.sourceDate,
+              b.language,
+              JSON.stringify(b.steps),
+            ],
+          )
+        ).rows[0];
+        await c.query(
+          "INSERT INTO task_template_versions(template_id,version,snapshot,reason,actor_id) VALUES($1,1,$2,$3,$4)",
+          [b.id, JSON.stringify(t), "initial", a.actor],
+        );
+        return t;
+      },
+    );
+    return reply.code(out.replayed ? 200 : 201).send(out.body);
+  });
+  app.patch("/v1/farms/:farmId/templates/:templateId", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const { templateId } = z.object({ templateId: uuid }).parse(req.params);
+    const b = z
+      .object({
+        version: z.number().int().positive(),
+        reason: text,
+        name: translated.optional(),
+        source: text.optional(),
+        sourceDate: z.iso.date().optional(),
+        steps: z.array(step).min(1).max(100).optional(),
+        language: z.enum(["sn", "nd"]).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    if (b.steps && new Set(b.steps.map((s) => s.key)).size !== b.steps.length)
+      throw new ApiError("duplicate_step_key");
+    return ctx.transaction(async (c) => {
+      const old = row(
+        (
+          await c.query(
+            "SELECT * FROM task_templates WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+            [a.farmId, templateId],
+          )
+        ).rows[0],
+      );
+      if (old.version !== b.version)
+        throw new ApiError("version_conflict", 409, { current: old });
+      const t = (
+        await c.query(
+          "UPDATE task_templates SET name=$3,source=$4,source_date=$5,steps=$6,language=$7,version=version+1,updated_at=now() WHERE farm_id=$1 AND id=$2 RETURNING *",
+          [
+            a.farmId,
+            templateId,
+            b.name ?? old.name,
+            b.source ?? old.source,
+            b.sourceDate ?? old.source_date,
+            JSON.stringify(b.steps ?? old.steps),
+            b.language ?? old.language,
+          ],
+        )
+      ).rows[0];
+      await c.query(
+        "INSERT INTO task_template_versions(template_id,version,snapshot,reason,actor_id) VALUES($1,$2,$3,$4,$5)",
+        [templateId, t.version, JSON.stringify(t), b.reason, a.actor],
+      );
+      await audit(
+        c,
+        a.farmId,
+        a.actor,
+        "template",
+        templateId,
+        "revised",
+        b.reason,
+        old,
+        t,
+      );
+      return t;
+    });
+  });
+  app.get(
+    "/v1/farms/:farmId/templates/:templateId/versions",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { templateId } = z.object({ templateId: uuid }).parse(req.params);
+      return {
+        items: (
+          await ctx.db.query(
+            "SELECT v.* FROM task_template_versions v JOIN task_templates t ON t.id=v.template_id WHERE t.farm_id=$1 AND t.id=$2 ORDER BY v.version DESC",
+            [a.farmId, templateId],
+          )
+        ).rows,
+      };
+    },
+  );
+  app.get("/v1/farms/:farmId/projects/:projectId/plans", async (req, reply) => {
+    const a = await auth(ctx, req, reply);
+    if (!a) return;
+    const { projectId } = pp.parse(req.params),
+      q = listQuery.parse(req.query);
+    const zone = row(
+      (await ctx.db.query("SELECT timezone FROM farms WHERE id=$1", [a.farmId]))
+        .rows[0],
+    ).timezone;
+    return page(
+      (
+        await ctx.db.query(
+          "SELECT * FROM project_plans WHERE farm_id=$1 AND project_id=$2 AND ($3::uuid IS NULL OR id<$3) ORDER BY id DESC LIMIT $4",
+          [a.farmId, projectId, q.cursor ?? null, q.limit + 1],
+        )
+      ).rows.map((p) => ({ ...p, preview: preview(p, zone) })),
+      q.limit,
+    );
+  });
+  app.post(
+    "/v1/farms/:farmId/projects/:projectId/plans",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { projectId } = pp.parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          templateId: uuid,
+          templateVersion: z.number().int().positive(),
+          anchorAt: when,
+          assigneeId: uuid.nullable().default(null),
+          note: z.string().max(2000).default(""),
+        })
+        .strict()
+        .parse(req.body);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "plan", projectId, ...b },
+        async (c) => {
+          const p = await project(c, a.farmId, projectId, true);
+          if (p.status !== "active") throw new ApiError("project_closed", 409);
+          await validateMember(c, a.farmId, b.assigneeId);
+          const t = row(
+            (
+              await c.query(
+                "SELECT v.snapshot FROM task_template_versions v JOIN task_templates t ON t.id=v.template_id WHERE t.farm_id=$1 AND t.id=$2 AND v.version=$3",
+                [a.farmId, b.templateId, b.templateVersion],
+              )
+            ).rows[0],
+          ).snapshot;
+          if (t.enterprise_type !== p.enterprise_type)
+            throw new ApiError("template_enterprise_mismatch");
+          const plan = (
+            await c.query(
+              "INSERT INTO project_plans(id,farm_id,project_id,template_id,template_version,template_snapshot,anchor_at,assignee_id,note,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
+              [
+                b.id,
+                a.farmId,
+                projectId,
+                b.templateId,
+                b.templateVersion,
+                JSON.stringify(t),
+                b.anchorAt,
+                b.assigneeId,
+                b.note,
+                a.actor,
+              ],
+            )
+          ).rows[0];
+          const zone = (
+            await c.query("SELECT timezone FROM farms WHERE id=$1", [a.farmId])
+          ).rows[0].timezone;
+          return { ...plan, preview: preview(plan, zone) };
+        },
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/projects/:projectId/plans/:planId/approve",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { projectId, planId } = pp
+        .extend({ planId: uuid })
+        .parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          version: z.number().int().positive(),
+          confirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "approve_plan", projectId, planId, ...b },
+        async (c) => {
+          const p = await project(c, a.farmId, projectId, true);
+          if (p.status !== "active") throw new ApiError("project_closed", 409);
+          const plan = row(
+            (
+              await c.query(
+                "SELECT * FROM project_plans WHERE farm_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE",
+                [a.farmId, projectId, planId],
+              )
+            ).rows[0],
+          );
+          if (plan.version !== b.version)
+            throw new ApiError("version_conflict", 409, { current: plan });
+          if (plan.status !== "draft")
+            throw new ApiError("plan_already_approved", 409);
+          await validateMember(c, a.farmId, plan.assignee_id);
+          const zone = (
+            await c.query("SELECT timezone FROM farms WHERE id=$1", [a.farmId])
+          ).rows[0].timezone;
+          const tasks = [];
+          for (const s of preview(plan, zone)) {
+            const id = randomUUID();
+            await c.query(
+              "INSERT INTO tasks(id,farm_id,project_id,title,instructions,assignee_id,due_at,created_by,payload_hash,plan_id,plan_step_key,required_evidence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+              [
+                id,
+                a.farmId,
+                projectId,
+                s.title,
+                s.instructions,
+                s.assigneeId,
+                s.dueAt,
+                a.actor,
+                sha256(JSON.stringify(s)),
+                planId,
+                s.key,
+                s.requiredEvidence,
+              ],
+            );
+            tasks.push({ id, ...s });
+          }
+          const next = (
+            await c.query(
+              "UPDATE project_plans SET status='approved',version=version+1,approved_at=now() WHERE id=$1 RETURNING *",
+              [planId],
+            )
+          ).rows[0];
+          await audit(
+            c,
+            a.farmId,
+            a.actor,
+            "plan",
+            planId,
+            "approved",
+            "explicit_confirmation",
+            plan,
+            next,
+          );
+          return { ...next, tasks };
+        },
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/projects/:projectId/plans/:planId/reschedule",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { projectId, planId } = pp
+        .extend({ planId: uuid })
+        .parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          version: z.number().int().positive(),
+          anchorAt: when,
+          reason: text,
+          confirmed: z.boolean(),
+          impactToken: z.string().length(64).optional(),
+        })
+        .strict()
+        .parse(req.body);
+      const action = async (c: pg.PoolClient) => {
+        const p = await project(c, a.farmId, projectId, true);
+        if (p.status !== "active") throw new ApiError("project_closed", 409);
+        const plan = row(
+          (
+            await c.query(
+              "SELECT * FROM project_plans WHERE farm_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE",
+              [a.farmId, projectId, planId],
+            )
+          ).rows[0],
+        );
+        if (plan.version !== b.version)
+          throw new ApiError("version_conflict", 409, { current: plan });
+        const zone = (
+          await c.query("SELECT timezone FROM farms WHERE id=$1", [a.farmId])
+        ).rows[0].timezone;
+        const tasks = (
+          await c.query(
+            "SELECT * FROM tasks WHERE farm_id=$1 AND plan_id=$2 ORDER BY id FOR UPDATE",
+            [a.farmId, planId],
+          )
+        ).rows;
+        const due = preview({ ...plan, anchor_at: b.anchorAt }, zone);
+        const changes = tasks
+          .filter((t) => !["completed", "cancelled"].includes(t.status))
+          .map((t) => ({
+            taskId: t.id,
+            version: t.version,
+            title: t.title,
+            previousDueAt: t.due_at,
+            newDueAt: due.find((s: any) => s.key === t.plan_step_key)?.dueAt,
+          }));
+        const impactToken = sha256(
+          JSON.stringify({
+            planId,
+            version: plan.version,
+            anchorAt: b.anchorAt,
+            changes,
+          }),
+        );
+        if (!b.confirmed)
+          return { plan, changes, impactToken, requiresConfirmation: true };
+        if (b.impactToken !== impactToken)
+          throw new ApiError("schedule_preview_required", 409, {
+            impactToken,
+            changes,
+          });
+        for (const change of changes) {
+          if (!change.newDueAt)
+            throw new ApiError("invalid_template_snapshot", 409);
+          await c.query(
+            "UPDATE tasks SET due_at=$2,reason=$3,version=version+1,updated_at=now() WHERE id=$1",
+            [change.taskId, change.newDueAt, b.reason],
+          );
+          await audit(
+            c,
+            a.farmId,
+            a.actor,
+            "task",
+            change.taskId,
+            "rescheduled",
+            b.reason,
+            { dueAt: change.previousDueAt },
+            { dueAt: change.newDueAt },
+          );
+        }
+        const next = (
+          await c.query(
+            "UPDATE project_plans SET anchor_at=$2,version=version+1 WHERE id=$1 RETURNING *",
+            [planId, b.anchorAt],
+          )
+        ).rows[0];
+        await audit(
+          c,
+          a.farmId,
+          a.actor,
+          "plan",
+          planId,
+          "rescheduled",
+          b.reason,
+          plan,
+          next,
+        );
+        return {
+          plan: next,
+          changes,
+          impactToken,
+          requiresConfirmation: false,
+        };
+      };
+      if (!b.confirmed) return ctx.transaction(action);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "reschedule", projectId, planId, ...b },
+        action,
+      );
+      return out.body;
+    },
+  );
+  app.get(
+    "/v1/farms/:farmId/projects/:projectId/records",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { projectId } = pp.parse(req.params),
+        q = listQuery.parse(req.query);
+      return page(
+        (
+          await ctx.db.query(
+            "SELECT * FROM project_records WHERE farm_id=$1 AND project_id=$2 AND ($3::uuid IS NULL OR (observed_at,id)<(SELECT observed_at,id FROM project_records WHERE farm_id=$1 AND project_id=$2 AND id=$3)) ORDER BY observed_at DESC,id DESC LIMIT $4",
+            [a.farmId, projectId, q.cursor ?? null, q.limit + 1],
+          )
+        ).rows,
+        q.limit,
+      );
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/projects/:projectId/records",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, [...writeRoles, "adviser"]);
+      if (!a) return;
+      const { projectId } = pp.parse(req.params);
+      const b = recordInput.parse(req.body),
+        details = validateDetails(b.type, b.details);
+      if (
+        (await ctx.member(a.farmId, a.actor, ["adviser"])) &&
+        ![
+          "assessment",
+          "soil_test",
+          "husbandry",
+          "pregnancy",
+          "hatch_observation",
+          "crop_stage",
+          "housing",
+        ].includes(b.type)
+      )
+        throw new ApiError("adviser_observation_only", 403);
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "project_record", projectId, ...b, details },
+        async (c) => {
+          await project(c, a.farmId, projectId);
+          if (b.animalId)
+            row(
+              (
+                await c.query(
+                  "SELECT id FROM animal_identities WHERE farm_id=$1 AND project_id=$2 AND id=$3",
+                  [a.farmId, projectId, b.animalId],
+                )
+              ).rows[0],
+            );
+          if ("assetId" in details && details.assetId)
+            row(
+              (
+                await c.query(
+                  "SELECT id FROM assets WHERE farm_id=$1 AND id=$2",
+                  [a.farmId, details.assetId],
+                )
+              ).rows[0],
+            );
+          const result = (
+            await c.query(
+              "INSERT INTO project_records(id,farm_id,project_id,actor_id,animal_id,type,observed_at,note,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+              [
+                b.id,
+                a.farmId,
+                projectId,
+                a.actor,
+                b.animalId,
+                b.type,
+                b.observedAt,
+                b.note,
+                JSON.stringify(details),
+              ],
+            )
+          ).rows[0];
+          await audit(
+            c,
+            a.farmId,
+            a.actor,
+            "project_record",
+            b.id,
+            "recorded",
+            "observed_data",
+            null,
+            result,
+          );
+          return result;
+        },
+        [...writeRoles, "adviser"],
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+  app.get(
+    "/v1/farms/:farmId/projects/:projectId/comparisons",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply);
+      if (!a) return;
+      const { projectId } = pp.parse(req.params),
+        q = listQuery.parse(req.query);
+      const financeAllowed = await ctx.member(a.farmId, a.actor, manageRoles);
+      const out = page(
+        (
+          await ctx.db.query(
+            "SELECT * FROM crop_comparisons WHERE farm_id=$1 AND project_id=$2 AND ($3::uuid IS NULL OR id<$3) ORDER BY id DESC LIMIT $4",
+            [a.farmId, projectId, q.cursor ?? null, q.limit + 1],
+          )
+        ).rows,
+        q.limit,
+      );
+      if (!financeAllowed)
+        for (const item of out.items) {
+          delete item.budget;
+          delete item.currency;
+          item.candidates = rankCropCandidates(
+            item.candidates.map(({ estimatedCost, currency, ...c }: any) => ({
+              ...c,
+              estimatedCost: null,
+              currency: null,
+            })),
+            null,
+            null,
+          ).map(({ estimatedCost, currency, ...c }: any) => c);
+        }
+      return out;
+    },
+  );
+  app.post(
+    "/v1/farms/:farmId/projects/:projectId/comparisons",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { projectId } = pp.parse(req.params);
+      const candidate = z
+        .object({
+          crop: translated,
+          reason: text,
+          source: text,
+          estimatedCost: money.nullable().default(null),
+          currency: currency.nullable().default(null),
+          waterFit: z.enum(["unknown", "suitable", "unsuitable"]),
+          labourFit: z.enum(["unknown", "suitable", "unsuitable"]),
+          soilFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          areaFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          equipmentFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          marketFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          pastCropFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          locationFit: z
+            .enum(["unknown", "suitable", "unsuitable"])
+            .default("unknown"),
+          assumptions: z.string().max(4000).default(""),
+        })
+        .strict()
+        .refine(
+          (v) => (v.estimatedCost === null) === (v.currency === null),
+          "amount_currency_pair_required",
+        );
+      const b = z
+        .object({
+          id: uuid,
+          objective: text,
+          candidates: z.array(candidate).min(2).max(20),
+          budget: money.nullable().default(null),
+          currency: currency.nullable().default(null),
+          selectedCrop: translated.nullable().default(null),
+        })
+        .strict()
+        .refine(
+          (v) => (v.budget === null) === (v.currency === null),
+          "amount_currency_pair_required",
+        )
+        .parse(req.body);
+      if (
+        b.selectedCrop &&
+        !b.candidates.some((c) => c.crop === b.selectedCrop)
+      )
+        throw new ApiError("candidate_required");
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "comparison", projectId, ...b },
+        async (c) => {
+          const p = await project(c, a.farmId, projectId);
+          if (p.enterprise_type !== "crop")
+            throw new ApiError("crop_project_required");
+          const ranked = rankCropCandidates(b.candidates, b.budget, b.currency);
+          return (
+            await c.query(
+              "INSERT INTO crop_comparisons(id,farm_id,project_id,objective,candidates,budget,currency,selected_crop,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+              [
+                b.id,
+                a.farmId,
+                projectId,
+                b.objective,
+                JSON.stringify(ranked),
+                b.budget,
+                b.currency,
+                b.selectedCrop,
+                a.actor,
+              ],
+            )
+          ).rows[0];
+        },
+      );
+      return reply
+        .code(out.replayed ? 200 : 201)
+        .send({
+          ...out.body,
+          method: "recorded_assumptions_v1",
+          recommendationsAreCompletedWork: false,
+        });
+    },
+  );
+  app.get("/v1/farms/:farmId/record-review", async (req, reply) => {
+    const a = await auth(ctx, req, reply, manageRoles);
+    if (!a) return;
+    const q = listQuery.parse(req.query);
+    const items = (
+      await ctx.db.query(
+        `SELECT DISTINCT ON(a.id) a.id,a.project_id,a.kind,a.observed_at,a.quantity,a.unit,a.actor_id,a.note,b.id AS possible_duplicate_id,b.actor_id AS other_actor_id,b.observed_at AS other_observed_at,'matching_kind_quantity_time' AS reason FROM activities a JOIN activities b ON b.farm_id=a.farm_id AND b.project_id=a.project_id AND b.id<a.id AND b.kind=a.kind AND b.quantity IS NOT DISTINCT FROM a.quantity AND b.unit IS NOT DISTINCT FROM a.unit AND abs(extract(epoch from(b.observed_at-a.observed_at)))<=900 WHERE a.farm_id=$1 AND ($2::uuid IS NULL OR a.id<$2) AND NOT EXISTS(SELECT 1 FROM activity_corrections c WHERE c.farm_id=a.farm_id AND c.activity_id IN(a.id,b.id)) ORDER BY a.id DESC,b.id LIMIT $3`,
+        [a.farmId, q.cursor ?? null, q.limit + 1],
+      )
+    ).rows;
+    return { ...page(items, q.limit), automaticReversal: false };
+  });
+  app.post(
+    "/v1/farms/:farmId/activities/:activityId/corrections",
+    async (req, reply) => {
+      const a = await auth(ctx, req, reply, manageRoles);
+      if (!a) return;
+      const { activityId } = z.object({ activityId: uuid }).parse(req.params);
+      const b = z
+        .object({
+          id: uuid,
+          action: z.enum(["annotate", "reverse"]),
+          reason: text,
+          duplicateOfActivityId: uuid.nullable().default(null),
+        })
+        .strict()
+        .parse(req.body);
+      if (b.duplicateOfActivityId === activityId)
+        throw new ApiError("invalid_duplicate_reference");
+      const out = await idempotent(
+        ctx,
+        a.farmId,
+        a.actor,
+        b.id,
+        { kind: "correction", activityId, ...b },
+        async (c) => {
+          const snapshot = row(
+            (
+              await c.query(
+                "SELECT project_id FROM activities WHERE farm_id=$1 AND id=$2",
+                [a.farmId, activityId],
+              )
+            ).rows[0],
+          );
+          await project(c, a.farmId, snapshot.project_id, true);
+          const activity = row(
+            (
+              await c.query(
+                "SELECT * FROM activities WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+                [a.farmId, activityId],
+              )
+            ).rows[0],
+          );
+          if (b.duplicateOfActivityId)
+            row(
+              (
+                await c.query(
+                  "SELECT id FROM activities WHERE farm_id=$1 AND project_id=$2 AND id=$3",
+                  [a.farmId, activity.project_id, b.duplicateOfActivityId],
+                )
+              ).rows[0],
+            );
+          if (b.action === "reverse") {
+            if (
+              (
+                await c.query(
+                  "SELECT 1 FROM activity_corrections WHERE farm_id=$1 AND activity_id=$2 AND action='reverse'",
+                  [a.farmId, activityId],
+                )
+              ).rowCount
+            )
+              throw new ApiError("record_already_reversed", 409);
+            const movements = (
+              await c.query(
+                "SELECT * FROM stock_movements WHERE farm_id=$1 AND source_type='activity' AND source_id=$2",
+                [a.farmId, activityId],
+              )
+            ).rows;
+            for (const m of movements)
+              await stockMovement(c, {
+                farmId: a.farmId,
+                itemId: m.stock_item_id,
+                projectId: m.project_id,
+                actorId: a.actor,
+                kind: "correction",
+                quantity: -Number(m.quantity),
+                unit: m.unit,
+                sourceType: "record_correction",
+                sourceId: b.id,
+                observedAt: new Date().toISOString(),
+                note: b.reason,
+              });
+            const entries = (
+              await c.query(
+                "SELECT * FROM financial_entries WHERE farm_id=$1 AND source_type='activity' AND source_id=$2 FOR UPDATE",
+                [a.farmId, activityId],
+              )
+            ).rows;
+            for (const f of entries) {
+              if (
+                (
+                  await c.query(
+                    "SELECT 1 FROM expense_allocations WHERE entry_id=$1 AND reversed_at IS NULL",
+                    [f.id],
+                  )
+                ).rowCount
+              )
+                throw new ApiError(
+                  "allocated_cost_correction_requires_reconciliation",
+                  409,
+                );
+              await finance(c, {
+                farmId: a.farmId,
+                projectId: f.project_id,
+                actorId: a.actor,
+                kind: f.kind,
+                amount: -Number(f.amount),
+                currency: f.currency,
+                sourceType: "record_correction",
+                sourceId: b.id,
+                observedAt: new Date().toISOString(),
+                note: b.reason,
+              });
+            }
+          }
+          if (b.action === "reverse" && activity.task_id) {
+            const task = (
+              await c.query(
+                "SELECT * FROM tasks WHERE farm_id=$1 AND id=$2 FOR UPDATE",
+                [a.farmId, activity.task_id],
+              )
+            ).rows[0];
+            if (
+              task?.status === "completed" &&
+              task.evidence === `activity:${activityId}`
+            ) {
+              await c.query(
+                "UPDATE tasks SET status='blocked',reason=$3,version=version+1,updated_at=now() WHERE farm_id=$1 AND id=$2",
+                [a.farmId, task.id, b.reason],
+              );
+              await audit(
+                c,
+                a.farmId,
+                a.actor,
+                "task",
+                task.id,
+                "evidence_reversed",
+                b.reason,
+                task,
+                { status: "blocked", correctionId: b.id },
+              );
+            }
+          }
+          const result = (
+            await c.query(
+              "INSERT INTO activity_corrections(id,farm_id,activity_id,action,reason,duplicate_of_activity_id,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+              [
+                b.id,
+                a.farmId,
+                activityId,
+                b.action,
+                b.reason,
+                b.duplicateOfActivityId,
+                a.actor,
+              ],
+            )
+          ).rows[0];
+          await audit(
+            c,
+            a.farmId,
+            a.actor,
+            "activity",
+            activityId,
+            b.action,
+            b.reason,
+            activity,
+            result,
+          );
+          return result;
+        },
+      );
+      return reply.code(out.replayed ? 200 : 201).send(out.body);
+    },
+  );
+}

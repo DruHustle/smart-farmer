@@ -1,8 +1,18 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: smart-farmer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  verify:
+  workflows:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:17
@@ -16,6 +26,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      LOG_LEVEL: silent
+      CI: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,11 +36,110 @@ jobs:
           node-version: 24
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
+      - run: npm ci --prefix smart-farmer-backend/edge
+      - name: API and concurrency workflows against PostgreSQL
+        run: npm test --prefix smart-farmer-backend
+      - name: Offline storage, language and farm-time rules
+        run: npm test --prefix smart-farmer-frontend/web
+      - name: Edge replay and interlock tests
+        run: npm test --prefix smart-farmer-backend/edge
+      - name: Install browser
+        working-directory: smart-farmer-frontend/web
+        run: npx playwright install --with-deps chromium
+      - name: Build both applications and exercise browser journeys
+        env:
+          TEST_ARTIFACTS_DIR: ${{ runner.temp }}/smart-farmer-browser
+        run: npm run test:e2e --prefix smart-farmer-frontend/web
+      - name: Retain browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-acceptance
+          path: ${{ runner.temp }}/smart-farmer-browser
+          if-no-files-found: ignore
+          retention-days: 7
+
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      EXPO_NO_TELEMETRY: '1'
+    defaults:
+      run:
+        working-directory: smart-farmer-frontend/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Native business rules and durable repository
+        run: npm test
+      - name: Typecheck and export iOS and Android JavaScript bundles
+        run: npm run build
+
+  storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: smart_farmer
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: smart_farmer_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U smart_farmer -d smart_farmer_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      DATABASE_URL: postgresql://smart_farmer:test-only@localhost:5432/smart_farmer_test
+      LOG_LEVEL: silent
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix smart-farmer-backend
       - run: npm run build --prefix smart-farmer-backend
-      - run: npm run build --prefix smart-farmer-frontend/web
-      - run: npm test --prefix smart-farmer-backend
-      - run: npm test --prefix smart-farmer-frontend/web
-      - name: Check independent Python edge agent
-        run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
-      - name: Check Node-RED example flow JSON
-        run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
+      - name: Validate local container configuration and build runtime image
+        run: |
+          POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
+          docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
+          docker run --rm --entrypoint node smart-farmer-backup:ci --version
+          docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
+          docker run --rm --entrypoint pg_restore smart-farmer-backup:ci --version
+          docker run --rm --entrypoint python3 smart-farmer-backup:ci --version
+      - name: Use matching PostgreSQL 17 backup clients
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          cat > "$RUNNER_TEMP/pg_dump" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_dump "$@"
+          SH
+          cat > "$RUNNER_TEMP/pg_restore" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER_ID" pg_restore "$@"
+          SH
+          chmod 700 "$RUNNER_TEMP/pg_dump" "$RUNNER_TEMP/pg_restore"
+          printf 'PG_DUMP_BIN=%s/pg_dump\nPG_RESTORE_BIN=%s/pg_restore\nPOSTGRES_CONTAINER_ID=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_ENV"
+      - name: Restore encrypted database and attachments into isolated target
+        run: npm run test:backup --prefix smart-farmer-backend
+
+  web-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Build and verify the read-only static web and PWA image
+        run: node smart-farmer-frontend/web/scripts/test-container.mjs

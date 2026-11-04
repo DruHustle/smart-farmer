@@ -1,0 +1,53 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "more-security"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-security"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "camera-playback-${CAMERA_EVENT_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "camera-playback-${CAMERA_EVENT_ID}"
+- tapOn:
+    id: "action-confirm"
+- extendedWaitUntil:
+    visible:
+      id: "camera-player-ready"
+    timeout: 45000
+- assertNotVisible:
+    id: camera-player-error
+- takeScreenshot: private-hls-native-decoder-ready
+- tapOn:
+    id: "sheet-close"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "camera-ack-${CAMERA_EVENT_ID}"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "camera-ack-${CAMERA_EVENT_ID}"
+- tapOn:
+    id: "action-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "action-confirm"
+    timeout: 45000
+- takeScreenshot: private-motion-event-acknowledged
+- tapOn:
+    id: "sheet-close"

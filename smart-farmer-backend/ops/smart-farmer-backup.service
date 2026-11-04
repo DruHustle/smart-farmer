@@ -1,0 +1,17 @@
+[Unit]
+Description=Smart Farmer encrypted independent backup and restore verification
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=smart-farmer-backup
+WorkingDirectory=/opt/smart-farmer/smart-farmer-backend
+EnvironmentFile=/etc/smart-farmer/backup.env
+ExecStart=/usr/bin/node scripts/offhost-backup.mjs --drill
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/smart-farmer
+ReadWritePaths=/var/lib/smart-farmer-backup

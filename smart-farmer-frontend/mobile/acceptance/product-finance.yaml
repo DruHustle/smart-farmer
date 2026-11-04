@@ -1,0 +1,144 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "more-finance"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-finance"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "finance-tabs"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "finance-tabs"
+- scrollUntilVisible:
+    element:
+      id: "finance-tabs-option-expenses"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "finance-tabs-option-expenses"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-projectId"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-projectId"
+- scrollUntilVisible:
+    element:
+      id: "form-projectId-option-${PROJECT_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-projectId-option-${PROJECT_ID}"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-category"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-category"
+- scrollUntilVisible:
+    element:
+      id: "form-category-option-labour"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-category-option-labour"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-amount"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-amount"
+- inputText: "12.50"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "form-amount"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "form-amount"
+    text: "^12\\.50$"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-currency"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-currency"
+- inputText: "USD"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "form-currency"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "form-currency"
+    text: "^USD$"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-note"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-note"
+- inputText: "Native accepted expense"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "form-note"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "form-note"
+    text: '^Native accepted expense$'
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-review"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-review"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-confirm"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "product-confirm"
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      text: "Native accepted expense"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: reviewed-project-expense
+- tapOn:
+    id: "sheet-close"
