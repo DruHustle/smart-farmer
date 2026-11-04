@@ -21,6 +21,16 @@ import {
   memberExists,
 } from "./common.js";
 import { providerStatus } from "./farm.js";
+import {
+  NotificationRequestHold,
+  prepareNotificationRequest,
+  restoreNotificationRequest,
+  sealNotificationRequest,
+  sendNotificationRequest,
+  type NotificationContent,
+  type NotificationRequest,
+  type NotificationResult,
+} from "./notification-request.js";
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const messages: Record<string, Record<string, string>> = {
   sn: {
@@ -83,92 +93,14 @@ export function isQuiet(
 export async function dispatchNotification(
   channel: string,
   address: string,
-  content: { title: string; body: string; privatePushBody?: string },
+  content: NotificationContent,
   id: string,
-) {
+): Promise<NotificationResult> {
   const status = (providerStatus() as any)[channel];
   if (!status?.configured) return { state: "unconfigured", providerId: null };
   if (status.mode === "simulated")
     return { state: "simulated", providerId: "simulation:" + id };
-  if (channel === "email") {
-    const u = safeEndpoint(
-      process.env.RESEND_API_URL || "https://api.resend.com/emails",
-      true,
-    );
-    const r = await fetchJson(u, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": id,
-      },
-      body: JSON.stringify({
-        from: process.env.NOTIFICATION_FROM,
-        to: [address],
-        subject: content.title,
-        text: content.body,
-      }),
-    });
-    if (typeof r.id !== "string")
-      throw new ApiError("invalid_provider_response", 502);
-    return { state: "accepted", providerId: r.id };
-  }
-  if (channel === "push") {
-    const u = safeEndpoint(
-      process.env.EXPO_PUSH_URL || "https://exp.host/--/api/v2/push/send",
-      true,
-    );
-    const r = await fetchJson(u, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.EXPO_ACCESS_TOKEN
-          ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` }
-          : {}),
-      },
-      body: JSON.stringify({
-        to: address,
-        title: id.startsWith("verify:") ? content.title : "Smart Farmer",
-        body: id.startsWith("verify:")
-          ? content.body
-          : (content.privatePushBody ?? "Smart Farmer"),
-        data: { notificationId: id },
-        ttl: 3600,
-        sound: "default",
-      }),
-    });
-    const data = Array.isArray(r.data) ? r.data[0] : r.data;
-    if (data?.status !== "ok")
-      return {
-        state: "failed",
-        providerId: null,
-        error:
-          data?.details?.error === "DeviceNotRegistered"
-            ? "device_not_registered"
-            : "provider_rejected",
-      };
-    return { state: "accepted", providerId: String(data.id) };
-  }
-  const u = safeEndpoint(process.env.SMS_WEBHOOK_URL!, true);
-  const r = await fetchJson(u, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.SMS_WEBHOOK_TOKEN}`,
-      "Idempotency-Key": id,
-    },
-    body: JSON.stringify({
-      id,
-      to: address,
-      text: content.title + "\n" + content.body,
-    }),
-  });
-  if (typeof r.id !== "string" || !["accepted", "delivered"].includes(r.status))
-    throw new ApiError("invalid_provider_response", 502);
-  return {
-    state: r.status === "delivered" ? "provider_delivered" : "accepted",
-    providerId: r.id,
-  };
+  return sendNotificationRequest(prepareNotificationRequest(channel, address, content, id));
 }
 export function registerNotifications(app: FastifyInstance, ctx: Context) {
   app.get("/v1/farms/:farmId/notifications", async (req, reply) => {
@@ -585,18 +517,20 @@ export async function deliverNotifications(db: Pool, max = 20) {
   for (let i = 0; i < max; i++) {
     const c = await db.connect();
     let r: any;
+    let request: NotificationRequest;
     try {
       await c.query("BEGIN");
+      await c.query("SET LOCAL synchronous_commit=on");
       r = (
         await c.query(
-          "SELECT d.*,n.farm_id,n.user_id,n.message_key,n.arguments,n.acknowledged_at,c.channel,c.address_cipher,c.disabled_at,u.language,f.timezone,p.quiet_start,p.quiet_end,CASE c.channel WHEN 'push' THEN p.push WHEN 'email' THEN p.email ELSE p.sms END AS opted_in,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=n.farm_id AND m.user_id=n.user_id AND (n.kind<>'camera' OR EXISTS(SELECT 1 FROM camera_events e WHERE e.id=n.entity_id AND e.expires_at>now() AND (m.role IN ('owner','manager') OR EXISTS(SELECT 1 FROM camera_access ca WHERE ca.asset_id=e.asset_id AND ca.user_id=n.user_id))))) AS member FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id JOIN notification_channels c ON c.id=d.channel_id JOIN users u ON u.id=n.user_id JOIN farms f ON f.id=n.farm_id LEFT JOIN notification_preferences p ON p.farm_id=n.farm_id AND p.user_id=n.user_id WHERE d.state='pending' AND d.next_attempt_at<=now() ORDER BY d.next_attempt_at FOR UPDATE OF d SKIP LOCKED LIMIT 1",
+          "SELECT d.*,n.farm_id,n.user_id,n.message_key,n.arguments,n.acknowledged_at,c.channel,c.address_cipher,c.address_hash,c.verified_at,c.disabled_at,c.user_id AS channel_user_id,u.language,f.timezone,p.quiet_start,p.quiet_end,CASE c.channel WHEN 'push' THEN p.push WHEN 'email' THEN p.email ELSE p.sms END AS opted_in,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=n.farm_id AND m.user_id=n.user_id AND (n.kind<>'camera' OR EXISTS(SELECT 1 FROM camera_events e WHERE e.id=n.entity_id AND e.expires_at>now() AND (m.role IN ('owner','manager') OR EXISTS(SELECT 1 FROM camera_access ca WHERE ca.asset_id=e.asset_id AND ca.user_id=n.user_id))))) AS member FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id JOIN notification_channels c ON c.id=d.channel_id JOIN users u ON u.id=n.user_id JOIN farms f ON f.id=n.farm_id LEFT JOIN notification_preferences p ON p.farm_id=n.farm_id AND p.user_id=n.user_id WHERE d.state='pending' AND d.next_attempt_at<=now() ORDER BY d.next_attempt_at FOR UPDATE OF d SKIP LOCKED LIMIT 1",
         )
       ).rows[0];
       if (!r) {
         await c.query("COMMIT");
         break;
       }
-      if (!r.member || !r.opted_in || r.disabled_at || r.acknowledged_at) {
+      if (!r.member || !r.opted_in || !r.verified_at || r.disabled_at || r.acknowledged_at || r.channel_user_id !== r.user_id) {
         await c.query(
           "UPDATE notification_deliveries SET state='cancelled',updated_at=now() WHERE id=$1",
           [r.id],
@@ -612,9 +546,48 @@ export async function deliverNotifications(db: Pool, max = 20) {
         await c.query("COMMIT");
         continue;
       }
+      try {
+        if (r.request_cipher !== null) {
+          request = restoreNotificationRequest(r);
+        } else {
+          // An old attempted delivery may already have been accepted. Its original
+          // bytes cannot be recovered from today's environment or notification.
+          if (r.attempts !== 0 || r.started_at !== null || r.provider_id !== null || r.last_error !== null)
+            throw new NotificationRequestHold("notification_request_missing");
+          const status = (providerStatus() as any)[r.channel];
+          if (!status?.configured || status.mode === "simulated") {
+            const simulated = status?.configured && status.mode === "simulated";
+            await c.query(
+              "UPDATE notification_deliveries SET state=$2,provider_id=$3,attempts=attempts+1,started_at=now(),updated_at=now() WHERE id=$1",
+              [r.id, simulated ? "simulated" : "unconfigured", simulated ? "simulation:" + r.id : null],
+            );
+            await c.query("COMMIT");
+            processed++;
+            continue;
+          }
+          const address = openSecret(r.address_cipher, r.channel_id);
+          if (digest(address) !== r.address_hash)
+            throw new NotificationRequestHold("notification_recipient_changed");
+          request = prepareNotificationRequest(r.channel, address, notificationText(r, r.language), r.id);
+          r.request_cipher = sealNotificationRequest(request, r);
+          r.request_body_hash = request.bodyHash;
+          r.request_prepared_at = request.preparedAt;
+        }
+      } catch (error) {
+        // Holds are terminal to automatic dispatch. Keep IDs, attempts and prior
+        // receipts intact for protected operator/provider reconciliation.
+        await c.query(
+          "UPDATE notification_deliveries SET state='unknown',last_error=$2,updated_at=now() WHERE id=$1",
+          [r.id, error instanceof NotificationRequestHold ? error.code : "notification_request_unreadable"],
+        );
+        await c.query("COMMIT");
+        continue;
+      }
+      if ((await c.query("SHOW fsync")).rows[0].fsync !== "on")
+        throw new ApiError("notification_durability_unavailable", 503);
       await c.query(
-        "UPDATE notification_deliveries SET state='sending',attempts=attempts+1,started_at=now(),updated_at=now() WHERE id=$1",
-        [r.id],
+        "UPDATE notification_deliveries SET state='sending',attempts=attempts+1,started_at=now(),updated_at=now(),request_cipher=$2,request_body_hash=$3,request_prepared_at=$4 WHERE id=$1",
+        [r.id, r.request_cipher, r.request_body_hash, r.request_prepared_at],
       );
       await c.query("COMMIT");
     } catch (error) {
@@ -624,12 +597,7 @@ export async function deliverNotifications(db: Pool, max = 20) {
       c.release();
     }
     try {
-      const result = await dispatchNotification(
-        r.channel,
-        openSecret(r.address_cipher, r.channel_id),
-        notificationText(r, r.language),
-        r.id,
-      );
+      const result = await sendNotificationRequest(request);
       await db.query(
         "UPDATE notification_deliveries SET state=$2,provider_id=$3,last_error=$4,updated_at=now() WHERE id=$1",
         [r.id, result.state, result.providerId, result.error ?? null],
@@ -643,16 +611,16 @@ export async function deliverNotifications(db: Pool, max = 20) {
       const retry =
         (r.channel === "email" || r.channel === "sms") && r.attempts < 4;
       const known = (error as any).code === "provider_rate_limited";
+      const hold = error instanceof NotificationRequestHold;
+      const unknown = !known || r.last_error === "provider_outcome_unknown";
       await db.query(
         "UPDATE notification_deliveries SET state=$2,last_error=$3,next_attempt_at=now()+make_interval(secs=>$4),updated_at=now() WHERE id=$1",
         [
           r.id,
-          (retry || known) && r.attempts < 5
+          !hold && (retry || known) && r.attempts < 5
             ? "pending"
-            : known
-              ? "failed"
-              : "unknown",
-          known ? "provider_rate_limited" : "provider_outcome_unknown",
+            : unknown ? "unknown" : "failed",
+          hold ? error.code : unknown ? "provider_outcome_unknown" : "provider_rate_limited",
           Math.min(3600, 60 * 2 ** r.attempts),
         ],
       );

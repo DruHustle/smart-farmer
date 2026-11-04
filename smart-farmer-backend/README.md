@@ -20,6 +20,8 @@ From this directory, copy `.env.example` to a private `.env`, replace the local 
 
 Alternatively use Node 24 and an existing isolated PostgreSQL 17 database: export `DATABASE_URL` and `WEB_ORIGIN`, run `npm ci`, `npm run migrate`, `npm run dev`, and run `npm run worker` separately. Each frontend has its own dependency lockfile; neither imports backend implementation or the other frontend's UI.
 
+The web also has an [optional static Docker/PWA image and localhost-only Compose service](../smart-farmer-frontend/web/README.md#optional-static-container). It uses the same public build-time API origin and leaves this backend/database/worker stack independent. Private Safari camera playback still requires the documented same-origin HTTPS ingress.
+
 Run backend tests with an explicit isolated `TEST_DATABASE_URL`. The integration suite fails if its database is missing rather than reporting skipped tests as success. The web/native READMEs and operations guide list their independent verification commands.
 
 No real farm measurements, animal counts, balances, hardware credentials, payment-provider settlement or native signing identities are supplied as seed data. Unknown facts stay unknown. Demonstration/test fixtures are isolated and must not be published as real listings or farm data.

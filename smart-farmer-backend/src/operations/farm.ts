@@ -1,3 +1,4 @@
+import { validNotificationFrom } from "./notification-request.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -84,7 +85,7 @@ export function providerStatus() {
         (sim ||
           (live &&
             Boolean(
-              process.env.RESEND_API_KEY && process.env.NOTIFICATION_FROM,
+              process.env.RESEND_API_KEY && validNotificationFrom(process.env.NOTIFICATION_FROM),
             ))),
       mode: sim ? "simulated" : live ? "resend" : "unconfigured",
       requirements: [

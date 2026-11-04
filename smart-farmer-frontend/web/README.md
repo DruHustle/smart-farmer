@@ -26,6 +26,33 @@ Serve `dist/` using HTTPS in production. Localhost is supported for development.
 
 Chrome/Firefox use a lazily loaded HLS player with short-lived, camera-session-scoped Bearer credentials. Requests outside the same API origin and session path are rejected by the player. Safari native HLS uses the backend's HttpOnly session cookie and therefore requires the website and API under the same HTTPS origin, normally through a reverse proxy for `/v1/`. The server rechecks membership and camera grants on every playlist and segment request. Private stream tokens, snapshots, and clips are never put into a public URL or browser cache. Switching farm or role unmounts the private viewers and revokes local blob URLs.
 
+### Optional static container
+
+The Dockerfile builds the existing lockfile, `vite.config.ts`, application source and `public/` assets with Node 24.22.1, then serves the complete `dist/` output with NGINX Unprivileged 1.30.6. Both bases use immutable manifest digests with AMD64 and ARM64 entries. The generated service worker, manifest, icons and lazy video-player assets are included. This is an alternative static serving package; the existing Vercel root `smart-farmer-frontend/web`, build command and `vercel.json` remain unchanged.
+
+The container requires an explicit public `VITE_API_URL` **when building**. Supply an HTTPS origin without a path, credentials, query, fragment or trailing slash; HTTP is allowed only for `localhost`, `127.0.0.1` and `[::1]` development. Use an origin reachable by the user's browser, not an internal Docker service name. Changing a container environment variable after building does not change the bundled API origin; rebuild for a different origin. Never put credentials in `VITE_*` values.
+
+For local browser development against an API already running on port 3000, from `smart-farmer-frontend`:
+
+```sh
+export VITE_API_URL=http://localhost:3000
+# Configure the independent backend with WEB_ORIGIN=http://localhost:8080.
+docker compose build web
+docker compose up -d web
+# Open http://localhost:8080; WEB_PORT changes only the loopback host port.
+docker compose down
+```
+
+Compose binds only to `127.0.0.1`, runs the image as UID/GID 101, drops capabilities, prevents privilege escalation and uses a read-only root filesystem with writable `/tmp`. It has no database or credential mounts, does not start or alter the API/worker/database, and runs no migrations. The backend retains its separate PostgreSQL/media volumes and existing `DATABASE_URL` or PostgreSQL environment configuration, including separately managed external databases; follow its [operations guide](../../smart-farmer-backend/docs/operations.md).
+
+**The standalone static container does not qualify private Safari camera playback.** Preserve the [private camera deployment](#private-camera-deployment) requirement above: a separately reviewed HTTPS ingress must route `/v1/` to the API and static paths to this container under the same public origin. Set `VITE_API_URL` and the backend's exact `WEB_ORIGIN` to that approved origin. Do not broaden CORS or remove camera-session authorization. This static service contains no API proxy and returns 404 for `/v1` routes that reach it directly. The local two-port example is not the required Safari deployment topology.
+
+`/healthz` proves static serving only; API `/health` and `/ready` and worker health remain independent. No database URLs, private media or authenticated responses enter this image or its offline shell. The static worker and index use `Cache-Control: no-store` for network responses; the application's explicit offline Cache Storage behavior is unchanged.
+
+From `smart-farmer-frontend/web`, `node scripts/test-container.mjs` requires Docker Engine and Compose. The separate required CI job builds the pinned image, rejects an actual build without an API origin, validates the mount-free loopback Compose service, runs the non-root read-only container, and checks the compiled API origin, public-asset bytes, worker MIME/cache headers and every declared precache target. A task-owned readable hidden asset is mounted read-only only in the test, read through UID 101, and required to return HTTP 404. Cleanup removes only that test container and temporary directory. These checks complement the existing browser/native/backup gates and do not replace them or qualify an actual HTTPS/API/provider/DB/hardware deployment.
+
+Refresh image versions and digests together through review when updates are needed. Publisher references: [Node 24.22.1](https://nodejs.org/en/blog/release/v24.22.1), [NGINX Unprivileged](https://github.com/nginx/docker-nginx-unprivileged), and [Vite build-time environment values](https://vite.dev/guide/env-and-mode).
+
 ## Workflow inventory
 
 | Area | Implemented web behavior |

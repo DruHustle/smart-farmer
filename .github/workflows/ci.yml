@@ -132,3 +132,14 @@ jobs:
           printf 'PG_DUMP_BIN=%s/pg_dump\nPG_RESTORE_BIN=%s/pg_restore\nPOSTGRES_CONTAINER_ID=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$POSTGRES_CONTAINER_ID" >> "$GITHUB_ENV"
       - name: Restore encrypted database and attachments into isolated target
         run: npm run test:backup --prefix smart-farmer-backend
+
+  web-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Build and verify the read-only static web and PWA image
+        run: node smart-farmer-frontend/web/scripts/test-container.mjs
