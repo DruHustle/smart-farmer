@@ -14,6 +14,8 @@ RUN node scripts/validate-container-api.mjs && npm run build && \
 FROM nginx/nginx-unprivileged:1.30.6-alpine3.24@sha256:44e74ca483234093081138b6d7b6f561d55557756a2deefc3a5056148defeb99
 ARG APP_REVISION=unversioned
 LABEL org.opencontainers.image.revision=$APP_REVISION
+USER root
+RUN apk add --no-cache 'libexpat=2.10.0-r0'
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 USER 101:101

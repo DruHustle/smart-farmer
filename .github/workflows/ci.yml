@@ -126,6 +126,7 @@ jobs:
         run: |
           POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
           docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker run --rm --entrypoint node smart-farmer-api:ci -e 'import("sharp").then(async ({default: sharp}) => { const image = await sharp({create:{width:1,height:1,channels:3,background:"red"}}).png().toBuffer(); if (!image.length) process.exit(1); })'
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
           docker run --rm --entrypoint node smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
