@@ -1,0 +1,97 @@
+import React, { useState } from 'react';
+import { Text, View } from 'react-native';
+import { c, dateField, Facts, farmPath, Form, numericField, options, projectOptions, Records, selectField, textField, usePanel } from '../completion-ui';
+import { allPages, object, rows, string, type FormField, type Row } from '../product';
+import { sharePrivateReport } from '../exports';
+import { textFor } from '../i18n';
+import { farmNow } from '../time';
+import { stockUnits, type Language, type Project, type Stock } from '../types';
+import { Button, Card, Choice, Notice, Sheet, styles } from '../ui';
+import type { Workspace } from '../use-workspace';
+
+export const costCategories = ['seed', 'fertiliser', 'feed', 'fuel', 'labour', 'equipment', 'transport', 'care', 'other'] as const;
+const currencyField = (): FormField => textField('currency', true, { maxLength: 3 });
+
+export function FinancePanel({ work, language, project }: { work: Workspace; language: Language; project?: Project }) {
+  const [tab, setTab] = useState('reports'); const t = textFor(language); const timezone = work.snapshot?.farm.timezone || 'Africa/Harare';
+  const [filters, setFilters] = useState<Row>({ period: 'season' });
+  const query = new URLSearchParams({ language, ...Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, string(value)])), ...(project ? { projectId: project.id } : {}) }).toString();
+  const report = usePanel(work, `summary:${query}`, () => work.api.request<Row>(farmPath(work, `/reports/summary?${query}`)));
+  const data = usePanel(work, `finance:${project?.id || 'all'}`, async () => {
+    const [expenses, budgets, opening, ledger] = await Promise.all([allPages<Row>(work.api, farmPath(work, '/expenses')), project ? allPages<Row>(work.api, farmPath(work, `/projects/${project.id}/budgets`)) : Promise.resolve([]), project ? allPages<Row>(work.api, farmPath(work, `/projects/${project.id}/opening-balances`)) : Promise.resolve([]), project ? allPages<Row>(work.api, farmPath(work, `/projects/${project.id}/ledger`)) : Promise.resolve([])]);
+    return { expenses, budgets, opening, ledger };
+  });
+  const reconciliation = usePanel(work, 'reconciliation', () => work.api.request<Row>(farmPath(work, '/reconciliation')));
+  const [openingEdit, setOpeningEdit] = useState<Row | null>(null);
+  const [allocation, setAllocation] = useState<Row | null>(null);
+  async function reload() { await Promise.all([data.reload(), report.reload(), reconciliation.reload()]); await work.refresh(); }
+  if (!work.canManage) return <Notice text={t.forbidden} />;
+  return <>
+    <Choice testID="finance-tabs" label={c(language, 'finance')} value={tab} onChange={setTab} closeLabel={t.close} options={options(language, ['reports', 'expenses', ...(project ? ['budgets', 'openingBalances', 'payments'] : []), 'reconciliation', 'reviewDuplicates'])} />
+    <Button secondary title={t.refresh} busy={report.loading || data.loading} onPress={() => { void reload(); }} />
+    {tab === 'reports' ? <>
+      <Form work={work} language={language} fields={[...(project ? [] : [selectField('projectId', projectOptions(work))]), dateField('from', false), dateField('to', false), selectField('period', options(language, ['day', 'week', 'season']), true)]} initial={{ period: 'season' }} includeId={false} confirmation={false} submit={async body => { setFilters(body); }} />
+      <Notice text={c(language, 'missingCosts')} />
+      {report.value ? <>
+        <Records items={rows(report.value.byCurrency)} language={language} timezone={timezone} titleKey="currency" fields={['recordedCosts', 'recordedSales', 'cashReceived', 'cashPaid', 'outstandingRecordedSales', 'recordedMargin', 'inventoryPurchases', 'inputConsumption', 'allocatedTransferNet', 'unearnedServiceDeposits', 'receivablesAsOf']} />
+        <Card title={c(language, 'budget')}><Records items={rows(report.value.budgetByCurrency)} language={language} timezone={timezone} titleKey="currency" fields={['budget', 'recordedCosts', 'variance']} /></Card>
+        <Card title={c(language, 'missingData')}><Facts value={object(report.value.missing)} fields={['unpricedInputs', 'unvaluedStock']} language={language} /></Card>
+        <Card title={c(language, 'history')}><Records items={rows(report.value.series)} language={language} timezone={timezone} titleKey="date" fields={['currency', 'kind', 'amount']} /></Card>
+      </> : null}
+      <Notice text={c(language, 'exportHint')} /><View style={styles.row}>{(['pdf', 'csv'] as const).map(format => <Button key={format} title={c(language, format === 'pdf' ? 'downloadPdf' : 'downloadCsv')} disabled={!work.online} busy={work.busy} onPress={() => { void work.onlineAction(() => sharePrivateReport(work.session, farmPath(work, `/reports/summary.${format}?${query}`), format, c(language, 'reports'))); }} />)}</View>
+    </> : null}
+    {tab === 'expenses' ? <>
+      <Form work={work} language={language} title={c(language, 'add')} fields={[selectField('projectId', projectOptions(work)), selectField('category', options(language, costCategories), true), numericField('amount', true, { minimum: 0.01 }), currencyField(), dateField('observedAt'), textField('note', true, { multiline: true }), selectField('receiptActivityId', (work.snapshot?.activities || []).map(item => ({ value: item.id, label: `${item.note || c(language, item.kind)} · ${item.observed_at.slice(0, 10)}` })))]} initial={{ projectId: project?.id || '', observedAt: farmNow(timezone) }} submit={body => work.api.request(farmPath(work, '/expenses'), 'POST', body)} onSaved={reload} />
+      <Records items={data.value?.expenses || []} language={language} timezone={timezone} fields={['observed_at', 'category', 'note', 'amount', 'currency', 'allocated', 'reversed']}>{entry => <><Button secondary title={c(language, 'allocations')} onPress={() => setAllocation(entry)} />{entry.source_type === 'documented_expense' && !entry.reversed ? <Form work={work} language={language} title={c(language, 'reverse')} hint={c(language, 'correctionHint')} fields={[textField('reason', true)]} submit={body => work.api.request(farmPath(work, `/expenses/${entry.id}/corrections`), 'POST', body)} onSaved={reload} /> : null}</>}</Records>
+      <Sheet title={c(language, 'allocations')} visible={Boolean(allocation)} onClose={() => setAllocation(null)} closeLabel={t.close}>{allocation ? <AllocationForm work={work} language={language} expense={allocation} onSaved={reload} /> : null}</Sheet>
+    </> : null}
+    {project && tab === 'budgets' ? <>
+      <Notice text={c(language, 'immutable')} /><Form work={work} language={language} fields={[textField('versionName', true), textField('reason', true), { key: 'lines', type: 'rows', required: true, fields: [selectField('category', options(language, costCategories), true), textField('description', true), numericField('amount', true), currencyField()] }]} submit={body => work.api.request(farmPath(work, `/projects/${project.id}/budgets`), 'POST', body)} onSaved={reload} />
+      <Records items={data.value?.budgets || []} language={language} timezone={timezone} titleKey="version_name" fields={['reason', 'created_at']}>{budget => <Records items={rows(budget.lines)} language={language} timezone={timezone} titleKey="description" fields={['category', 'amount', 'currency']} />}</Records>
+    </> : null}
+    {project && tab === 'openingBalances' ? <><Form work={work} language={language} hint={c(language, 'openingFinanceHint')} fields={[{ key: 'asOfDate', type: 'date', required: true }, selectField('kind', options(language, ['cost', 'sales', 'cash_received']), true), numericField('amount', true), currencyField(), textField('source', true)]} submit={body => work.api.request(farmPath(work, `/projects/${project.id}/opening-balances`), 'POST', body)} onSaved={reload} /><Records items={data.value?.opening || []} language={language} timezone={timezone} fields={['as_of_date', 'kind', 'amount', 'currency', 'source', 'version']}>{balance => <Button secondary title={t.edit} onPress={() => setOpeningEdit(balance)} />}</Records><Sheet title={t.edit} visible={Boolean(openingEdit)} onClose={() => setOpeningEdit(null)} closeLabel={t.close}>{openingEdit ? <Form work={work} language={language} includeId={false} hint={c(language, 'correctionHint')} fields={[numericField('amount', true), { key: 'asOfDate', type: 'date', required: true }, textField('source', true), textField('reason', true)]} initial={{ ...openingEdit, asOfDate: string(openingEdit.as_of_date).slice(0, 10) }} submit={body => work.api.request(farmPath(work, `/projects/${project.id}/opening-balances/${openingEdit.id}`), 'PATCH', { ...body, version: openingEdit.version })} onSaved={async () => { setOpeningEdit(null); await reload(); }} /> : null}</Sheet></> : null}
+    {project && tab === 'payments' ? <>
+      <Form work={work} language={language} hint={c(language, 'paymentHint')} fields={[selectField('revenueId', (data.value?.ledger || []).filter(item => item.kind === 'revenue' && item.source_type === 'animal_event').map(item => ({ value: string(item.id), label: `${item.note} · ${item.amount} ${item.currency}` })), true), numericField('amount', true, { minimum: 0.01 }), currencyField(), dateField('observedAt'), textField('note')]} initial={{ observedAt: farmNow(timezone) }} submit={body => work.api.request(farmPath(work, `/projects/${project.id}/payments`), 'POST', body)} onSaved={reload} /><Records items={data.value?.ledger || []} language={language} timezone={timezone} fields={['kind', 'observed_at', 'note', 'amount', 'currency', 'source_type', 'paid', 'outstanding']} />
+    </> : null}
+    {tab === 'reconciliation' && reconciliation.value ? <><Notice text={c(language, 'reconciliationHint')} /><Facts value={reconciliation.value} fields={['balanced']} language={language} /><Card title={c(language, 'stock')}><Records items={rows(reconciliation.value.stock)} language={language} timezone={timezone} titleKey="name" fields={['quantity', 'movement_quantity', 'reserved_quantity', 'order_reserved', 'balanced']} /></Card><Card title={c(language, 'animals')}><Records items={rows(reconciliation.value.animals)} language={language} timezone={timezone} titleKey="name" fields={['opening_count', 'current_count', 'recorded_delta', 'expected_count', 'identified_count', 'reserved_count', 'order_reserved', 'balanced']} /></Card></> : null}
+    {tab === 'reviewDuplicates' ? <DuplicateReview work={work} language={language} /> : null}
+  </>;
+}
+
+function AllocationForm({ work, language, expense, onSaved }: { work: Workspace; language: Language; expense: Row; onSaved: () => Promise<void> }) {
+  const path = farmPath(work, `/expenses/${expense.id}/allocations`); const data = usePanel(work, `allocations:${expense.id}`, () => allPages<Row>(work.api, `${path}/history`)); const [mode, setMode] = useState('add');
+  const active = (data.value || []).filter(item => !item.reversed_at); const grouped = new Map<string, Row>();
+  for (const item of active) { const key = string(item.project_id); const old = grouped.get(key); grouped.set(key, { projectId: key, amount: Number(item.amount) + Number(old?.amount || 0), basis: [old?.basis, item.basis].filter(Boolean).join('; ') }); }
+  return <><Facts value={expense} fields={['note', 'amount', 'currency', 'allocated', 'reversed']} language={language} /><Notice text={c(language, 'correctionHint')} /><Choice label={c(language, 'allocations')} value={mode} onChange={setMode} options={options(language, ['add', 'reallocate'])} closeLabel={textFor(language).close} />
+    {!expense.reversed && Number(expense.amount) > 0 ? <Form key={`${mode}:${data.value?.length || 0}`} work={work} language={language} fields={[...(mode === 'reallocate' ? [textField('reason', true)] : []), { key: 'allocations', type: 'rows', required: mode !== 'reallocate', fields: [selectField('projectId', projectOptions(work), true), numericField('amount', true, { minimum: 0.01 }), textField('basis', true)] }]} initial={mode === 'reallocate' ? { allocations: [...grouped.values()] } : {}} submit={body => work.api.request(mode === 'reallocate' ? farmPath(work, `/expenses/${expense.id}/reallocate`) : path, 'POST', body)} onSaved={async () => { await data.reload(); await onSaved(); }} /> : null}
+    <Records items={data.value || []} language={language} timezone={work.snapshot?.farm.timezone || 'Africa/Harare'} fields={['amount', 'basis', 'created_at', 'reversed_at']}>{entry => <Text style={styles.text}>{work.snapshot?.projects.find(project => project.id === entry.project_id)?.name}</Text>}</Records>
+  </>;
+}
+
+export function StockMovements({ work, language, item }: { work: Workspace; language: Language; item: Stock }) {
+  const timezone = work.snapshot?.farm.timezone || 'Africa/Harare'; const [mode, setMode] = useState('movements'); const [kind, setKind] = useState('purchase');
+  const data = usePanel(work, `stock:${item.id}`, async () => { const [movements, transfers, valuations, locations] = await Promise.all([allPages<Row>(work.api, farmPath(work, `/stock/${item.id}/movements`)), allPages<Row>(work.api, farmPath(work, `/stock/${item.id}/transfers`)), work.canManage ? allPages<Row>(work.api, farmPath(work, `/stock/${item.id}/valuations`)) : Promise.resolve([]), allPages<Row>(work.api, farmPath(work, '/locations'))]); return { movements, transfers, valuations, locations }; });
+  const current = object(item); const pack = current.pack_size;
+  async function reload() { await work.refresh(); await data.reload(); }
+  return <><Text style={styles.heading}>{item.quantity} {item.unit}</Text><Facts value={current} fields={['grade', 'unit_cost', 'currency', 'pack_size', 'pack_unit']} language={language} />
+    <Choice label={c(language, 'stock')} value={mode} onChange={value => { setMode(value); setKind('purchase'); }} options={options(language, ['movements', ...(pack ? ['packs'] : []), 'transfers', ...(work.canManage ? ['valuations', 'edit'] : [])])} closeLabel={textFor(language).close} />
+    <Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void reload(); }} />
+    {['movements', 'packs'].includes(mode) ? <>
+      {work.canManage ? <><Choice label={c(language, 'kind')} value={kind} onChange={setKind} options={options(language, mode === 'packs' ? ['purchase', 'consumption', 'loss'] : ['purchase', 'consumption', 'loss', 'adjustment'])} closeLabel={textFor(language).close} /><Form key={`${mode}:${kind}`} work={work} language={language} title={c(language, 'add')} fields={[numericField(mode === 'packs' ? 'packCount' : 'quantity', true, { type: mode === 'packs' ? 'integer' : 'number', minimum: mode === 'packs' ? 1 : kind === 'adjustment' ? -1e9 : 0.000001 }), dateField('observedAt'), textField('reason', true, { maxLength: 1000 }), ...(kind === 'purchase' ? [numericField('amount'), textField('currency', false, { maxLength: 3 })] : [])]} initial={{ observedAt: farmNow(timezone) }} submit={body => { if (body.quantity === 0) throw new Error('positive_quantity_required'); return work.api.request(farmPath(work, `/stock/${item.id}/${mode === 'packs' ? 'packs' : 'movements'}`), 'POST', { ...body, kind, ...(mode === 'packs' ? {} : { unit: item.unit }) }); }} onSaved={reload} /></> : null}
+      <Records items={data.value?.movements || []} language={language} timezone={timezone} fields={['kind', 'quantity', 'unit', 'observed_at', 'note']} />
+    </> : null}
+    {mode === 'transfers' ? <>
+      {work.canManage ? <Form work={work} language={language} title={c(language, 'add')} hint={c(language, 'stockTransferHint')} fields={[selectField('destinationStockItemId', (work.snapshot?.stock || []).filter(stock => stock.id !== item.id).map(stock => ({ value: stock.id, label: `${stock.name} · ${stock.quantity} ${stock.unit}` })), true), numericField('quantity', true, { minimum: 0.000001 }), selectField('unit', stockUnits.map(value => ({ value, label: ['kg', 'g', 'l', 'ml'].includes(value) ? value : c(language, value) })), true), dateField('observedAt'), textField('reason', true)]} initial={{ unit: item.unit, observedAt: farmNow(timezone) }} submit={body => work.api.request(farmPath(work, `/stock/${item.id}/transfers`), 'POST', body)} onSaved={reload} /> : null}
+      <Records items={data.value?.transfers || []} language={language} timezone={timezone} fields={['source_quantity', 'source_unit', 'destination_quantity', 'destination_unit', 'observed_at', 'reason']}>{row => <Text style={styles.caption}>{work.snapshot?.stock.find(stock => stock.id === row.source_item_id)?.name} → {work.snapshot?.stock.find(stock => stock.id === row.destination_item_id)?.name}</Text>}</Records>
+    </> : null}
+    {mode === 'valuations' && work.canManage ? <><Form key={string(current.version)} work={work} language={language} hint={c(language, 'valuationHint')} fields={[numericField('unitCost'), textField('currency', false, { maxLength: 3 }), textField('source', true), textField('reason', true)]} initial={{ unitCost: current.unit_cost, currency: current.currency }} submit={body => work.api.request(farmPath(work, `/stock/${item.id}/valuations`), 'POST', { ...body, version: current.version, unitCost: body.unitCost ?? null, currency: body.currency ?? null })} onSaved={reload} /><Records items={data.value?.valuations || []} language={language} timezone={timezone} fields={['unit_cost', 'currency', 'source', 'reason', 'created_at']} /></> : null}
+    {mode === 'edit' && work.canManage ? <Form key={string(current.version)} work={work} language={language} includeId={false} fields={[textField('name', true, { maxLength: 100 }), textField('grade', false, { maxLength: 100 }), selectField('locationId', (data.value?.locations || []).map(location => ({ value: string(location.id), label: string(location.name) }))), numericField('packSize', false, { minimum: 0.000001 }), selectField('packUnit', stockUnits.map(value => ({ value, label: ['kg', 'g', 'l', 'ml'].includes(value) ? value : c(language, value) }))), textField('reason', true)]} initial={{ ...current, locationId: current.location_id, packSize: current.pack_size, packUnit: current.pack_unit }} submit={body => work.api.request(farmPath(work, `/stock/${item.id}`), 'PATCH', { ...body, version: current.version, grade: body.grade || '', locationId: body.locationId ?? null, packSize: body.packSize ?? null, packUnit: body.packUnit ?? null })} onSaved={reload} /> : null}
+  </>;
+}
+
+function DuplicateReview({ work, language }: { work: Workspace; language: Language }) {
+  const data = usePanel(work, 'duplicate-review', () => allPages<Row>(work.api, farmPath(work, '/record-review')));
+  return <><Notice text={c(language, 'correctionHint')} /><Records items={data.value || []} language={language} timezone={work.snapshot?.farm.timezone || 'Africa/Harare'} fields={['kind', 'observed_at', 'note', 'quantity', 'unit', 'other_observed_at']}>
+    {item => <Form work={work} language={language} fields={[selectField('action', options(language, ['annotate', 'reverse']), true), textField('reason', true)]} submit={body => work.api.request(farmPath(work, `/activities/${item.id}/corrections`), 'POST', { ...body, duplicateOfActivityId: item.possible_duplicate_id })} onSaved={async () => { await data.reload(); await work.refresh(); }} />}
+  </Records></>;
+}

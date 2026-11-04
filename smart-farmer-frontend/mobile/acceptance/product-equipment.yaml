@@ -1,0 +1,66 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "more-equipment"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-equipment"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "asset-open-${ASSET_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "asset-open-${ASSET_ID}"
+# This selector is already inside the sheet viewport; an extra centering swipe
+# can carry it behind the fixed iOS sheet header while scrolling settles.
+- scrollUntilVisible:
+    element:
+      id: "equipment-tabs"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "equipment-tabs"
+- scrollUntilVisible:
+    element:
+      id: "equipment-tabs-option-commands"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "equipment-tabs-option-commands"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "command-start"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "command-start"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "command-confirm"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "command-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "command-confirm"
+    timeout: 45000
+- takeScreenshot: simulator-command-authorized-awaiting-feedback
+- tapOn:
+    id: "sheet-close"
+- tapOn:
+    id: "sheet-close"

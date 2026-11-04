@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Smart Farmer",
+    "slug": "smart-farmer",
+    "version": "0.2.0",
+    "scheme": "smartfarmer",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "eu.onesa.smartfarmer",
+      "supportsTablet": true,
+      "infoPlist": {
+        "CFBundleLocalizations": [
+          "sn",
+          "nd"
+        ],
+        "UIFileSharingEnabled": false,
+        "LSSupportsOpeningDocumentsInPlace": false
+      }
+    },
+    "android": {
+      "package": "eu.onesa.smartfarmer",
+      "allowBackup": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "locales": {
+      "sn": "./locales/ios-sn.json",
+      "nd": "./locales/ios-nd.json"
+    },
+    "plugins": [
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true,
+          "enableFTS": false
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Tora mifananidzo yebasa repapurazi / Thatha izithombe zomsebenzi wepulazi.",
+          "photosPermission": "Sarudza mufananidzo webasa repapurazi / Khetha isithombe somsebenzi wepulazi.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Nyora shoko rezwi repapurazi / Rekhoda izwi lomsebenzi wepulazi.",
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Vhura zvinyorwa zvako zvakakiyiwa / Vula imibhalo yakho ekhiyiweyo."
+        }
+      ],
+      "expo-notifications",
+      "./plugins/with-private-storage.js",
+      "expo-video",
+      "expo-sharing",
+      "expo-document-picker"
+    ]
+  }
+}

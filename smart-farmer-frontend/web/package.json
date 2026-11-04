@@ -1,1 +1,30 @@
-{"name":"smart-farmer-web","version":"0.1.0","private":true,"type":"module","engines":{"node":">=24 <25"},"scripts":{"dev":"vite","build":"tsc -b && vite build","test":"node --test test/*.test.mjs"},"dependencies":{"react":"^19.2.0","react-dom":"^19.2.0"},"devDependencies":{"@types/react":"^19.2.0","@types/react-dom":"^19.2.0","@vitejs/plugin-react":"^5.0.4","typescript":"^5.9.3","vite":"^7.1.12"}}
+{
+  "name": "smart-farmer-web",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node test/browser.mjs",
+    "test:e2e": "node test/browser.mjs"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.16",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "playwright": "1.64.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

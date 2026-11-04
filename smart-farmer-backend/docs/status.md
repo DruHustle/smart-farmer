@@ -1,49 +1,125 @@
-# Implementation and acceptance status
+# Smart Farmer: requirements and acceptance evidence
 
-Last updated 2026-11-03. This is an early, incomplete development slice. A check is only marked passing when actually executed. No real farm data or external integrations have been configured.
+Reviewed against the complete [Codex brief](product-brief.txt), consolidated 3 November 2026. This record was updated on 4 November 2026. Baseline: `c58a01fb88a97f16eda43cf564ccf90a8981e836` on `DruHustle/smart-farmer/main`. Development and verification are on `review/smart-farmer-workflows-20261103`, [review PR #1](https://github.com/DruHustle/smart-farmer/pull/1).
 
-## Implemented so far
+The original online prototype has been extended into independently buildable web, Android/iPhone/iPad, backend/worker and edge applications. This matrix supersedes the earlier first-pass gap list: planning, fish hatching, animal trade, services, financial corrections, reports, native screens, notification delivery, private camera viewing and recovery tooling are implemented. The full browser, native Android/iPhone/iPad and container acceptance checks have passed at the exact checkpoints recorded below. Native evidence comes from executed emulator/simulator journeys, encrypted-file inspection and server outcomes.
 
-- Separate backend and web code; Node 24, React/Vite, Fastify and PostgreSQL; migrations, local database volume and backend container definition.
-- Username/password registration and sessions; farm-scoped membership authorization; basic project creation and activity recording. Optional crop facts remain unknown when absent. Idempotent activity API retries do not create duplicate activity rows.
-- A responsive web form with `sn` and `nd` language selections. Translations are preliminary and **not reviewed by native speakers**; coverage and correctness are not verified. Language selection changes the current UI but is only stored at registration, not updated per user afterward.
-- Preliminary deployment notes for Vercel and the Onesa UG Oracle VM. No deployment or physical equipment tests.
+No production deployment, real farm migration, paid service provisioning or physical equipment operation was performed. All test facts, animals, balances, messages and imagery are isolated fixtures. Unknown Lawfield facts remain unknown.
 
-No actual stock, costs, task scheduling, media, offline outbox or project updates are implemented. Activity kinds are descriptive only and do not affect inventory or money. The UI is online-only and its current observation-time entry depends on device timezone. Browser refresh loses the session. There is no iOS or Android application, edge process, simulator, worker, object-storage adapter, PWA, recovery, invitations or production security review. Do not use this prototype for farm decisions or production data.
+## Implemented workflow inventory
+
+| Area | Working scope |
+| --- | --- |
+| Identity and farm participation | One-use invitations, sign-in/recovery, language preference, membership changes, session revocation, multiple farms, owner/manager/worker/adviser permissions and shared-device isolation. Advisers can contribute permitted observations and follow-up without count, money, stock or control authority. |
+| Field work | Offline tasks and downloaded project context; crop/rain/irrigation/input/cost/animal/harvest records; separately encrypted photo/audio/PDF attachment queues; stable operation IDs; visible sync, retry and conflict states; versioned corrections and suspected-duplicate review. |
+| Crop planning | New or already-growing irrigated maize, optional unknown facts, sourced soil/farm assessments, explainable crop comparisons with eight fit criteria, budgets, configurable versioned task templates, reviewed draft/approval and impact-preview rescheduling. |
+| Chickens | Broiler placement/feed/samples/losses/partial sales/closure; continuous layer egg collection, grades/rejects/dispositions; breeder sources, incubation, hatch/failure and traceable chick transfers with cost allocation. |
+| Rabbits | Identified parents, mating, provisional follow-up, pregnancy observation, kindling and zero-live outcomes, birth/litter cohorts, fostering, weaning, grow-out, housing, losses, sale, lineage and individual history. |
+| Fish | Readiness, sourced stocking/count basis, water tests, feed, growth samples, grading/transfers, partial/final harvest and estimated-count reconciliation. Optional broodstock, spawning, eggs, failed/partial hatch, fry/nursery and grow-out preserve traceability. |
+| Existing animal operations | Sourced opening count/estimate, stage/date and stock/cost balances. Documented historical-only events preserve context without changing current stock/counts/money. Birth-cohort identities cannot exceed recorded live births across transfers. |
+| Finance and inventory | Purchases/use/losses/adjustments, stock transfers, grade/location/pack conversions, sourced valuations, budgets, receipts, shared allocations with retained replacement history, expense reversals and versioned opening-balance corrections. Revenue, cash, deposits, costs and matched unpaid obligations remain separate and currency-specific. |
+| Reports and Companion | Daily/weekly/season summaries, stock/count reconciliation, production and usage/performance/history, related cycles, Shona/Ndebele CSV/PDF exports and missing-cost disclosure. Deterministic context works without an AI provider; optional model explanations use sourced context and have no tool authority. |
+| Equipment | Unknown asset registration and relationships, documents/photos, responsibility/location, configuration, usage, maintenance/recurrence/cost, typed telemetry/freshness, commissioning and expiring audited command lifecycle. HTTP, MQTT and Modbus TCP/RTU adapters use explicit mappings and local replay/interlock protection. |
+| Private security | ONVIF/RTSP gateway path, bounded snapshots/clips and private HLS sessions; per-camera grants; true motion/person capability distinction; zones, farm-time schedules, deduplication, delayed-event timestamps, acknowledgement/escalation/incidents and quota/retention. |
+| Marketplace | Stock and live-animal listings, explicit price basis/quantity, editable public details, private-original/public-sanitized photos, search, shareable links, requests, enquiries/offers, atomic reservations, cancellation/expiry, fulfilment, manual receipts, moderation and completed-interaction reviews. A typed payment-provider boundary and authenticated unconfigured-capability route support the brief's later processor integration. |
+| Machinery and services | Discovery/listing, explicit availability/resource identity, request/quote/versioned acceptance, overlap prevention, deposits and acknowledgement, actual work, accepted/rejected amendments, task/project linkage, completion expense/provider revenue, cancellation/refund history and reviews. |
+| Weather and notifications | Manual measured rain/weather separate from sourced forecasts; opt-in Open-Meteo path; durable in-app inbox, preferences/quiet hours, ownership-verified encrypted channels, Expo push receipt processing, Resend email and idempotent SMS boundary. Acceptance, uncertain delivery and human acknowledgement remain distinct. |
+| Operations | Persistent PostgreSQL/file volumes, S3 object adapter, independent worker, health/readiness, reviewed additive migrations, quotas/retention/orphan cleanup, encrypted database/media archives, independent S3 upload/readback, scheduled isolated restore and an explicit recovery object-copy path. |
+
+Both frontends own their own localized implementations and call the versioned backend API. There is no shared application package or frontend import of backend business code. iPad uses the iOS project. Financial, commercial and control mutations require current server authorization; offline field queues cannot contain delayed actuator commands or commercial commitments.
 
 ## Acceptance matrix
 
-| # | Outcome in brief | State / evidence |
-|---|---|---|
-| 1 | Worker invitation, language, login, recovery, permissions | Not implemented; owner registration/login and API role checks only. |
-| 2 | Existing irrigated maize, unknowns, later updates | Partial: project create and null unknown fields; no edit flow. API integration test exercises nulls. |
-| 3 | Offline work, media, restart, one stock/cost effect | Not implemented; activity endpoint has idempotent IDs only. |
-| 4 | Concurrent conflicts and resolution | Not implemented; conflicting reuse of activity ID returns 409. |
-| 5 | Complete crop season, stock, sale, payment, review | Not implemented; basic field records only. |
-| 6 | Broiler lifecycle | Not implemented. |
-| 7 | Layers and egg inventory | Not implemented. |
-| 8 | Incubation and traceable chick transfers | Not implemented. |
-| 9 | Rabbit breeding, fostering, grow-out | Not implemented. |
-| 10 | Fish grow-out and reconciliation | Not implemented. |
-| 11 | Fish nursery transfer | Not implemented. |
-| 12 | Incident workflow | Not implemented. |
-| 13 | Unknown equipment and simulator | Not implemented. |
-| 14 | Safe equipment command lifecycle | Not implemented; no remote commands are exposed. |
-| 15 | Camera privacy, events, retention | Not implemented. |
-| 16 | Marketplace and atomic stock reservation | Not implemented. |
-| 17 | Services quote, booking and conflicts | Not implemented. |
-| 18 | Stock, counts, money, units and currencies | Not implemented; activity quantity is unconverted text unit only. |
-| 19 | Cross-farm access including media, exports and caches | Partial: API project isolation integration test; media, exports and caches do not exist. |
-| 20 | Language coverage, validation, notifications, offline | Not implemented completely; unreviewed preliminary web labels only. |
-| 21 | Native journeys, tablet, accessibility | Not implemented or tested. |
-| 22 | Restore database and media backups | Not implemented or tested. |
-| 23 | Existing animal opening state | Not implemented. |
-| 24 | Treatment restrictions through transfers and sales | Not implemented. |
+The numbered rows correspond exactly to section 23 of the brief. API evidence uses real isolated PostgreSQL, including concurrency and failure cases. Browser and native execution results are recorded separately below. Physical devices, provider accounts and fluent language approval are external verification inputs, not simulated successes.
 
-## Next development work
+| # | Required outcome | Implementation and automated evidence | External or environment-specific verification |
+| --- | --- | --- | --- |
+| 1 | Worker invitation, language, recovery and permissions | `test/core.test.ts`: invitation use, preferences, recovery/revocation races, role checks. Web/native identity and member administration; expanded browser invitation and worker journey. | Fluent review and actual production recovery/delivery channel activation. |
+| 2 | Already-growing maize and later confirmed facts | Unknown optional facts, as-of context, reasoned versioned edits; core/API tests and browser onboarding. Planning does not invent past events. | Farm supplies confirmed dates, area, variety and objectives when known. |
+| 3 | Offline work, media, restart and one stock/cost effect | Transactional activity/stock/expense/task API; independent durable metadata/media queues; web browser restart/upload journey; native encrypted repository tests and restart/reconcile flow. | Executed emulator/simulator results are recorded below; physical storage-pressure and poor-network field rehearsal remain release checks. |
+| 4 | Concurrent and overlapping records with review | Stale versions/idempotency conflicts, competing stock consumption, suspected-duplicate review and compensating correction retaining audit; API and browser tests. | Farm review practice determines whether an overlapping observation is a duplicate. |
+| 5 | Full crop work through sale, payment and review | Plans/assessments/tasks/observations/irrigation/incidents/partial harvest, inventory, trade, receipts, budgets/allocations/performance and exports; core/product tests and browser season journey. | Verified agronomy sources and actual field observations. |
+| 6 | Broiler lifecycle | Placement, feed, sourced/sample observations, mortality, partial/direct/market sales, payments and explicit closure; core/product tests and client forms. | Farm husbandry and measured samples; no universal performance threshold is invented. |
+| 7 | Layers and continuing egg production | Graded eggs, rejects/dispositions, stock, household consumption, sales and continuing flock; core tests/browser journey and native forms. | Actual grade terminology and flock records. |
+| 8 | Traceable chicken incubation and chicks | Egg inventory consumed once, hatch/failure, downstream identity/count/cost lineage; core/product tests and both clients. | Sourced configurable schedules and verified local procedures. |
+| 9 | Rabbits, fostering, weaning and lineage | Mating, pregnancy records, live/stillborn/failed kindling, foster/wean, identified cohorts, grow-out and lineage; core/product tests and browser journey. | Actual parents/litter observations; human review of recorded care. |
+| 10 | Fish production, partial/final harvest and estimates | Sourced water tests/calibration, feed/sample basis, transfers, graded harvest, stock/payments and estimate-aware reconciliation; core/product/browser checks. | Species/system-specific guidance and actual measurements. |
+| 11 | Optional fish hatchery/nursery path | Explicit farm opt-in, broodstock/spawn/egg disposition/hatch/nursery/grow-out; product test prevents eggs/fish or verified/estimated counts being conflated. | Farmer chooses whether this enterprise operates at the farm. |
+| 12 | Incident response and follow-up | Severity, assignment, acknowledgement, note/history, resolution, media; camera-to-incident review; deduplicated inbox/escalation. Core/operations tests and client workflows. | Actual responder/contact consent and live notification channels. |
+| 13 | Unknown equipment, simulation, maintenance and capability states | No fabricated capability; mapped simulator/physical state, typed data/freshness, configuration invalidation, recurring maintenance/usage and private documents. API/edge/browser checks. | Exact model/firmware/wiring and commissioning operator. |
+| 14 | Command success/failure/expiry/replay/reconnect | Backend and real HTTP gateway tests cover freshness/interlocks, lock-wait expiry, rotation, dispatch/ack/feedback, uncertainty and no delayed replay; HTTP/MQTT/TCP/RTU fixtures exercise approved writes. | Model-specific fail-safe behavior, manual override and physical feedback must be commissioned. |
+| 15 | Private camera states, detections, retention and event times | Session/grant rechecks on playlists/segments, cookies/headers, real-format HLS fixture, discontinuities, snapshots, event-bound replay, zones/schedules/quotas and delayed times. API/ONVIF/gateway tests and browser player. | Exact camera profile, analytics topics/zones, codec/network and physical capability verification. PTZ stays disabled without a reviewed mapping. |
+| 16 | Trade/enquiry/reservation/fulfilment/cancellation with no oversell | Atomic stock/animal/identity reservations, offer acceptance, count-loss conflict cancellation, expiry, manual payments, requests/moderation/reviews and sanitized public photos. Product/core concurrency tests and browser journey. | Production network participants and a separately configured settlement provider if required. |
+| 17 | Service quote, conflict, actual completion and cost | Versioned quote/acceptance, shared-resource locking, deposits/acknowledgement, actual work, amendments, completion/one expense, provider revenue and refunds; product/core/browser tests. | Provider capacity, agreed terms and actual work/payment facts. |
+| 18 | Stock/count/money/unit/currency reconciliation | Explicit compatible conversions, whole-count checks, valued/unknown stock, atomic transfers, corrections, matched receivables and separate currencies; 16 product workflow tests plus core tests and reports. | Sourced opening values/valuations and missing costs; full profit is never fabricated. |
+| 19 | Isolation of records, media, exports, cameras and caches | Server tenant/role enforcement, receipt-link and asset financial protection, camera grant revocation, public photo metadata stripping, per-account/origin encryption and role-change cache clearing. API/browser/repository checks. | Independent security review and practical lost/shared-device procedures. Disconnected unlocked devices cannot be remotely erased. |
+| 20 | Shona/Ndebele, validation, notifications and farm-time formatting | Independent complete catalogs and key/error/form checks; localized exports/inbox/provider states; farm-zone dates and offline language selection. Browser and native flows exercise language changes. | Fluent Shona/Northern Ndebele sign-off remains unclaimed; see language-review.md. |
+| 21 | Native Android/iOS, iPad and web accessibility | Real native projects/SQLCipher builds, native Maestro flows, iPad large-font setup; browser axe/keyboard/phone/tablet/desktop checks. Source/build/tests are separate from executed UI outcomes below. | Physical phones/tablets, screen-reader field review and signed distribution. |
+| 22 | Isolated database/media restore | AES-GCM/checksums, repeatable snapshot/media manifest, empty-target and corruption refusal, field attachment plus camera-clip verification, independent S3 readback/copy fixtures; dedicated CI storage job. | Authorized off-host destination, key custody/monitoring and recurring production restore drills. |
+| 23 | Existing animals without invented history | Sourced verified/estimated opening count/as-of/balances; manager-only historical evidence has no current economic/count effect; later ledgers reconcile; product/core/client checks. | Farm-approved opening data and supporting evidence. |
+| 24 | Configured restrictions survive partial release and transfer | Current-time scope enforcement, original restriction propagation, live/stock reservation and fulfilment checks, direct sale/harvest/transfer denial and backdating protection; core/product tests. | Authorized care instructions, scope and release periods supplied by the responsible professional. |
 
-Implement secure identity lifecycle and membership invitations; contract and farm-time handling; secure offline storage/outbox with conflict resolution and media; tasks; inventory and transaction-safe accounting; crop lifecycle; all specified chicken, rabbit and fish workflows; equipment and camera framework with simulated contracts; marketplace and services; translations reviewed by fluent speakers; native apps; backup/restore and release security review. Add outcome-based integration, browser and native tests for every acceptance row. Do not confuse preliminary scaffolding with completed workflows.
+## Verification record
 
-## Verification performed on 2026-11-03
+### Completed local checks
 
-`npm run build` passed for backend and web using Node 24.12.0. `npm test` passed against a disposable PostgreSQL 17 container: two backend tests covered password/token handling, registration, sign-in/out, cross-farm project denial, unknown crop facts, idempotent activity retry, conflicting retry and paired quantity/unit validation; one web test checked the two language options exist. This is not browser, native, accessibility, production security, backup or full end-to-end validation. The initial GitHub Actions run passed; the workflow was subsequently restored under `.github/workflows` and updated for the separate project commands.
+- Backend TypeScript build and **49 tests passed with zero failures or skips**. Database/API checks use real isolated PostgreSQL, including the cross-project input/feed restriction regression, inherited rabbit lineage, complete asset/command history pagination and payment-provider capability isolation. Three payment checks cover default refusal, test/live distinctions and unchanged manual ledgers.
+- A populated schema from published migrations 001–006 upgrades through the actual migration runner to 007/008 without losing financial entries, media, restrictions or legacy unit-price behavior. A second migration run is a no-op. Published migrations are not edited in place.
+- Edge suite: **9 tests passed**, including real HTTP, MQTT broker, Modbus TCP, pseudo-terminal Modbus RTU/CRC, ONVIF SOAP and offline camera privacy/replay fixtures.
+- Web: production build and **12 unit tests passed**; both real-browser scripts parse. Local Chromium cannot create its required socket in this execution environment, so local launch failure is not counted as browser acceptance.
+- Native: TypeScript and **20 tests passed**, including durable encrypted repository semantics, lifecycle rules, catalog/form validation, pagination, attachment retry/restart and exclusion of trade/control commands from the field outbox. Final native platform generation and both Hermes exports passed with the document picker dependency (817 iOS / 816 Android modules).
+- Actual API-generated Shona/Ndebele PDF reports were rendered and visually inspected. Both use embedded Noto Sans, readable units and missing-data explanations; original names are preserved. This is layout verification, not fluent-language approval.
+- Runtime dependency audits reported zero known vulnerabilities for backend, edge, web and native. The native production-dependency audit was repeated after adding the document picker and still reported zero.
+
+### Combined CI acceptance
+
+CI has separate API/browser, native JavaScript and storage/container jobs. The native-acceptance workflow compiles and caches matching Android APK and iOS simulator app binaries before running Maestro. Each binary cache is keyed to native dependencies/configuration/source; new JavaScript is served by the current revision.
+
+At checkpoint `7a75075edc2fb464aa93db082e09ac99f075e2cf`, [CI run 41759367935](https://github.com/DruHustle/smart-farmer/actions/runs/41759367935) passed all three jobs: API/edge/web-unit/full-browser, native JavaScript and storage/container. The [storage job](https://github.com/DruHustle/smart-farmer/actions/runs/41759367935/job/126343115751) also verified the actual backup runtime: both API/backup images built, backup Node 24.22.2, PostgreSQL 17.11 clients and Python 3.13.5 executed, and both encrypted restore tests passed with field-photo/camera-clip, tamper and non-empty-target verification. The actual backup image also restored a restricted archive fixture and refused traversal as its unprivileged runtime user.
+
+All 18 browser groups passed at that checkpoint: offline conflict recovery, crop planning/accounting, all animal lifecycles and lineage, stock/live-animal commerce, machinery/service accounting, actual authenticated live/event HLS decoding and cleanup, treatment restrictions, bilingual exports and role-change receipt privacy under a deliberately failed refresh. The four recorded axe scans had zero violations. Three scans also had no incomplete findings; the small-phone Shona scan required manual contrast review for two wrapped navigation labels over the translucent navigation background. Their calculated minimum contrast is 4.68:1, and the retained screenshot shows unobscured labels. The focused notification regression verifies that populated delivery tables have data cells and empty delivery states use text without a table. The [web verification record](../../smart-farmer-frontend/web/README.md#verified-browser-checkpoint) identifies the exact artifacts and screen coverage.
+
+The compiled native clients passed actual emulator/simulator acceptance against the isolated API and PostgreSQL. The platform checkpoints below identify the executed code and evidence; they are separate from the JavaScript tests and binary compilation.
+
+| Platform | Passing checkpoint | Executed scope |
+| --- | --- | --- |
+| Android API 36 emulator | `195d68d95f70a86c7c1b03543570407427bcee08`; [job 126336864166](https://github.com/DruHustle/smart-farmer/actions/runs/41757468117/job/126336864166), [artifact 13289923892](https://github.com/DruHustle/smart-farmer/actions/runs/41757468117/artifacts/13289923892) | All four JUnit journeys passed: login, offline/restart, reconciliation and products. All seven product subflows completed. |
+| iPhone 17 Pro and iPad Pro 13 (M5), iOS 26.4 simulators | `7a75075edc2fb464aa93db082e09ac99f075e2cf`; [job 126343115215](https://github.com/DruHustle/smart-farmer/actions/runs/41759367925/job/126343115215), [artifact 13290461914](https://github.com/DruHustle/smart-farmer/actions/runs/41759367925/artifacts/13290461914) | All six JUnit journeys passed: four iPhone journeys, iPad login and iPad product navigation. iPad ran at `accessibility-extra-large` and completed project/performance, Finance and language selection. |
+
+Both phone suites verified durable offline record saving, cold-start locking, an encrypted database header inaccessible without its key, reauthentication, exactly one reconciled server record and camera-permission denial. Both completed planning/project panels, finance, marketplace, services, authenticated HLS/event acknowledgement, Shona/Ndebele switching and explicit equipment command review. The retained product-verification outputs assert one approved plan and materialized task, one USD 12.50 expense, a 2 kg reservation priced at USD 6 while physical stock remains unchanged, a requested service booking without a completion expense, one explicit command authorization with the simulator still stopped, and an acknowledged motion event that is not relabelled as person detection. These are isolated fixture outcomes.
+
+The verified journeys include the keyboard safe-area/dismissal corrections, persisted suppression of Expo's development overlay in the disposable test installation, launch-time camera denial, and scroll targets kept inside their sheet viewport. Screen-capture protection remains enabled. Protected screenshots can be black; retained accessibility hierarchies, command traces, encrypted-file inspection and server state establish the automated evidence. Physical-device layout, screen-reader and fluent-language review remain explicit release checks.
+
+The earlier [general CI run 41753484135](https://github.com/DruHustle/smart-farmer/actions/runs/41753484135) exposed a repeated-submission timing window in the browser's allocation journey. Forms now remain inert with an accessible pending state until their complete submission handler, refresh and reset finish. The browser helper waits for that completion and asserts the exact replacement request amount before the retained-history and active-amount checks. The passing `7a75075` run verifies the intended replacement amount of 12 in the outgoing request, the reversed earlier allocation and the new active allocation.
+
+No compiled app or screenshot is substituted for an executed native workflow. No API test substitutes for browser/native interaction. Docker/pg_dump/pg_restore checks run in CI because those runtime tools are not available locally. Native simulator signing is ad-hoc and does not constitute an App Store or Play Store release.
+
+## Setup and release preparation
+
+Use Node 24 and the committed lockfiles. PostgreSQL 17 is the supported database runtime.
+
+| Component | Commands from its directory | Requirements |
+| --- | --- | --- |
+| Backend | `npm ci`, `npm run migrate`, `npm run dev`; production `npm run build`, `npm start` | Reviewed `DATABASE_URL`, server secrets and media configuration |
+| Worker | `npm run worker`; production `npm run worker:start` | Same database/schema/provider settings and private media store as API |
+| Web | `npm ci`, `npm run dev`; `npm run build`; `npm run test:e2e` | Configured API origin; browser tests use disposable PostgreSQL and real Chromium |
+| Mobile | `npm ci`, `npm test`, `npm run build`; documented Expo/Gradle/Xcode commands | Native development build with SQLCipher; Android SDK/JDK or Xcode/CocoaPods |
+| Edge | `npm ci`, `npm test`; documented simulator/equipment/camera start commands | Explicit private configuration; per-asset gateway credentials; serial/FFmpeg tools when needed |
+| Local containers | `docker compose -f smart-farmer-backend/compose.yml up --build` from root | Set required placeholders first; persistent PostgreSQL and private media volumes |
+
+Detailed commands and contracts are in the [documentation index](../../docs/README.md). The [operations guide](operations.md) covers migrations, deployment/rollback and worker/device loss. The [activation guide](operational-integrations.md) covers credentials, consent, scheduled backups, isolated restoration and storage recovery. The [hardware guide](hardware-and-commissioning.md) maps supported transports to the evidence required before physical controls can be enabled.
+
+## Remaining external inputs
+
+| Input | Exact capability affected |
+| --- | --- |
+| Confirmed farm records and sourced agronomy/veterinary instructions | Real opening counts/balances, crop/animal plans, care thresholds and restriction release rules. Software cannot invent these facts. |
+| Equipment/camera makes, models, firmware, protocol documentation, wiring and commissioning operator | Verified physical telemetry/control, supported pivot programs/PTZ, real analytics zones and network-loss/interlock behavior. |
+| Authorized host/origin, capacity and operations owner | Production HTTPS, deployment, storage limits, monitoring and rollback target. No target is invented. |
+| Independent recovery bucket/credentials, encryption-key custodian and restore schedule/monitoring | Off-host backups and recurring actual production recovery drills. Local verified tools are not a configured backup service. |
+| Weather, optional AI, push, email/SMS credentials plus farm/user consent | Live external forecasts, model explanations and external alert delivery. Core records and deterministic guidance work without them. |
+| Chosen payment provider, merchant credentials and settlement rules | The brief requires a boundary for later integration; that boundary and its unconfigured state are delivered. Processor-specific adapter/orchestration work follows that choice before automatic verified settlement is activated. Current receipts remain explicitly manual, including human acknowledgement. |
+| Signing identities, distribution accounts and physical devices | Signed Android/iOS release, store distribution and physical field acceptance beyond emulators/simulators. |
+| Fluent Shona and Zimbabwean Northern Ndebele reviewers | Terminology, dialect and comprehension approval. Catalog completeness and layout checks do not provide this approval. |
+
+The review branch records completed software verification separately from the external inputs needed for live activation. No universal hardware compatibility, production availability, native-speaker approval or bug-free claim is made.

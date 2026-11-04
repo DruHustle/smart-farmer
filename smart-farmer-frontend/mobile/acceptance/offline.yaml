@@ -1,0 +1,62 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: record-note
+- inputText: Native durable offline observation
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "record-note"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "record-note"
+    text: '^Native durable offline observation$'
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: record-save
+    direction: DOWN
+- tapOn:
+    id: record-save
+- tapOn:
+    id: tab-more
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: more-sync
+    direction: DOWN
+- assertVisible:
+    id: more-sync
+    text: '.*\(1\)$'
+- tapOn:
+    id: more-sync
+- scrollUntilVisible:
+    element:
+      text: '^Native durable offline observation$'
+    direction: DOWN
+- assertVisible: '^Native durable offline observation$'
+- takeScreenshot: durable-pending-record-before-restart
+- stopApp
+- launchApp:
+    stopApp: false
+    # Android revocation terminates a live process. Configure denial at this
+    # existing cold-start boundary, before reauthentication and reconciliation.
+    permissions:
+      all: allow
+      camera: deny
+- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: device-reauthenticate
+    timeout: 60000
+- assertVisible:
+    id: device-unlock
+- takeScreenshot: restart-keeps-private-workspace-locked

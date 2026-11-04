@@ -1,0 +1,52 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: tab-farm
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: project-open-${PROJECT_ID}
+    direction: DOWN
+- takeScreenshot: ipad-large-font-farm-overview
+- tapOn:
+    id: project-open-${PROJECT_ID}
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: project-workspace
+    direction: DOWN
+- tapOn:
+    id: project-workspace
+- tapOn:
+    id: project-workspace-option-performance
+- scrollUntilVisible:
+    element:
+      id: project-panel-performance
+    direction: DOWN
+    visibilityPercentage: 1
+- takeScreenshot: ipad-large-font-project-performance
+- tapOn:
+    id: sheet-close
+- tapOn:
+    id: tab-more
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: more-finance
+    direction: DOWN
+- tapOn:
+    id: more-finance
+- assertVisible:
+    id: finance-tabs
+- takeScreenshot: ipad-large-font-finance
+- tapOn:
+    id: sheet-close
+- runFlow: product-language.yaml
