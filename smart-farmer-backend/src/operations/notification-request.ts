@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ApiError } from "../context.js";
 import { digest, fetchJson, openSecret, safeEndpoint, sealSecret } from "./common.js";
+import { renderNotificationEmail } from "./email-template.js";
 
 // Resend retains idempotency keys for 24 hours. Leave an hour for clock/network
 // uncertainty; a late retry requires reconciliation, never a fresh delivery ID.
@@ -18,7 +19,7 @@ const requestSchema = z.object({
   preparedAt: z.iso.datetime(),
 }).strict();
 export type NotificationRequest = z.infer<typeof requestSchema>;
-export type NotificationContent = { title: string; body: string; privatePushBody?: string };
+export type NotificationContent = { title: string; body: string; privatePushBody?: string; language?: string };
 export type NotificationResult = { state: string; providerId: string | null; error?: string };
 
 export class NotificationRequestHold extends Error {
@@ -63,9 +64,14 @@ export function prepareNotificationRequest(
   const current = connection(kind);
   if (kind === "email" && !validNotificationFrom(process.env.NOTIFICATION_FROM))
     throw new ApiError("invalid_notification_sender", 409);
-  const body = JSON.stringify(kind === "email" ? {
+  const email = {
     from: process.env.NOTIFICATION_FROM, to: [address], subject: content.title, text: content.body,
-  } : kind === "push" ? {
+  };
+  const richEmail = kind === "email" ? { ...email, html: renderNotificationEmail(content, id.startsWith("verify:")) } : email;
+  // Escaping long content can expand HTML. Preserve the full plain-text message
+  // within the existing request-size limit instead of dropping accepted content.
+  const emailBody = Buffer.byteLength(JSON.stringify(richEmail)) <= 16384 ? richEmail : email;
+  const body = JSON.stringify(kind === "email" ? emailBody : kind === "push" ? {
     to: address, title: id.startsWith("verify:") ? content.title : "Smart Farmer",
     body: id.startsWith("verify:") ? content.body : (content.privatePushBody ?? "Smart Farmer"),
     data: { notificationId: id }, ttl: 3600, sound: "default",
@@ -88,7 +94,7 @@ function validateBody(request: NotificationRequest) {
     if (request.channel === "email") {
       const body = z.object({
         from: z.string().refine(validNotificationFrom), to: z.array(z.email()).length(1),
-        subject: z.string(), text: z.string(),
+        subject: z.string(), text: z.string(), html: z.string().min(1).optional(),
       }).strict().parse(raw);
       address = body.to[0];
     } else if (request.channel === "push") {
