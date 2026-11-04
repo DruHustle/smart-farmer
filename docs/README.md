@@ -6,6 +6,7 @@ The repository keeps the backend, responsive web, native Android/iPhone/iPad and
 - [Acceptance matrix and verification record](../smart-farmer-backend/docs/status.md)
 - [Architecture and data boundaries](../smart-farmer-backend/docs/architecture.md)
 - [Core API, permissions, offline IDs and units](../smart-farmer-backend/docs/core-api.md)
+- [Business workflow acceptance mapping](../smart-farmer-backend/docs/product-verification.md)
 - [Planning, finance, livestock, trading and services API](../smart-farmer-backend/docs/product-api.md)
 - [Equipment, private media and integration API](../smart-farmer-backend/docs/integrations-api.md)
 - [Farm settings, weather, notifications, cameras and operational API](../smart-farmer-backend/docs/operations-api.md)

@@ -18,7 +18,7 @@ const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_OR
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
 const children = []; let browser; let page;
-const steps = []; const diagnostics = []; let stage = 'setup';
+const steps = []; const diagnostics = []; const errors = []; let stage = 'setup';
 // Accelerated multi-day journeys share one localhost IP. Respect the real API
 // window instead of disabling rate limits or hiding HTTP failures.
 let rateRemaining = Infinity, rateResetAt = 0;
@@ -34,7 +34,7 @@ async function pace() {
   while (Date.now() < until) await new Promise(resolvePause => setTimeout(resolvePause, Math.min(59000, until-Date.now())));
   rateRemaining = Infinity;
 }
-function watchContext(context) {context.on('response', response => {if(response.url().startsWith(api+'/')) observeRate(response.headers());});}
+function watchContext(context) {context.on('response', response => {if(response.url().startsWith(api+'/')) {observeRate(response.headers());if(response.status()>=400)diagnostics.push(`http ${response.status()} ${response.request().method()} ${response.url()}`);}});context.on('page',child=>{child.on('pageerror',error=>errors.push(error.message));child.on('console',message=>{if(['error','warning'].includes(message.type()))diagnostics.push(`console ${message.type()}: ${message.text()}`);});child.on('requestfailed',request=>diagnostics.push(`requestfailed ${request.method()} ${request.url()}: ${request.failure()?.errorText}`));});}
 
 function checkpoint(name) {stage = name; console.log(`STEP: ${name}`);}
 const watchdog = setTimeout(() => {
@@ -82,10 +82,6 @@ try {
   browser = await chromium.launch({headless: true, timeout: 15000, ...((process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) ? {executablePath: process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : existsSync(chromium.executablePath()) ? {} : existsSync('/usr/bin/chromium') ? {executablePath: '/usr/bin/chromium'} : {}), args: ['--no-sandbox']});
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
-  const errors = []; page.on('pageerror', err => errors.push(err.message));
-  page.on('console', message => {if (['error', 'warning'].includes(message.type())) diagnostics.push(`console ${message.type()}: ${message.text()}`);});
-  page.on('requestfailed', request => diagnostics.push(`requestfailed ${request.method()} ${request.url()}: ${request.failure()?.errorText}`));
-  page.on('response', response => {if (response.status() >= 400) diagnostics.push(`http ${response.status()} ${response.url()}`);});
   checkpoint('Register owner and acknowledge recovery code');
   await page.goto(ui); await page.getByRole('button', {name: sn.register, exact: true}).click();
   await page.getByLabel(sn.username, {exact: true}).fill(username); await page.getByLabel(sn.password, {exact: true}).fill(password); await page.getByLabel(sn.farmName, {exact: true}).fill('Browser acceptance farm');
@@ -176,5 +172,6 @@ try {
   await writeFile(resolve(artifacts, 'results.json'), JSON.stringify({status: 'failed', stage, passed: steps, error: String(error), screenshotsAvailable: Boolean(page)}, null, 2)).catch(() => {});
   await writeFile(resolve(artifacts, 'failure-log.txt'), [String(error), `Stage: ${stage}`, ...diagnostics, ...children.map(child => child.logs())].join('\n\n')).catch(() => {});
   if (page) {await screenshot('failure.png').catch(() => {}); await writeFile(resolve(artifacts, 'failure.txt'), await page.locator('body').innerText().catch(() => '')).catch(() => {});}
+  if(browser)for(const [contextIndex,context] of browser.contexts().entries())for(const [pageIndex,failedPage] of context.pages().entries()){const name=`failure-context-${contextIndex}-page-${pageIndex}`;await failedPage.screenshot({path:resolve(artifacts,`${name}.png`),fullPage:true,timeout:5000}).catch(()=>{});await writeFile(resolve(artifacts,`${name}.txt`),await failedPage.locator('body').innerText().catch(()=>'')).catch(()=>{});}
   console.error(error); console.error(`Failure evidence: ${artifacts}`); for (const child of children) if (child.logs()) console.error(child.logs().slice(-5000)); process.exitCode = 1;
 } finally {if (browser) await browser.close(); for (const child of children) child.proc.kill('SIGTERM'); clearTimeout(watchdog);}
