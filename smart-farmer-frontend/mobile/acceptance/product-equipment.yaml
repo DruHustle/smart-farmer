@@ -23,8 +23,9 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "asset-open-${ASSET_ID}"
+# This selector is already inside the sheet viewport; an extra centering swipe
+# can carry it behind the fixed iOS sheet header while scrolling settles.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "equipment-tabs"
     direction: DOWN
