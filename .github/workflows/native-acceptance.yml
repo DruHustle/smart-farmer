@@ -8,11 +8,6 @@ on:
     paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
 permissions:
   contents: read
-concurrency:
-  group: native-acceptance-${{ github.ref }}
-  # Let a costly native compile finish and populate its dependency-keyed binary cache.
-  # GitHub evaluates PR path filters over the whole PR, including web-only follow-ups.
-  cancel-in-progress: false
 env:
   CI: 'true'
   EXPO_NO_TELEMETRY: '1'
@@ -26,6 +21,10 @@ jobs:
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # Preserve each platform's compile/cache without blocking the other platform's UI feedback.
+    concurrency:
+      group: native-android-${{ github.ref }}
+      cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://smart_farmer:test-only@127.0.0.1:5432/smart_farmer_test
     services:
@@ -127,6 +126,9 @@ jobs:
   ios:
     runs-on: macos-26
     timeout-minutes: 75
+    concurrency:
+      group: native-ios-${{ github.ref }}
+      cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
     steps:

@@ -5,7 +5,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
-FROM postgres:17-bookworm
+FROM postgres:17-trixie
 RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
@@ -14,5 +14,6 @@ COPY --from=build --chown=postgres:postgres /app/dist ./dist
 COPY --chown=postgres:postgres scripts ./scripts
 ENV NODE_ENV=production
 USER postgres
+RUN python3 scripts/check-backup-runtime.py
 ENTRYPOINT ["node", "scripts/offhost-backup.mjs"]
 CMD ["--drill"]

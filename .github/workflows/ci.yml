@@ -112,6 +112,8 @@ jobs:
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
           docker run --rm --entrypoint node smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
+          docker run --rm --entrypoint pg_restore smart-farmer-backup:ci --version
+          docker run --rm --entrypoint python3 smart-farmer-backup:ci --version
       - name: Use matching PostgreSQL 17 backup clients
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
