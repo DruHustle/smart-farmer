@@ -142,8 +142,9 @@ appId: eu.onesa.smartfarmer
 - assertVisible: "Ongorora mutero nemaoko."
 - assertNotVisible:
     id: "invoice-confirm-draft"
+# Stop when visible: forced screen centering can scroll this control behind the sheet header.
 - scrollUntilVisible:
-    centerElement: true
+    centerElement: false
     element:
       id: "invoice-line-0-tax"
     direction: DOWN
