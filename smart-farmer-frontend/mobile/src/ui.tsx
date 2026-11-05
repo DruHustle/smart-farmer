@@ -73,7 +73,7 @@ export function Notice({ text, error = false }: { text: string; error?: boolean 
 
 export function Sheet({ title, visible, onClose, closeLabel, keyboardDismissLabel, children, dismissible = true }: { title: string; visible: boolean; onClose: () => void; closeLabel: string; keyboardDismissLabel?: string; children: ReactNode; dismissible?: boolean }) {
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen">
-    <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modal}>
+    <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modal}>
       <View style={[styles.between, styles.modalHeader]}><Text style={[styles.heading, { flex: 1 }]} accessibilityRole="header">{title}</Text>{dismissible ? <Button testID="sheet-close" title={closeLabel} onPress={onClose} secondary /> : null}</View>
       <ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>{children}</ScrollView>
       {visible && keyboardDismissLabel ? <KeyboardDismissButton label={keyboardDismissLabel} /> : null}
