@@ -27,15 +27,15 @@ export function AccountingDocuments(props: Props) {
     <AccountingCapture {...props} onSelected={() => { void work.reloadLocal(); }} />
     {attachments.map(item => <Card key={item.id} title={item.filename}>
       <Text style={styles.text}>{c(language, item.state)} · {Math.ceil(item.sizeBytes / 1024)} KB · {c(language, 'attempts')}: {item.attempts}/5</Text>
-      {item.dataBase64 && item.mimeType.startsWith('image/') ? <Image source={{ uri: `data:${item.mimeType};base64,${item.dataBase64}` }} resizeMode="contain" style={{ width: '100%', height: 180 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}
+      {item.dataBase64 && item.mimeType.startsWith('image/') ? <Image testID="invoice-local-source-image" source={{ uri: `data:${item.mimeType};base64,${item.dataBase64}` }} resizeMode="contain" style={{ width: '100%', height: 180 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}
       {item.lastError ? <Notice error text={errorText(language, new Error(item.lastError))} /> : null}
       {item.state === 'draft' || item.state === 'pending' && item.attempts < 5 ? <Button testID={`invoice-upload-${item.id}`} title={c(language, 'uploadAndExtract')} disabled={!work.online} busy={work.busy} onPress={() => { void upload(item.id, item.state === 'draft'); }} /> : null}
       {item.state === 'draft' ? <Button secondary title={t.remove} onPress={() => { void work.repository.removeDraftAttachment(work.farmId, item.id).then(() => work.reloadLocal()).catch(work.setError); }} /> : null}
     </Card>)}
     {work.progress ? <Text style={styles.text}>{work.progress.percent}%</Text> : null}
-    <Notice text={c(language, 'scanQueueHint')} /><Button secondary title={t.refresh} busy={data.loading || work.busy} onPress={() => { void data.reload(); }} />
+    <Notice text={c(language, 'scanQueueHint')} /><Button testID="invoice-documents-refresh" secondary title={t.refresh} busy={data.loading || work.busy} onPress={() => { void data.reload(); }} />
     {!(data.value?.length || attachments.length) ? <Text style={styles.muted}>{t.empty}</Text> : null}
-    {(data.value || []).slice(0, visible).map(document => <Card key={document.id} title={document.filename}><Text testID={`invoice-scan-${document.state}`} style={styles.text}>{c(language, document.state)}</Text><Text style={styles.caption}>{document.createdAt}</Text><Button secondary title={c(language, 'reviewExtraction')} onPress={() => setSelected(document)} /></Card>)}
+    {(data.value || []).slice(0, visible).map(document => <Card key={document.id} title={document.filename}><Text testID={`invoice-scan-${document.state}`} style={styles.text}>{c(language, document.state)}</Text><Text style={styles.caption}>{document.createdAt}</Text><Button testID={`invoice-scan-review-${document.id}`} secondary title={c(language, 'reviewExtraction')} onPress={() => setSelected(document)} /></Card>)}
     {(data.value?.length || 0) > visible ? <Button secondary title={c(language, 'loadMore')} onPress={() => setVisible(value => value + 25)} /> : null}
     <Sheet title={c(language, 'reviewExtraction')} visible={Boolean(selected)} onClose={() => setSelected(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{selected ? <AccountingDocumentDetail key={selected.id} {...props} id={selected.id} initial={selected} onDraft={draft => { setSelected(null); props.onDraft(draft); }} onChanged={() => { void data.reload(); }} /> : null}</Sheet>
   </>;
@@ -69,7 +69,7 @@ export function AccountingDocumentDetail({ work, language, onNativePrompt, onDra
       <Button secondary title={c(language, 'extractedText')} onPress={() => setTextOpen(true)} />
     </> : null}
     {document.state === 'ready' || document.state === 'failed' ? <Button testID="invoice-use-extraction" title={c(language, extraction ? 'useReviewedValues' : 'manualEntry')} onPress={() => onDraft(extractionDraft(document, Crypto.randomUUID(), Crypto.randomUUID, projectId || null))} /> : null}
-    <Sheet title={c(language, 'sourceDocument')} visible={Boolean(photo)} onClose={() => setPhoto(null)} closeLabel={t.close}>{photo ? <Image source={{ uri: photo }} resizeMode="contain" style={{ width: '100%', height: 480 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}</Sheet>
+    <Sheet title={c(language, 'sourceDocument')} visible={Boolean(photo)} onClose={() => setPhoto(null)} closeLabel={t.close}>{photo ? <Image testID="invoice-source-image" source={{ uri: photo }} resizeMode="contain" style={{ width: '100%', height: 480 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}</Sheet>
     <Sheet title={c(language, 'extractedText')} visible={textOpen} onClose={() => setTextOpen(false)} closeLabel={t.close}><Text selectable style={styles.text}>{extraction?.text || t.empty}</Text></Sheet>
   </>;
 }

@@ -3,6 +3,8 @@ set -euo pipefail
 NATIVE_PLATFORM="${1:?Pass android or ios}"
 case "$NATIVE_PLATFORM" in android|ios) ;; *) exit 2 ;; esac
 mkdir -p "$RUNNER_TEMP/native-evidence"
+# API and the intake journey's ordinary worker share private storage outside artifacts.
+export MEDIA_ROOT="$RUNNER_TEMP/native-private-media"
 npm run migrate --prefix smart-farmer-backend
 npm run build --prefix smart-farmer-backend
 (cd smart-farmer-backend && node dist/server.js) > "$RUNNER_TEMP/native-evidence/api.log" 2>&1 &

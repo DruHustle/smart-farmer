@@ -57,6 +57,8 @@ jobs:
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install local invoice extraction tools
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr tesseract-ocr-eng poppler-utils
       - name: Cache Android compiler dependencies for this native configuration
         uses: actions/cache@v4
         with:
@@ -154,6 +156,8 @@ jobs:
           "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install local invoice extraction tools
+        run: brew install tesseract poppler
       - name: Bind simulator cache to the active Xcode and SDK
         id: ios-toolchain
         run: |

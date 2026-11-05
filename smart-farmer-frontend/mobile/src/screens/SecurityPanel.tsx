@@ -5,6 +5,7 @@ import { Action, c, dateField, Facts, farmPath, Form, memberOptions, numericFiel
 import { allPages, object, rows, string, type FormField, type Row } from '../product';
 import { ApiError } from '../api';
 import { textFor } from '../i18n';
+import { observePrivatePlayback, type PrivatePlaybackState } from '../private-playback';
 import { farmNow, formatFarmTime } from '../time';
 import type { Language, Session } from '../types';
 import { Button, Card, Choice, Notice, Sheet, styles } from '../ui';
@@ -50,17 +51,14 @@ export function SecurityPanel({ work, language }: Props) {
 }
 
 function PrivateVideo({ work, language, session }: Props & { session: CameraSession }) {
-  const [expired, setExpired] = useState(false); const [failed, setFailed] = useState(false);
+  const [playback, setPlayback] = useState<PrivatePlaybackState>('loading');
   const player = useVideoPlayer({ uri: work.session.origin + session.playlistPath, headers: { Authorization: `Bearer ${session.token}` }, contentType: 'hls', useCaching: false }, player => { player.loop = false; player.play(); });
-  const [playbackStatus, setPlaybackStatus] = useState(() => player.status);
   useEffect(() => {
-    setPlaybackStatus(player.status);
-    const timer = setTimeout(() => { player.pause(); setExpired(true); }, Math.max(0, Date.parse(session.expiresAt) - Date.now()));
+    const stop = observePrivatePlayback(player, Date.parse(session.expiresAt), setPlayback);
     const listener = AppState.addEventListener('change', state => { if (state !== 'active') player.pause(); });
-    const errors = player.addListener('statusChange', event => { setPlaybackStatus(event.status); if (event.status === 'error') setFailed(true); });
-    return () => { clearTimeout(timer); listener.remove(); errors.remove(); };
-  }, [session.id, player]);
-  return <><Notice text={c(language, 'cameraSessionHint')} /><Text style={styles.caption}>{c(language, session.mode)} · {formatFarmTime(session.expiresAt, zone(work), language)}</Text>{expired || failed ? <View testID="camera-player-error" collapsable={false}><Notice text={c(language, expired ? 'expired' : 'camera_unavailable')} /></View> : <><Text testID={playbackStatus === 'readyToPlay' ? 'camera-player-ready' : 'camera-player-loading'} accessibilityLiveRegion="polite" style={styles.caption}>{playbackStatus === 'readyToPlay' ? c(language, 'playbackReady') : textFor(language).loading}</Text><VideoView player={player} style={{ width: '100%', height: 300 }} nativeControls allowsPictureInPicture={false} contentFit="contain" accessibilityLabel={c(language, 'live')} /></>}</>;
+    return () => { stop(); listener.remove(); };
+  }, [session.id, session.expiresAt, player]);
+  return <><Notice text={c(language, 'cameraSessionHint')} /><Text style={styles.caption}>{c(language, session.mode)} · {formatFarmTime(session.expiresAt, zone(work), language)}</Text>{playback === 'expired' || playback === 'failed' ? <View testID="camera-player-error" collapsable={false}><Notice text={c(language, playback === 'expired' ? 'expired' : 'camera_unavailable')} /></View> : <><Text testID={playback === 'ready' || playback === 'completed' ? 'camera-player-ready' : 'camera-player-loading'} accessibilityLiveRegion="polite" style={styles.caption}>{playback === 'completed' ? c(language, 'playbackCompleted') : playback === 'ready' ? c(language, 'playbackReady') : textFor(language).loading}</Text><VideoView player={player} style={{ width: '100%', height: 300 }} nativeControls allowsPictureInPicture={false} contentFit="contain" accessibilityLabel={c(language, 'live')} /></>}</>;
 }
 
 function CameraSettings({ work, language, camera, onSaved }: Props & { camera: Row; onSaved: () => Promise<void> }) {
