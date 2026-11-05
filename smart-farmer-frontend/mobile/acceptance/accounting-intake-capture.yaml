@@ -21,9 +21,9 @@ appId: eu.onesa.smartfarmer
       platform: Android
     commands:
       - assertVisible:
-          id: com.google.android.providers.media.module:id/icon_thumbnail
+          text: '^Photo taken on .+$'
       - tapOn:
-          id: com.google.android.providers.media.module:id/icon_thumbnail
+          text: '^Photo taken on .+$'
           index: 0
 - runFlow:
     when:
