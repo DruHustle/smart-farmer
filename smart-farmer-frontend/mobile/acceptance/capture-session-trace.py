@@ -68,29 +68,53 @@ class Receipts:
 
 def stop_capture_group(child):
     # The leader may already have exited while an owned descendant still holds stdout.
-    try:
-        os.killpg(child.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    deadline = time.monotonic() + 2
-    while True:
-        child.poll()
+    def signal_group(value):
         try:
-            os.killpg(child.pid, 0)
+            os.killpg(child.pid, value)
         except ProcessLookupError:
+            return 'gone'
+        except PermissionError:
+            return 'denied'
+        except OSError:
+            return 'failed'
+        return 'sent'
+
+    result = signal_group(signal.SIGTERM)
+    deadline = time.monotonic() + 2
+    while result == 'sent':
+        child.poll()
+        result = signal_group(0)
+        if result != 'sent':
             break
         if time.monotonic() >= deadline:
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            result = signal_group(signal.SIGKILL)
             break
         time.sleep(0.025)
+    # A denied group must not be probed/signalled again or treated as cleaned up.
+    failure = {'denied': 'stop_denied', 'failed': 'stop_failed'}.get(result)
     try:
         child.wait(timeout=2)
-        return True
     except subprocess.TimeoutExpired:
-        return False
+        return failure or 'stop_timeout'
+    return failure
+
+
+def finish_capture(child, receipts, reason):
+    cleanup_reason = 'stop_failed'
+    try:
+        cleanup_reason = stop_capture_group(child) or reason
+    except Exception:
+        # Retain a fixed failure category, never an exception's private details.
+        pass
+    finally:
+        final_reason = cleanup_reason if cleanup_reason not in ('stopped', 'stream_ended') else 'close_failed'
+        try:
+            child.stdout.close()
+            final_reason = cleanup_reason
+        except Exception:
+            pass
+        finally:
+            receipts.finish(final_reason)
 
 
 def capture(device, path):
@@ -134,10 +158,7 @@ def capture(device, path):
                             receipts.accept(line.decode('utf-8', errors='replace'))
         finally:
             reason = 'stopped' if stopping else 'stream_ended'
-            if not stop_capture_group(child):
-                reason = 'stop_timeout'
-            child.stdout.close()
-            receipts.finish(reason)
+            finish_capture(child, receipts, reason)
 
 
 if __name__ == '__main__':
