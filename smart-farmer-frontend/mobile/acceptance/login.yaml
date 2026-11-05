@@ -1,5 +1,14 @@
 appId: eu.onesa.smartfarmer
 ---
+- runFlow:
+    label: Activate the standalone iOS application after XCTest driver startup
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions:
+            all: unset
 # Keep Expo's debug-only floating touch target away from real app controls.
 # The launcher preference also persists across this disposable install's restarts.
 # iOS runs the self-contained Release bundle; only Android needs Expo launcher UI.
