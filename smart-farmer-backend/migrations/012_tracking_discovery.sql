@@ -12,7 +12,8 @@ CREATE TABLE livestock_trackers (
   FOREIGN KEY(farm_id,project_id) REFERENCES projects(farm_id,id),
   FOREIGN KEY(farm_id,animal_id) REFERENCES animal_identities(farm_id,id),
   CHECK ((provider='manual_reference' AND credential_hash IS NULL) OR
-         (provider<>'manual_reference' AND ((status='revoked' AND credential_hash IS NULL) OR credential_hash ~ '^[a-f0-9]{64})
+         (provider<>'manual_reference' AND
+           ((status='revoked' AND credential_hash IS NULL) OR credential_hash ~ '^[a-f0-9]{64}$'))
 );
 CREATE INDEX livestock_trackers_project ON livestock_trackers(farm_id,project_id);
 CREATE TABLE livestock_tracker_readings (
