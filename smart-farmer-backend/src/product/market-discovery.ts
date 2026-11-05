@@ -73,7 +73,7 @@ export function registerMarketDiscovery(app:FastifyInstance,ctx:Context) {
   app.put('/v1/market/follows/:sellerFarmId',async(req,reply)=>{
     const user=await actor(ctx,req,reply);if(!user)return;
     const {sellerFarmId}=z.object({sellerFarmId:uuid}).parse(req.params);
-    const farm=await ctx.db.query('SELECT id FROM farms WHERE id=$1',[sellerFarmId]);
+    const farm=await ctx.db.query("SELECT f.id FROM farms f WHERE f.id=$1 AND EXISTS (SELECT 1 FROM market_listings l WHERE l.farm_id=f.id AND l.status='active' AND (l.expires_at IS NULL OR l.expires_at>now()))",[sellerFarmId]);
     if(!farm.rowCount)throw new ApiError('seller_not_found',404);
     if((await ctx.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[sellerFarmId,user])).rowCount)
       throw new ApiError('cannot_follow_own_farm');
@@ -88,7 +88,7 @@ export function registerMarketDiscovery(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/market/sellers/:sellerFarmId',async(req)=>{
     const {sellerFarmId}=z.object({sellerFarmId:uuid}).parse(req.params);
-    const r=await ctx.db.query("SELECT f.id,f.name AS seller_name,(SELECT count(*)::int FROM market_listings l WHERE l.farm_id=f.id AND l.status='active' AND (l.expires_at IS NULL OR l.expires_at>now())) AS active_listings FROM farms f WHERE f.id=$1",[sellerFarmId]);
+    const r=await ctx.db.query("SELECT f.id,f.name AS seller_name,(SELECT count(*)::int FROM market_listings l WHERE l.farm_id=f.id AND l.status='active' AND (l.expires_at IS NULL OR l.expires_at>now())) AS active_listings FROM farms f WHERE f.id=$1 AND EXISTS (SELECT 1 FROM market_listings l WHERE l.farm_id=f.id AND l.status=\'active\' AND (l.expires_at IS NULL OR l.expires_at>now()))",[sellerFarmId]);
     if(!r.rowCount)throw new ApiError('seller_not_found',404);
     return r.rows[0];
   });

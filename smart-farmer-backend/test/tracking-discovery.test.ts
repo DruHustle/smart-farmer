@@ -90,6 +90,8 @@ test('market discovery supports scoped favourites, saved searches, follows and m
  const f=await fixture();
  try{
    const seller='/v1/farms/'+f.owner.farmId;
+   assert.equal((await f.request('GET','/v1/market/sellers/'+f.owner.farmId)).statusCode,404,'Private farms without public listings stay undiscoverable');
+   assert.equal((await f.request('PUT','/v1/market/follows/'+f.owner.farmId,undefined,f.buyer.headers)).statusCode,404,'Cannot follow an unpublished farm');
    const saved=await f.request('POST','/v1/market/saved-searches',{id:randomUUID(),query:'maize',category:'produce',area:'Harare',currency:'USD',minPrice:1,maxPrice:5,condition:'',notify:true},f.buyer.headers);
    assert.equal(saved.statusCode,201,saved.body);
    const stock=await f.request('POST',seller+'/stock',{id:randomUUID(),name:'Stored maize',unit:'kg',quantity:100});
@@ -97,6 +99,9 @@ test('market discovery supports scoped favourites, saved searches, follows and m
    const makeListing=(title:string,price:number)=>({id:randomUUID(),stockItemId:stock.json().id,animalProjectId:null,title,quantity:10,price,currency:'USD',collectionArea:'Harare',category:'produce',condition:'fresh',grade:'A',terms:'Collect at market'});
    const listing=await f.request('POST',seller+'/listings',makeListing('Fresh maize',3));
    assert.equal(listing.statusCode,201,listing.body);
+   const publicSeller=await f.request('GET','/v1/market/sellers/'+f.owner.farmId);
+   assert.equal(publicSeller.statusCode,200,publicSeller.body);
+   assert.equal(publicSeller.json().active_listings,1);
    const list=await f.request('GET','/v1/market/listings?area=harare&minPrice=2&maxPrice=4&currency=USD&condition=fresh');
    assert.equal(list.statusCode,200,list.body);
    assert.ok(list.json().items.some((x:any)=>x.id===listing.json().id));
