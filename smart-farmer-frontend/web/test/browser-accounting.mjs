@@ -13,7 +13,7 @@ export async function accountingJourneys({page, context, browser, api, ui, apiCa
   const section = title => page.locator('section.panel').filter({has: page.getByRole('heading', {name: title, exact: true})}).first();
   async function fill(parent, fields) {await pace(); for (const [name, value] of Object.entries(fields)) {const field = parent.locator(`[name="${name}"]`); const tag = await field.evaluate(el => el.tagName); if (tag === 'SELECT') await field.selectOption(String(value)); else await field.fill(String(value));}}
   async function tab(title) {await pace(); await page.locator('.accounting-tabs').getByRole('button', {name: title, exact: true}).click();}
-  async function expand(parent, title) {const details = parent.locator('details').filter({has: parent.getByText(title, {exact: true})}).first(); const summary = details.locator(':scope > summary'); if (await details.getAttribute('open') === null) await summary.click(); return details;}
+  async function expand(parent, title) {const details = parent.locator('details').filter({has: page.getByText(title, {exact: true})}).first(); const summary = details.locator(':scope > summary'); if (await details.getAttribute('open') === null) await summary.click(); return details;}
   async function submit(parent, path, {method = 'POST', title = sn.save} = {}) {
     await pace();
     const form = parent.locator('form').first();

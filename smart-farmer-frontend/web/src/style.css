@@ -49,5 +49,6 @@
   body:has(.invoice-paper) .invoice-paper,body:has(.invoice-paper) .invoice-paper *{visibility:visible}
   body:has(.invoice-paper) .invoice-paper{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;border:0;border-radius:0;box-shadow:none;color:#000}
   .invoice-paper .table-scroll{overflow:visible}.invoice-paper .table-scroll table{min-width:0;font-size:9pt}.invoice-paper .table-scroll th,.invoice-paper .table-scroll td{padding:8px 6px 8px 0}
+  .invoice-scroll-hint{display:none}
   .invoice-paper .invoice-parties{grid-template-columns:1fr 1fr}.invoice-paper tr,.invoice-paper .invoice-paper-heading,.invoice-paper .invoice-totals,.invoice-paper .invoice-paper-notes{break-inside:avoid}.invoice-paper thead{display:table-header-group}.invoice-paper .badge{border:1px solid #555}
 }

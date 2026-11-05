@@ -133,6 +133,7 @@ export const accountingPhrases = {
   invoiceMinorUnit: ['Nhamba dziri mushure mepoint mumari', 'Inani lezinombolo ngemva kwephoyinti emalini'],
   invoiceMinorUnitHint: ['Sarudza maererano nemari iri pagwaro. Mari dzakasiyana hadzibatanidzwi.', 'Khetha ngokwemali eku-invoyisi. Imali ezitshiyeneyo azihlanganiswa.'],
   invoiceLineItems: ['Zvinhu zviri pagwaro', 'Izinto eziku-invoyisi'],
+  invoiceScrollHint: ['Tsveta tafura kuruboshwe kana kurudyi kuti uone makoramu ose nemari yakazara. Mari yose yegwaro iri pazasi.', 'Shelelisela ithebula kwesokunxele kumbe kwesokudla ukuze ubone amakholomu wonke lemali epheleleyo. Isamba se-invoyisi singaphansi.'],
   invoiceLine: ['Chinhu', 'Into'],
   addInvoiceLine: ['Wedzera chimwe chinhu', 'Engeza enye into'],
   removeInvoiceLine: ['Bvisa chinhu ichi', 'Susa into le'],

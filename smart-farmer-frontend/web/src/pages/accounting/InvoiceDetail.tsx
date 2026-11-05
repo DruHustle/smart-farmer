@@ -1,4 +1,4 @@
-import type {InputHTMLAttributes} from 'react';
+import {useId, type InputHTMLAttributes} from 'react';
 import {useFarm} from '../../context';
 import {amountToMinor, invoiceMoney} from '../../lib/accounting';
 import {useResource} from '../../lib/resources';
@@ -141,6 +141,7 @@ function PaymentRecord({invoice, payment, accepted}: {invoice: AccountingInvoice
 
 export function InvoicePaper({invoice, status}: {invoice: AccountingInvoiceSnapshot; status: InvoiceStatus}) {
   const {t, lang} = useFarm();
+  const scrollHintId = useId();
   const money = (value: string) => invoiceMoney(value, invoice.currency, invoice.minorUnit, lang);
   const purchase = invoice.kind.startsWith('purchase');
   const proportional = invoice.rounding === 'credit_proportional';
@@ -151,7 +152,8 @@ export function InvoicePaper({invoice, status}: {invoice: AccountingInvoiceSnaps
       <section><h3>{purchase ? t.invoiceSupplier : t.invoiceCustomer}</h3><strong>{invoice.party.name}</strong>{invoice.party.address && <p className="preserve-lines">{invoice.party.address}</p>}{invoice.party.email && <p>{invoice.party.email}</p>}{invoice.party.phone && <p>{invoice.party.phone}</p>}{invoice.party.taxNumber && <p>{t.invoiceTaxId}: {invoice.party.taxNumber}</p>}</section>
     </div>
     <dl className="facts-grid"><div><dt>{t.invoiceIssueDate}</dt><dd>{displayDate(invoice.issueDate, lang)}</dd></div><div><dt>{t.invoiceDueDate}</dt><dd>{invoice.dueDate ? displayDate(invoice.dueDate, lang) : '—'}</dd></div>{invoice.postingDate && invoice.postingDate !== invoice.issueDate && <div><dt>{t.accountingJournalDate}</dt><dd>{displayDate(invoice.postingDate, lang)}</dd></div>}{invoice.reference && <div><dt>{purchase ? t.invoiceReference : t.invoiceCustomerReference}</dt><dd>{invoice.reference}</dd></div>}<div><dt>{t.currency}</dt><dd>{invoice.currency}</dd></div></dl>
-    <div className="table-scroll" role="region" aria-label={t.invoiceLineItems} tabIndex={0}><table><caption>{t.invoiceLineItems}</caption><thead><tr><th scope="col">{t.description}</th>{proportional ? <th scope="col">{t.invoiceCreditNet}</th> : <><th scope="col">{t.quantity}</th><th scope="col">{t.invoiceUnitPrice}</th><th scope="col">{t.invoiceDiscount}</th></>}<th scope="col">{proportional ? t.invoiceOriginalTax : t.invoiceTaxRate}</th><th scope="col">{t.invoiceTaxTotal}</th><th scope="col">{t.invoiceTotal}</th></tr></thead><tbody>{invoice.lines.map(line => <tr key={line.id}><td>{line.description}</td>{proportional ? <td>{money(line.netMinor)}</td> : <><td>{line.quantity}</td><td>{invoice.currency} {line.unitPrice}</td><td>{money(line.discountMinor)}</td></>}<td>{line.taxRateBps / 100}%</td><td>{money(line.taxMinor)}</td><td>{money(line.totalMinor)}</td></tr>)}</tbody></table></div>
+    <p id={scrollHintId} className="invoice-scroll-hint muted small">{t.invoiceScrollHint}</p>
+    <div className="table-scroll" role="region" aria-label={t.invoiceLineItems} aria-describedby={scrollHintId} tabIndex={0}><table><caption>{t.invoiceLineItems}</caption><thead><tr><th scope="col">{t.description}</th>{proportional ? <th scope="col">{t.invoiceCreditNet}</th> : <><th scope="col">{t.quantity}</th><th scope="col">{t.invoiceUnitPrice}</th><th scope="col">{t.invoiceDiscount}</th></>}<th scope="col">{proportional ? t.invoiceOriginalTax : t.invoiceTaxRate}</th><th scope="col">{t.invoiceTaxTotal}</th><th scope="col">{t.invoiceTotal}</th></tr></thead><tbody>{invoice.lines.map(line => <tr key={line.id}><td>{line.description}</td>{proportional ? <td>{money(line.netMinor)}</td> : <><td>{line.quantity}</td><td>{invoice.currency} {line.unitPrice}</td><td>{money(line.discountMinor)}</td></>}<td>{line.taxRateBps / 100}%</td><td>{money(line.taxMinor)}</td><td>{money(line.totalMinor)}</td></tr>)}</tbody></table></div>
     <dl className="invoice-totals"><div><dt>{t.invoiceSubtotal}</dt><dd>{money(invoice.totals.subtotalMinor)}</dd></div><div><dt>{t.invoiceDiscount}</dt><dd>{money(invoice.totals.discountMinor)}</dd></div><div><dt>{t.invoiceTaxTotal}</dt><dd>{money(invoice.totals.taxMinor)}</dd></div><div className="invoice-grand-total"><dt>{t.invoiceTotal}</dt><dd>{money(invoice.totals.totalMinor)}</dd></div></dl>
     {invoice.taxBreakdown.length > 0 && <details className="invoice-tax-breakdown"><summary>{t.invoiceTaxTotal}</summary>{invoice.taxBreakdown.map(row => <p key={row.rateBps}>{row.rateBps / 100}% · {money(row.taxableMinor)} → {money(row.taxMinor)}</p>)}</details>}
     {invoice.notes && <section className="invoice-paper-notes"><h3>{t.note}</h3><p className="preserve-lines">{invoice.notes}</p></section>}
