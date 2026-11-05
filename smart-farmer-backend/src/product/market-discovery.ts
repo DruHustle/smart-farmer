@@ -20,7 +20,7 @@ export function registerMarketDiscovery(app:FastifyInstance,ctx:Context) {
   app.get('/v1/market/favorites',async(req,reply)=>{
     const user=await actor(ctx,req,reply);if(!user)return;
     const q=list.parse(req.query);
-    const r=await ctx.db.query(`${publicSelect} JOIN market_favorites f ON f.listing_id=l.id WHERE ${publicWhere} AND f.user_id=$1 ORDER BY f.created_at DESC LIMIT $2`,[user,q.limit]);
+    const r=await ctx.db.query(`${publicSelect} JOIN market_favorites fav ON fav.listing_id=l.id WHERE ${publicWhere} AND fav.user_id=$1 ORDER BY fav.created_at DESC LIMIT $2`,[user,q.limit]);
     return {items:r.rows};
   });
   app.put('/v1/market/favorites/:listingId',async(req,reply)=>{

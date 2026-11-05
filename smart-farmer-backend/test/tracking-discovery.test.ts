@@ -51,7 +51,7 @@ test('GPS tracker ingest is private, signed, replay-safe and geofenced with stal
    assert.equal(roster.statusCode,200,roster.body);
    assert.equal(roster.json().items[0].coverage,'herd_representative');
    assert.equal(roster.body.includes(secret),false,'ingest key is never returned in list');
-   assert.equal((await f.request('GET','/v1/farms/'+f.buyer.farmId+'/trackers')).json().items.length,0);
+   assert.equal((await f.request('GET','/v1/farms/'+f.buyer.farmId+'/trackers',undefined,f.buyer.headers)).json().items.length,0);
    assert.equal((await f.request('GET',farm+'/trackers',undefined,f.buyer.headers)).statusCode,404);
    const endpoint='/v1/trackers/'+trackerId+'/observations';
    const first={id:randomUUID(),observedAt:new Date().toISOString(),latitude:-17.82,longitude:31.05,accuracyMeters:5,batteryPercent:80,quality:'simulated'};
