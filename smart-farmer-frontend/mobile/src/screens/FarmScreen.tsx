@@ -9,6 +9,7 @@ import type { Workspace } from '../use-workspace';
 import { AnimalEventForm, type AnimalIdentity } from './AnimalEventForm';
 import { ProjectForm } from './ProjectForm';
 import { ProjectWorkspace } from './ProjectWorkspace';
+import {HerdTrackingPanel} from './HerdTrackingPanel';
 import { StockMovements } from './FinancePanel';
 import { c, Form, numericField, textField, selectField, projectOptions, usePanel, farmPath, options } from '../completion-ui';
 import { allPages, string, type Row } from '../product';
@@ -100,6 +101,7 @@ export function FarmScreen({ work, language, onNativePrompt }: { work: Workspace
     <View style={styles.between}><Text style={styles.title}>{t.farm}</Text>{work.canManage ? <Button title={filter === 'stock' ? t.newStock : t.newProject} onPress={() => { work.setError(null); filter === 'stock' ? setStockCreate(true) : setCreate(true); }} /> : null}</View>
     <View style={styles.row}>{(['crops', 'animals', 'stock'] as const).map(value => <Button key={value} title={t[value]} secondary={filter !== value} onPress={() => setFilter(value)} />)}</View>
     <Text style={styles.caption}>{c(language, 'completeCachedHistory')}</Text>
+    {filter==='animals'&&<HerdTrackingPanel work={work} language={language}/>}
     <View style={styles.grid}>
       {filter === 'stock' ? snapshot.stock.map(item => <Card key={item.id} title={item.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}><Text style={styles.heading}>{item.quantity} {item.unit}</Text><Text style={styles.caption}>{snapshot.projects.find(project => project.id === item.project_id)?.name || '—'}</Text>{item.unit_cost !== undefined && item.unit_cost !== null ? <Text style={styles.caption}>{t.unitCost}: {item.unit_cost} {item.currency}</Text> : null}<Button secondary title={c(language, 'movements')} onPress={() => setStockId(item.id)} /></Card>) : projects.map(project => <Card key={project.id} title={project.name} style={{ flexGrow: 1, flexBasis: width >= 800 ? '46%' : '100%' }}>
         <Text style={styles.muted}>{label(language, project.enterprise_type)} · {label(language, project.status || 'active')}</Text>
