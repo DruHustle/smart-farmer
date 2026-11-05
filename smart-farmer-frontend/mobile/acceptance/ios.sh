@@ -2,6 +2,22 @@
 set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
+NATIVE_TRACE_PID=''
+stop_session_trace() {
+  if [ -n "$NATIVE_TRACE_PID" ]; then
+    kill "$NATIVE_TRACE_PID" 2>/dev/null || true
+    wait "$NATIVE_TRACE_PID" 2>/dev/null || true
+    NATIVE_TRACE_PID=''
+  fi
+}
+start_session_trace() {
+  if [ "${EXPO_PUBLIC_NATIVE_SESSION_TRACE:-}" = '1' ]; then
+    python3 "$NATIVE_DIR/acceptance/capture-session-trace.py" "$1" "$EVIDENCE/$2-session-trace.jsonl" &
+    NATIVE_TRACE_PID=$!
+  fi
+}
+# Capture remains passive: retain the journey's exit status on failure as well as success.
+trap 'NATIVE_JOURNEY_STATUS=$?; stop_session_trace; exit "$NATIVE_JOURNEY_STATUS"' EXIT
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
 NATIVE_IOS_SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
 xcodebuild -version > "$EVIDENCE/ios-toolchain.txt"
@@ -13,6 +29,7 @@ xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl keychain "$NATIVE_PHONE" add-root-cert "$RUNNER_TEMP/native-tls/ca.pem"
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 NATIVE_TLS_DIR="$RUNNER_TEMP/native-tls" node "$NATIVE_DIR/acceptance/simulator-tls.mjs" ready >> "$EVIDENCE/ios-tls-after-boot.txt"
+start_session_trace "$NATIVE_PHONE" ios
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --debug-output "$EVIDENCE/ios-offline" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
@@ -22,6 +39,7 @@ rm "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --debug-output "$EVIDENCE/ios-reconcile" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/ios-exactly-once.txt"
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
+stop_session_trace
 xcrun simctl shutdown "$NATIVE_PHONE"
 NATIVE_TABLET=$(node "$NATIVE_DIR/acceptance/ios-device.mjs" "$NATIVE_IOS_SDK" 'iPad Pro 13-inch (M5)' "$EVIDENCE/ios-device-inventory.json")
 xcrun simctl boot "$NATIVE_TABLET"
@@ -30,6 +48,7 @@ xcrun simctl keychain "$NATIVE_TABLET" add-root-cert "$RUNNER_TEMP/native-tls/ca
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
 NATIVE_TLS_DIR="$RUNNER_TEMP/native-tls" node "$NATIVE_DIR/acceptance/simulator-tls.mjs" ready >> "$EVIDENCE/ios-tls-after-boot.txt"
+start_session_trace "$NATIVE_TABLET" ipad
 maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --debug-output "$EVIDENCE/ipad-products" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"

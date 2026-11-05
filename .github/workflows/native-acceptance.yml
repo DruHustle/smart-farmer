@@ -11,6 +11,8 @@ permissions:
 env:
   CI: 'true'
   EXPO_NO_TELEMETRY: '1'
+  # Fixed-category local-session diagnostics are enabled only in acceptance binaries/Metro.
+  EXPO_PUBLIC_NATIVE_SESSION_TRACE: '1'
   EXPO_PUBLIC_API_URL: http://127.0.0.1:3001
   WEB_ORIGIN: http://127.0.0.1:3001
   LOG_LEVEL: silent
