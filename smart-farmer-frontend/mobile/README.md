@@ -70,6 +70,10 @@ Expo SDK 58 regeneration replaces generated native output by default. Keep durab
 
 These are native screens and forms connected to the versioned backend. They are not a web view. Native UI acceptance is executed separately from the browser and from repository/unit tests; exact evidence is in the [acceptance matrix](../../smart-farmer-backend/docs/status.md).
 
+## Keyboard navigation
+
+Account forms, the workspace and editable sheets expose a localized hide-keyboard button while the software keyboard is visible. The action removes input focus without submitting or changing a draft. It stays outside the scrollable form so multiline notes and numeric keyboards remain dismissible on small screens. Native acceptance uses this real control and then checks keyboard disappearance, exact entered text and persisted results.
+
 ## Offline behavior and data protection
 
 - A successful authenticated download is required before offline farm context is available. Paginated reads follow cursors to retrieve the selected resource history; cached context and its last synchronization time stay visible. Sync runs on foreground connectivity changes and explicit refresh; background execution is not guaranteed.

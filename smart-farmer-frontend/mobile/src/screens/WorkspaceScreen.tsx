@@ -5,7 +5,7 @@ import { errorText, label, textFor } from '../i18n';
 import { LocalRepository } from '../repository';
 import { formatFarmTime } from '../time';
 import type { Language, Session } from '../types';
-import { Button, Choice, Notice, colors, styles } from '../ui';
+import { KeyboardDismissButton, Button, Choice, Notice, colors, styles } from '../ui';
 import { useWorkspace } from '../use-workspace';
 import { FarmScreen } from './FarmScreen';
 import { MoreScreen } from './MoreScreen';
@@ -33,6 +33,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
       {tab === 'record' ? <RecordScreen work={work} language={language} nativeBusy={nativeBusy} onNativePrompt={onNativePrompt} /> : null}
       {tab === 'more' ? <MoreScreen work={work} language={language} onLogout={onLogout} onLock={onLock} onNativePrompt={onNativePrompt} /> : null}
     </ScrollView>
+    <KeyboardDismissButton label={t.hideKeyboard} />
     <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>
       {(['today', 'farm', 'record', 'more'] as const).map(value => <Pressable key={value} testID={`tab-${value}`} disabled={nativeBusy} accessibilityRole="tab" accessibilityState={{ selected: tab === value, disabled: nativeBusy }} accessibilityLabel={t[value]} onPress={() => { setTab(value); work.setNotice(''); work.setError(null); }} style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, backgroundColor: tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }]}>{t[value]}</Text></Pressable>)}
     </View>

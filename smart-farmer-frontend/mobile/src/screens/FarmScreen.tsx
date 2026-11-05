@@ -108,14 +108,14 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
       </Card>)}
     </View>
     {!(filter === 'stock' ? snapshot.stock.length : projects.length) ? <Card><Text style={styles.muted}>{t.empty}</Text><Text style={styles.caption}>{t.unknownHint}</Text></Card> : null}
-    <Sheet title={t.newProject} visible={create} onClose={() => setCreate(false)} closeLabel={t.close}>
+    <Sheet title={t.newProject} visible={create} onClose={() => setCreate(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}{create ? <ProjectForm work={work} language={language} onSaved={() => setCreate(false)} /> : null}
     </Sheet>
-    <Sheet title={t.newStock} visible={stockCreate} onClose={() => setStockCreate(false)} closeLabel={t.close}>
+    <Sheet title={t.newStock} visible={stockCreate} onClose={() => setStockCreate(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}{stockCreate ? <StockForm work={work} language={language} onSaved={() => setStockCreate(false)} /> : null}
     </Sheet>
-    <Sheet title={snapshot.stock.find(item => item.id === stockId)?.name || t.stock} visible={Boolean(stockId)} onClose={() => setStockId('')} closeLabel={t.close}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{snapshot.stock.find(item => item.id === stockId) ? <StockMovements key={stockId} work={work} language={language} item={snapshot.stock.find(item => item.id === stockId)!} /> : null}</Sheet>
-    <Sheet title={selected?.name || t.project} visible={Boolean(selected)} onClose={() => setSelectedId('')} closeLabel={t.close}>
+    <Sheet title={snapshot.stock.find(item => item.id === stockId)?.name || t.stock} visible={Boolean(stockId)} onClose={() => setStockId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{snapshot.stock.find(item => item.id === stockId) ? <StockMovements key={stockId} work={work} language={language} item={snapshot.stock.find(item => item.id === stockId)!} /> : null}</Sheet>
+    <Sheet title={selected?.name || t.project} visible={Boolean(selected)} onClose={() => setSelectedId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {selected && mode !== 'detail' ? <Button secondary title={t.back} onPress={() => { work.setError(null); setMode('detail'); }} /> : null}
       {selected && mode === 'edit' ? <ProjectForm work={work} language={language} project={selected} onSaved={() => setMode('detail')} /> : null}

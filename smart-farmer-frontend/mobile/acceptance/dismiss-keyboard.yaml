@@ -1,11 +1,11 @@
 appId: eu.onesa.smartfarmer
 ---
-# The recorded iOS keyboard covers the lower 40% of the screen. Drag the
-# unobscured ScrollView area; on-drag dismissal preserves multiline Return.
-- swipe:
-    start: 50%, 35%
-    end: 50%, 20%
-    duration: 400
+# Exercise the same explicit action available to keyboard and touch users.
+# It blurs the input without submitting, discarding the draft or adding Return.
+- tapOn:
+    id: keyboard-dismiss
+- assertNotVisible:
+    id: keyboard-dismiss
 - runFlow:
     when:
       platform: iOS

@@ -120,7 +120,7 @@ function Root() {
       <Button testID="device-reauthenticate" secondary title={t.reauthenticate} onPress={() => { void signOut().catch(setError); }} />
       <Text style={styles.caption}>{t.localPrivacy}</Text>
     </Sheet>
-    <Sheet title={t.recoveryCode} visible={Boolean(recoveryCode) && !locked} closeLabel={t.close} onClose={() => setRecoveryCode('')}>
+    <Sheet title={t.recoveryCode} visible={Boolean(recoveryCode) && !locked} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard} onClose={() => setRecoveryCode('')}>
       <Card><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{recoveryCode}</Text></Card>
     </Sheet>
   </View>;

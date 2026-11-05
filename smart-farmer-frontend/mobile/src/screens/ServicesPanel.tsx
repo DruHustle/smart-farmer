@@ -28,9 +28,9 @@ export function ServicesPanel({ work, language }: Props) {
     {tab === 'bookings' ? <Records items={data.value?.bookings || []} language={language} timezone={zone(work)} titleKey="name" fields={['status', 'starts_at', 'ends_at', 'requested_quantity', 'requested_unit', 'amount', 'currency', 'deposit_required', 'manually_recorded_paid']}>
       {item => <><Text style={styles.caption}>{c(language, item.is_provider ? 'provider' : 'customer')}</Text><Button secondary title={c(language, 'details')} onPress={() => setBookingId(string(item.id))} /></>}
     </Records> : null}
-    <Sheet title={string(selected?.name) || t.services} visible={Boolean(selected)} onClose={() => setSelected(null)} closeLabel={t.close}>{selected ? <ServiceDetails work={work} language={language} service={selected} own={Boolean(data.value?.own.some(item => item.id === selected.id))} onSaved={reload} /> : null}</Sheet>
-    <Sheet title={t.edit} visible={Boolean(edit)} onClose={() => setEdit(null)} closeLabel={t.close}>{edit ? <ServiceForm work={work} language={language} service={edit} onSaved={async () => { setEdit(null); await reload(); }} /> : null}</Sheet>
-    <Sheet title={c(language, 'bookings')} visible={Boolean(bookingId)} onClose={() => setBookingId('')} closeLabel={t.close}>{booking ? <BookingDetails work={work} language={language} booking={booking} onSaved={reload} /> : null}</Sheet>
+    <Sheet title={string(selected?.name) || t.services} visible={Boolean(selected)} onClose={() => setSelected(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{selected ? <ServiceDetails work={work} language={language} service={selected} own={Boolean(data.value?.own.some(item => item.id === selected.id))} onSaved={reload} /> : null}</Sheet>
+    <Sheet title={t.edit} visible={Boolean(edit)} onClose={() => setEdit(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{edit ? <ServiceForm work={work} language={language} service={edit} onSaved={async () => { setEdit(null); await reload(); }} /> : null}</Sheet>
+    <Sheet title={c(language, 'bookings')} visible={Boolean(bookingId)} onClose={() => setBookingId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{booking ? <BookingDetails work={work} language={language} booking={booking} onSaved={reload} /> : null}</Sheet>
   </>;
 }
 
