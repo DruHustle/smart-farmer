@@ -12,5 +12,5 @@ maestro "${NATIVE_DEVICE_ARGS[@]}" test \
   -e ASSET_ID="$NATIVE_ASSET" -e CAMERA_ID="$NATIVE_CAMERA" \
   -e CAMERA_EVENT_ID="$NATIVE_EVENT" -e LISTING_ID="$NATIVE_LISTING" -e SERVICE_ID="$NATIVE_SERVICE" \
   --format junit --output "$EVIDENCE/$NATIVE_PLATFORM-products.xml" \
-  --test-output-dir "$EVIDENCE/$NATIVE_PLATFORM-products" "$NATIVE_DIR/acceptance/products.yaml"
+  --debug-output "$EVIDENCE/$NATIVE_PLATFORM-products" --test-output-dir "$EVIDENCE/$NATIVE_PLATFORM-products" "$NATIVE_DIR/acceptance/products.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify-products > "$EVIDENCE/$NATIVE_PLATFORM-product-records.txt"

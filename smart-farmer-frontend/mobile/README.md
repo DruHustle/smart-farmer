@@ -97,6 +97,8 @@ Latest local verification after the document-picker dependency:
 
 [Native acceptance CI](../../.github/workflows/native-acceptance.yml) uses Ubuntu/Android emulator and macOS/iPhone/iPad simulators with real compiled development apps. It starts a disposable PostgreSQL API, creates test fixtures through authenticated endpoints, and runs Maestro against the actual app. Its proxy creates a deliberate network outage without mocking the business API. The restart path preserves an encrypted offline record, reauthenticates, reconnects and checks that the server has exactly one record. Additional checks cover permission denial, account privacy, language and tablet layout; acceptance files describe the exact scope. Raw databases, credentials and key material are not uploaded as artifacts.
 
+The iOS and product journeys retain Maestro’s `maestro.log` alongside the existing test output. Maestro’s `--test-output-dir` alone does not retain its driver connection log; `--debug-output` now uses the same evidence directory. Driver-startup failures remain failures, with unchanged startup deadlines, application assertions and retry behavior. The logs come only from the disposable CI installation; never run this diagnostic workflow with production credentials or data.
+
 Both platforms have compiled the final dependency set, including SQLCipher and the document picker, and passed executed native acceptance:
 
 | Platform | Verified job and artifact | Result |
