@@ -10,7 +10,7 @@ export async function accountingJourneys({page, context, browser, api, ui, apiCa
   const base = `/v1/farms/${farm.id}/accounting`;
   const today = farmDate(new Date(), farm.timezone);
   const visible = locator => locator.waitFor({state: 'visible', timeout: 20000});
-  const section = title => page.locator('section.panel').filter({has: page.getByRole('heading', {name: title, exact: true})}).first();
+  const section = title => page.locator('section.panel').filter({has: page.getByRole('heading', {name: title, exact: true, level: 2})}).first();
   async function fill(parent, fields) {await pace(); for (const [name, value] of Object.entries(fields)) {const field = parent.locator(`[name="${name}"]`); const tag = await field.evaluate(el => el.tagName); if (tag === 'SELECT') await field.selectOption(String(value)); else await field.fill(String(value));}}
   async function tab(title) {await pace(); await page.locator('.accounting-tabs').getByRole('button', {name: title, exact: true}).click();}
   async function expand(parent, title) {const details = parent.locator('details').filter({has: page.getByText(title, {exact: true})}).first(); const summary = details.locator(':scope > summary'); if (await details.getAttribute('open') === null) await summary.click(); return details;}
