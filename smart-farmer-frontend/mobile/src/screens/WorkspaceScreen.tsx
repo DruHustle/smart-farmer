@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { errorText, label, textFor } from '../i18n';
 import { LocalRepository } from '../repository';
+import { traceSession } from '../session-transition';
 import { formatFarmTime } from '../time';
 import type { Language, Session } from '../types';
 import { KeyboardDismissButton, Button, Choice, Notice, colors, styles } from '../ui';
@@ -19,6 +20,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
   const t = textFor(language);
   const pending = work.mutations.filter(item => item.state !== 'resolved').length;
   const stale = !work.online || !work.snapshot?.syncedAt || Date.now() - Date.parse(work.snapshot.syncedAt) > 15 * 60_000;
+  useEffect(() => { traceSession(`tab_${tab}`, 'committed'); }, [tab]);
 
   return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={insets.top}>
     <ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={work.busy} onRefresh={() => { if (!nativeBusy) void work.refresh(); }} tintColor={colors.green} />}>
@@ -35,7 +37,15 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
     </ScrollView>
     <KeyboardDismissButton label={t.hideKeyboard} />
     <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>
-      {(['today', 'farm', 'record', 'more'] as const).map(value => <Pressable key={value} testID={`tab-${value}`} disabled={nativeBusy} accessibilityRole="tab" accessibilityState={{ selected: tab === value, disabled: nativeBusy }} accessibilityLabel={t[value]} onPress={() => { setTab(value); work.setNotice(''); work.setError(null); }} style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, backgroundColor: tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }]}>{t[value]}</Text></Pressable>)}
+      {/* These observers never claim a responder or retain the native event payload. */}
+      {(['today', 'farm', 'record', 'more'] as const).map(value => <Pressable key={value} testID={`tab-${value}`} disabled={nativeBusy} accessibilityRole="tab" accessibilityState={{ selected: tab === value, disabled: nativeBusy }} accessibilityLabel={t[value]}
+        onTouchStart={value === 'farm' ? () => traceSession('farm_touch', 'start') : undefined}
+        onTouchEnd={value === 'farm' ? () => traceSession('farm_touch', 'complete') : undefined}
+        onTouchCancel={value === 'farm' ? () => traceSession('farm_touch', 'cancelled') : undefined}
+        onPressIn={value === 'farm' ? () => traceSession('farm_press', 'start') : undefined}
+        onPressOut={value === 'farm' ? () => traceSession('farm_press', 'complete') : undefined}
+        onPress={() => { if (value === 'farm') traceSession('farm_press', 'received'); setTab(value); work.setNotice(''); work.setError(null); }}
+        style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, backgroundColor: tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }]}>{t[value]}</Text></Pressable>)}
     </View>
   </KeyboardAvoidingView>;
 }

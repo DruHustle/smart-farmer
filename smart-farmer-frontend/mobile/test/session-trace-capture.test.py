@@ -27,14 +27,16 @@ class CaptureTests(unittest.TestCase):
         output = io.StringIO()
         receipts = capture.Receipts(output)
         receipts.accept(self.line(self.value))
+        touch = dict(self.value, stage='farm_touch', phase='cancelled')
+        receipts.accept(self.line(touch))
         for value in [dict(self.value, error=canary), dict(self.value, stage=canary), dict(self.value, phase=canary), dict(self.value, at=canary), dict(self.value, sequence=True), dict(self.value, elapsed_ms=-1), ['not', 'a', 'receipt']]:
             receipts.accept(self.line(value))
         receipts.accept(capture.PREFIX + canary)
-        self.assertEqual(receipts.count, 1)
+        self.assertEqual(receipts.count, 2)
         self.assertTrue(receipts.ready)
         self.assertNotIn(canary, output.getvalue())
         self.assertNotIn('system metadata', output.getvalue())
-        self.assertEqual(json.loads(output.getvalue()), self.value)
+        self.assertEqual([json.loads(line) for line in output.getvalue().splitlines()], [self.value, touch])
 
     def test_artifact_is_bounded_and_reports_unverified_capture_without_ready(self):
         output = io.StringIO()

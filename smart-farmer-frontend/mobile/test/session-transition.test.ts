@@ -66,6 +66,7 @@ test('session diagnostics are opt-in, bounded fixed categories and cannot emit p
   const disabled = createSessionTrace({ enabled: false, sink: line => lines.push(line) }); disabled('trace', 'ready'); assert.equal(lines.length, 0);
   const trace = createSessionTrace({ enabled: true, sink: line => lines.push(line), now: () => Date.parse('2026-11-05T16:00:00Z') });
   trace('trace', 'ready');
+  trace('farm_touch', 'cancelled'); trace('farm_press', 'received'); trace('tab_farm', 'committed');
   // Even accidental runtime casts cannot turn the category API into a free-form logger.
   (trace as (stage: string, phase: string) => void)(canary, 'start');
   (trace as (stage: string, phase: string) => void)('session_delete', canary);
@@ -78,6 +79,9 @@ test('session diagnostics are opt-in, bounded fixed categories and cannot emit p
   assert.deepEqual(Object.keys(entries[0]).sort(), ['at', 'elapsed_ms', 'phase', 'sequence', 'stage']);
   assert.equal(entries[0].phase, 'ready'); assert.equal(entries.at(-1).phase, 'limit');
   assert.ok(entries.some(entry => entry.stage === 'session_delete' && entry.phase === 'failed'));
+  assert.ok(entries.some(entry => entry.stage === 'farm_touch' && entry.phase === 'cancelled'));
+  assert.ok(entries.some(entry => entry.stage === 'farm_press' && entry.phase === 'received'));
+  assert.ok(entries.some(entry => entry.stage === 'tab_farm' && entry.phase === 'committed'));
   const brokenSink = createSessionTrace({ enabled: true, sink: () => { throw error; } });
   assert.equal(await sessionStep('session_delete', async () => 'unchanged', brokenSink), 'unchanged');
 });
