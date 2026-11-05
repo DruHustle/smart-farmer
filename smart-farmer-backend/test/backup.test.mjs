@@ -88,7 +88,7 @@ test("encrypted PostgreSQL and private media backup restores to an empty isolate
     source = new pg.Pool({ connectionString: env.DATABASE_URL });
     const app = buildApp(source, "http://localhost:5173");
     app.log.level = "silent";
-    let mediaId, objectKey;
+    let mediaId, invoiceDocumentId, invoiceId, objectKey;
     try {
       const register = await app.inject({
         method: "POST",
@@ -148,6 +148,32 @@ test("encrypted PostgreSQL and private media backup restores to an empty isolate
         },
       });
       assert.equal(media.statusCode, 201, media.body);
+      // Financial originals have their own private reference table. Exercise the
+      // real upload/post/payment APIs so a restore must recover both books and
+      // source bytes, not merely a synthetic database row.
+      invoiceDocumentId = crypto.randomUUID();
+      const invoiceSource = await app.inject({
+        method: "POST", url: prefix + "/accounting/documents", headers,
+        payload: { id: invoiceDocumentId, mimeType: "image/png", filename: "supplier-original.png", dataBase64 },
+      });
+      assert.equal(invoiceSource.statusCode, 201, invoiceSource.body);
+      // This 1px fixture has no printed text; manual review remains possible.
+      await source.query("UPDATE accounting_documents SET state='failed',error_code='no_text_detected',attempts=1 WHERE id=$1", [invoiceDocumentId]);
+      const settings = await app.inject({ method: "PUT", url: prefix + "/accounting/settings", headers,
+        payload: { id: crypto.randomUUID(), version: 0, business: { legalName: "Restore fixture farm", tradingName: "", address: "", email: "", phone: "", registrationNumber: "", taxNumber: "" }, defaultCurrency: "USD", invoicePrefix: "TEST", startingNumber: 1, taxRates: [], lockedThrough: null, reason: "Isolated restore verification" },
+      });
+      assert.ok([200,201].includes(settings.statusCode), settings.body);
+      invoiceId = crypto.randomUUID();
+      const draft = await app.inject({ method: "POST", url: prefix + "/accounting/invoices", headers,
+        payload: { id: invoiceId, kind: "purchase", party: { name: "Restore fixture supplier", address: "", email: "", phone: "", taxNumber: "" }, currency: "USD", reference: "SUP-RESTORE", issueDate: "2026-11-05", documentId: invoiceDocumentId,
+          lines: [{ id: crypto.randomUUID(), description: "Recorded feed", quantity: "2", unitPrice: "12.50", discountMinor: "0", taxRateBps: 0 }] },
+      });
+      assert.equal(draft.statusCode, 201, draft.body);
+      const posted = await app.inject({ method: "POST", url: prefix + `/accounting/invoices/${invoiceId}/post`, headers, payload: { id: crypto.randomUUID(), version: draft.json().version, confirmed: true, reviewed: true } });
+      assert.ok([200,201].includes(posted.statusCode), posted.body);
+      const paid = await app.inject({ method: "POST", url: prefix + `/accounting/invoices/${invoiceId}/payments`, headers, payload: { id: crypto.randomUUID(), version: posted.json().version, amountMinor: "1000", currency: "USD", paidOn: "2026-11-05", method: "cash", reference: "Restore fixture payment", note: "Manually recorded test payment", confirmed: true } });
+      assert.ok([200,201].includes(paid.statusCode), paid.body);
+      assert.equal(paid.json().balanceMinor, "1500");
       const cameraId = crypto.randomUUID();
       const camera = await app.inject({
         method: "POST",
@@ -207,7 +233,7 @@ test("encrypted PostgreSQL and private media backup restores to an empty isolate
       restoreEnv,
     );
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout.trim()).verifiedMediaFiles, 2);
+    assert.equal(JSON.parse(result.stdout.trim()).verifiedMediaFiles, 3);
     const restored = new pg.Pool({
       connectionString: restoreEnv.RESTORE_DATABASE_URL,
     });
@@ -220,6 +246,10 @@ test("encrypted PostgreSQL and private media backup restores to an empty isolate
         "private_media",
         "camera_segments",
         "camera_events",
+        "accounting_documents",
+        "accounting_settings",
+        "accounting_invoices",
+        "accounting_payments",
       ])
         assert.equal(
           (await restored.query(`SELECT count(*) AS n FROM ${table}`)).rows[0]
@@ -241,6 +271,16 @@ test("encrypted PostgreSQL and private media backup restores to an empty isolate
         segment.content_hash,
       );
       objectKey = media.object_key;
+      const invoiceSource = (await restored.query("SELECT * FROM accounting_documents WHERE id=$1", [invoiceDocumentId])).rows[0];
+      assert.equal(createHash("sha256").update(await readFile(join(restoredMedia, invoiceSource.object_key))).digest("hex"), invoiceSource.content_hash);
+      const invoice = (await restored.query("SELECT * FROM accounting_invoices WHERE id=$1", [invoiceId])).rows[0];
+      assert.equal(invoice.status, "posted");
+      assert.equal(invoice.snapshot.totals.totalMinor, "2500");
+      assert.equal(invoice.snapshot.party.name, "Restore fixture supplier");
+      assert.equal((await restored.query("SELECT sum(amount_minor) AS paid FROM accounting_payments WHERE invoice_id=$1", [invoiceId])).rows[0].paid, "1000");
+      const journals = (await restored.query("SELECT journal_id,sum(debit_minor) AS debit,sum(credit_minor) AS credit FROM accounting_journal_lines GROUP BY journal_id")).rows;
+      assert.equal(journals.length, 2);
+      for (const journal of journals) assert.equal(journal.debit, journal.credit);
       assert.equal(
         createHash("sha256")
           .update(await readFile(join(restoredMedia, media.object_key)))

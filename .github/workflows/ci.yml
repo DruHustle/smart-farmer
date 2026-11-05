@@ -37,6 +37,8 @@ jobs:
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
       - run: npm ci --prefix smart-farmer-backend/edge
+      - name: Install local invoice OCR and PDF tools
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr tesseract-ocr-eng poppler-utils
       - name: API and concurrency workflows against PostgreSQL
         run: npm test --prefix smart-farmer-backend
       - name: Offline storage, language and farm-time rules
@@ -45,6 +47,20 @@ jobs:
         run: npm test --prefix smart-farmer-backend/edge
       - name: Python edge HMAC, replay and durable spool tests
         run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
+      - name: Validate isolated production candidate configuration
+        run: |
+          set -euo pipefail
+          export FARMER_RUNTIME_ENV_FILE="$RUNNER_TEMP/farm-runtime.env"
+          printf 'PGHOST=db\nPGUSER=farm\nPGPASSWORD=ci-only\nPGDATABASE=farm\n' > "$FARMER_RUNTIME_ENV_FILE"
+          chmod 600 "$FARMER_RUNTIME_ENV_FILE"
+          export FARMER_API_IMAGE="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          export FARMER_WEB_IMAGE="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          export FARMER_DB_IMAGE="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          export FARMER_SOURCE_REVISION="cccccccccccccccccccccccccccccccccccccccc"
+          export FARMER_WEB_ORIGIN="https://farmer.onesa.eu" FARMER_API_PORT=18131 FARMER_WEB_PORT=18132
+          export FARMER_POSTGRES_USER=farm FARMER_POSTGRES_PASSWORD=ci-only FARMER_POSTGRES_DB=farm
+          node smart-farmer-backend/deploy/onesa/validate.mjs
+          docker compose -f smart-farmer-backend/deploy/onesa/compose.yml --profile local-db --profile ops config --quiet
       - name: Validate Node-RED demonstration flow format
         run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
       - name: Install browser
@@ -113,7 +129,21 @@ jobs:
         run: |
           POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
           docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker run --rm --entrypoint tesseract smart-farmer-api:ci --list-langs
+          docker run --rm --entrypoint pdftotext smart-farmer-api:ci -v
+          docker run --rm --entrypoint node smart-farmer-api:ci -e 'import("sharp").then(async ({default: sharp}) => { const image = await sharp({create:{width:1,height:1,channels:3,background:"red"}}).png().toBuffer(); if (!image.length) process.exit(1); })'
+          docker build --tag smart-farmer-db:ci --file smart-farmer-backend/Dockerfile.database smart-farmer-backend
+          candidate_db=$(docker run --detach --tmpfs /var/lib/postgresql/data:rw -e POSTGRES_PASSWORD=ci-only smart-farmer-db:ci)
+          trap 'docker rm -f "$candidate_db" >/dev/null' EXIT
+          # The entrypoint's temporary initialization server accepts Unix-socket
+          # connections, then stops. TCP is enabled only for the final server.
+          for attempt in $(seq 1 60); do docker exec "$candidate_db" pg_isready -h 127.0.0.1 -U postgres && break; sleep 1; done
+          docker exec -e PGPASSWORD=ci-only "$candidate_db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -c 'SELECT 1'
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
+          mkdir -p "$RUNNER_TEMP/private-media-test"
+          chmod 777 "$RUNNER_TEMP/private-media-test"
+          docker run --rm --mount "type=bind,src=$RUNNER_TEMP/private-media-test,dst=/scratch" --entrypoint node smart-farmer-api:ci -e 'const fs=require("node:fs");fs.mkdirSync("/scratch/farm",{mode:0o700});fs.writeFileSync("/scratch/farm/object","synthetic",{mode:0o600})'
+          docker run --rm --mount "type=bind,src=$RUNNER_TEMP/private-media-test,dst=/scratch,readonly" --entrypoint node smart-farmer-backup:ci -e 'if(require("node:fs").readFileSync("/scratch/farm/object","utf8")!=="synthetic")process.exit(1)'
           docker run --rm --entrypoint node smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_restore smart-farmer-backup:ci --version

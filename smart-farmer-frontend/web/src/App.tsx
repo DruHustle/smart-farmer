@@ -1,8 +1,9 @@
-import {useCallback, useEffect, useRef, useState, useSyncExternalStore} from 'react';
+import {lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore} from 'react';
 import {Auth} from './Auth';
 import {catalog, errorLabel, label} from './locales';
 import {ApiError, request, jsonBody, uploadRecord} from './lib/api';
 import {displayTime} from './lib/time';
+import {accountingDataAfterRoleChange} from './lib/accounting-intent';
 import {drainOutbox, queueRecords} from './lib/sync';
 import {Context, type Page} from './context';
 import {emptyFarmData, type Farm, type FarmData, type Lang, type OutboxItem} from './types';
@@ -22,9 +23,11 @@ import {Security} from './pages/Security';
 import {People} from './pages/People';
 
 const emptySubscribe = () => () => {};
+const Accounting = lazy(() => import('./pages/Accounting').then(module => ({default: module.Accounting})));
 const noSnapshot = () => null;
 export function App() {
   const [vault, setVault] = useState<Vault | null>(null);
+  const [accountingTarget, setAccountingTarget] = useState<{farmId: string; userId: string; invoiceId: string} | null>(null);
   const snapshot = useSyncExternalStore(vault?.subscribe ?? emptySubscribe, vault?.snapshot ?? noSnapshot);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [language, setLanguage] = useState<Lang>(() => localStorage.getItem('smart-farmer-language') === 'nd' ? 'nd' : 'sn');
@@ -52,7 +55,11 @@ export function App() {
       for (const id of Object.keys(next.data)) {
         const membership = farms.items.find(f => f.id === id);
         if (!membership) {delete next.data[id]; continue;}
-        if (oldRoles.get(id) !== membership.role) {delete next.data[id]; continue;}
+        if (oldRoles.get(id) !== membership.role) {
+          const retained = accountingDataAfterRoleChange(next.data[id], oldRoles.get(id), membership.role);
+          if (retained) next.data[id] = retained; else delete next.data[id];
+          continue;
+        }
         if (!['owner', 'manager'].includes(membership.role)) {
           delete next.data[id].report; delete next.data[id].resources;
           next.data[id].bookings = [];
@@ -112,19 +119,19 @@ export function App() {
   function lock() {setVault(null); setNotice(''); setPage('today'); setRecordProject(null);}
   if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(v.snapshot().language); setPage(new URLSearchParams(location.search).has('listing') ? 'market' : 'today'); setNotice('');}}/>;
   const navigation = ['today', 'farm', 'market', 'services', 'more'] as const;
-  const navPage = ['stock', 'tasks', 'equipment', 'people', 'reports', 'incidents', 'sync', 'security', 'notifications', 'weather', 'maintenance', 'locations', 'settings'].includes(page) ? 'more' : page;
+  const navPage = ['stock', 'tasks', 'equipment', 'people', 'reports', 'accounting', 'incidents', 'sync', 'security', 'notifications', 'weather', 'maintenance', 'locations', 'settings'].includes(page) ? 'more' : page;
   return <div className="app-shell"><header className="app-header"><div className="brand"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></div><div className="header-actions"><span className="current-user"><Icon name="people" size={16}/>{snapshot.identity.username}</span><select className="language-select" aria-label={t.language} value={lang} onChange={e => void changeLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select><button className="icon-button" title={t.lock} aria-label={t.lock} onClick={lock}><Icon name="lock" size={18}/></button></div></header>
-    <aside className="desktop-nav"><div className="farm-identity"><span className="eyebrow">{t.farm}</span><strong>{farm?.name ?? t.loading}</strong><small>{farm ? label(t, farm.role) : ''}</small></div><nav aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} onClick={() => setPage(item)}><Icon name={item}/>{t[item]}<Icon name="chevron" size={15}/></button>)}</nav><div className="sidebar-bottom"><Icon name="lock" size={16}/><small>{t.privacy}</small></div></aside>
+    <aside className="desktop-nav"><div className="farm-identity"><span className="eyebrow">{t.farm}</span><strong>{farm?.name ?? t.loading}</strong><small>{farm ? label(t, farm.role) : ''}</small></div><nav aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} aria-current={navPage === item ? 'page' : undefined} onClick={() => setPage(item)}><Icon name={item}/>{t[item]}<Icon name="chevron" size={15}/></button>)}</nav><div className="sidebar-bottom"><Icon name="lock" size={16}/><small>{t.privacy}</small></div></aside>
     <main className="workspace"><div className="workspace-toolbar"><div className="farm-switch"><Icon name="farm" size={18}/><select aria-label={t.farm} value={farmId} disabled={busy || !snapshot.farms.length} onChange={e => {const id = e.target.value; void run(async () => {await vault.mutate(next => {next.currentFarmId = id;}); await refresh();});}}>{snapshot.farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div><button className={`sync-pill ${online ? '' : 'offline'}`} onClick={() => setPage('sync')}><span className={`status-dot ${online ? 'on' : ''}`}/>{online ? t.connected : t.offline}{snapshot.outbox.length > 0 && <strong>{snapshot.outbox.length}</strong>}</button></div>
       <div className="sync-caption"><span>{farmData.syncedAt ? `${t.synced}: ${displayTime(farmData.syncedAt, lang, farm?.timezone ?? 'Africa/Harare')}` : t.neverSynced}</span><button className="text-button" disabled={!online || busy} onClick={() => void run(refresh)}><Icon name="sync" size={14}/>{t.refresh}</button></div>
       {(!online || !!farmData.partial?.length) && <p className="notice subtle" role="status">{!online ? t.offlineOnlyRecords : t.limitedSync}</p>}
       {snapshot.requiresAuth && <div className="notice warning"><span>{t.sessionExpired}</span><button className="text-button" onClick={lock}>{t.signIn}</button></div>}
       {notice && <div className="notice" role="status"><span>{notice}</span><button className="icon-button" aria-label={t.close} onClick={() => setNotice('')}><Icon name="close" size={16}/></button></div>}
       {busy && <div className="working-line" role="status">{t.working}</div>}
-      {farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: setPage, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
-        {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
+      {farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: (nextPage, options) => {setAccountingTarget(options?.invoiceId ? {farmId: farm.id, userId: snapshot.identity.userId, invoiceId: options.invoiceId} : null); setPage(nextPage);}, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
+        {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'accounting' && <Suspense fallback={<p role="status">{t.loading}</p>}><Accounting initialInvoiceId={accountingTarget?.farmId === farm.id && accountingTarget.userId === snapshot.identity.userId ? accountingTarget.invoiceId : undefined}/></Suspense>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
-        {recordProject === null && page !== 'market' && page !== 'services' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
+        {recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
       </Context.Provider> : <div className="loading-card"><Icon name="leaf" size={30}/><p>{online ? t.loading : t.no_saved_data}</p><button onClick={lock}>{t.signIn}</button></div>}
-    </main><nav className="mobile-nav" aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} onClick={() => setPage(item)}><Icon name={item}/><span>{t[item]}</span></button>)}</nav></div>;
+    </main><nav className="mobile-nav" aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} aria-current={navPage === item ? 'page' : undefined} onClick={() => setPage(item)}><Icon name={item}/><span>{t[item]}</span></button>)}</nav></div>;
 }

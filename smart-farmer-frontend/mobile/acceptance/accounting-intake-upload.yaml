@@ -1,0 +1,21 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: activate-ios.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: '^invoice-upload-[0-9a-f-]+$'
+    direction: DOWN
+    timeout: 30000
+# This is the only upload consent. No capture or restart step submits the source.
+- tapOn:
+    id: '^invoice-upload-[0-9a-f-]+$'
+- extendedWaitUntil:
+    notVisible:
+      id: '^invoice-upload-[0-9a-f-]+$'
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: '^invoice-scan-(queued|processing|ready)$'
+    direction: DOWN
+    timeout: 30000

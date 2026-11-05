@@ -15,8 +15,11 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "more-market"
+# The final listing action can be fully visible at the bottom of the sheet
+# without being centerable. Require full visibility, then verify the same tap
+# and reservation workflow; do not spend the timeout trying to overscroll it.
 - scrollUntilVisible:
-    centerElement: true
+    visibilityPercentage: 100
     element:
       id: "listing-open-${LISTING_ID}"
     direction: DOWN

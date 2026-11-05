@@ -19,6 +19,7 @@ type DeviceSession = { id: string; label: string; created_at: string; expires_at
 export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void; onNativePrompt: (active: boolean) => void }) {
   const t = textFor(language);
   const [screen, setScreen] = useState<string | null>(null);
+  const [accountingLink, setAccountingLink] = useState<{ farmId: string; invoiceId: string } | null>(null);
   const [role, setRole] = useState('worker'); const [code, setCode] = useState(''); const [inviteToken, setInviteToken] = useState('');
   const [password, setPassword] = useState(''); const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [conflict, setConflict] = useState<Mutation | null>(null);
@@ -28,7 +29,13 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
   const pendingMedia = work.attachments.filter(item => item.state !== 'synced' && item.state !== 'draft');
   const timezone = work.snapshot?.farm.timezone || 'Africa/Harare';
 
-  function open(value: NonNullable<typeof screen>) { setScreen(value); setCode(''); setInviteToken(''); setPassword(''); setConflict(null); setServerTask(null); work.setError(null); }
+  function open(value: NonNullable<typeof screen>) { setScreen(value); setAccountingLink(null); setCode(''); setInviteToken(''); setPassword(''); setConflict(null); setServerTask(null); work.setError(null); }
+  async function openAccountingInvoice(farmId: string, invoiceId: string) {
+    const farm = work.farms.find(item => item.id === farmId);
+    if (!invoiceId || !farm || !['owner', 'manager'].includes(farm.role)) throw new Error('forbidden');
+    await work.selectFarm(farmId);
+    open('finance'); setAccountingLink({ farmId, invoiceId });
+  }
   useEffect(() => {
     if (screen === 'sessions') void work.onlineAction(async () => { const result = await work.api.request<{ items: DeviceSession[] }>('/v1/sessions'); setDevices(result.items); });
   }, [screen]);
@@ -76,7 +83,7 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
       {[['sync', `${t.outbox} (${pending.length})`], ['equipment', t.equipment], ['security', c(language, 'security')], ['incidents', c(language, 'incidents')], ['weather', c(language, 'weather')], ['market', t.market], ['services', t.services], ...(work.canManage ? [['finance', c(language, 'finance')], ['settings', c(language, 'settings')]] : []), ['media', c(language, 'media')], ['notifications', c(language, 'notifications')], ['team', t.team], ['sessions', t.sessions], ['recovery', t.recovery]].map(([value, title]) => <View key={value} style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}><Button testID={`more-${value}`} secondary title={title!} onPress={() => open(value!)} /></View>)}
     </View>
     <Card title={t.configuration}><Toggle label={t.dataSaver} hint={t.dataSaverHint} value={work.dataSaver} onChange={value => { void work.setDataSaver(value).catch(work.setError); }} /><Toggle label={t.taskReminders} hint={t.remindersHint} value={work.reminders} onChange={value => { void work.setReminders(value); }} /><Text style={styles.caption}>{t.translations}</Text></Card>
-    <Sheet title={screen === 'sync' ? t.outbox : screen ? c(language, screen) : t.more} visible={Boolean(screen)} onClose={() => { setScreen(null); setCode(''); setPassword(''); }} closeLabel={t.close}>
+    <Sheet title={screen === 'sync' ? t.outbox : screen ? c(language, screen) : t.more} visible={Boolean(screen)} onClose={() => { setScreen(null); setCode(''); setPassword(''); }} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {screen === 'sync' ? <>
         <Text style={styles.muted}>{t.lastSync}: {work.snapshot?.syncedAt ? formatFarmTime(work.snapshot.syncedAt, timezone, language) : t.neverSynced}</Text>
@@ -98,9 +105,9 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
         {work.mutations.filter(item => item.state === 'resolved').map(item => <Text key={item.id} style={styles.caption}>{t.resolved} · {item.id.slice(0, 8)}</Text>)}
       </> : null}
       {screen === 'equipment' ? <EquipmentPanel work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
-      {screen === 'market' ? <MarketplacePanel work={work} language={language} /> : null}
-      {screen === 'services' ? <ServicesPanel work={work} language={language} /> : null}
-      {screen === 'finance' && work.canManage ? <FinancePanel work={work} language={language} /> : null}
+      {screen === 'market' ? <MarketplacePanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
+      {screen === 'services' ? <ServicesPanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
+      {screen === 'finance' && work.canManage ? <FinancePanel key={`${work.farmId}:${accountingLink?.invoiceId || ''}`} work={work} language={language} onNativePrompt={onNativePrompt} initialInvoiceId={accountingLink?.farmId === work.farmId ? accountingLink.invoiceId : undefined} /> : null}
       {screen === 'incidents' ? <IncidentsPanel work={work} language={language} /> : null}
       {screen === 'weather' ? <WeatherPanel work={work} language={language} /> : null}
       {screen === 'notifications' ? <NotificationsPanel work={work} language={language} /> : null}
@@ -117,7 +124,7 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
       {screen === 'sessions' ? devices.map(device => <Card key={device.id} title={device.current ? t.currentSession : device.label || t.sessions}><Text style={styles.caption}>{formatFarmTime(device.created_at, timezone, language)} → {formatFarmTime(device.expires_at, timezone, language)}</Text><Button secondary title={t.revoke} busy={work.busy} onPress={() => { void work.onlineAction(async () => { await work.api.request(`/v1/sessions/${encodeURIComponent(device.id)}`, 'DELETE'); if (device.current) onLogout(); else setDevices(previous => previous.filter(item => item.id !== device.id)); }); }} /></Card>) : null}
 
     </Sheet>
-    <Sheet title={t.resolve} visible={Boolean(conflict)} onClose={() => setConflict(null)} closeLabel={t.close}>
+    <Sheet title={t.resolve} visible={Boolean(conflict)} onClose={() => setConflict(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}<Text style={styles.muted}>{t.conflictHint}</Text>
       <Card title={t.proposedChange}><Text style={styles.text}>{conflict ? label(language, String(conflict.body.status || conflict.body.kind || conflict.body.type || 'observation')) : ''}</Text><Text style={styles.text}>{String(conflict?.body.note || conflict?.body.evidence || '')}</Text></Card>
       {serverTask ? <Card title={t.currentServer}><Text style={styles.text}>{serverTask.title} · {label(language, serverTask.status)}</Text><Text style={styles.muted}>{serverTask.evidence}</Text><Button title={t.applyReviewed} busy={work.busy} onPress={() => { void applyReviewed(); }} /></Card> : null}

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
+import { guardAccountingSource } from "../accounting/bridge.js";
 import { z } from "zod";
 import {
   ApiError,
@@ -932,6 +933,7 @@ export function registerPlanning(app: FastifyInstance, ctx: Context) {
         b.id,
         { kind: "correction", activityId, ...b },
         async (c) => {
+          if (b.action === 'reverse') await guardAccountingSource(c, a.farmId, 'activity', activityId);
           const snapshot = row(
             (
               await c.query(

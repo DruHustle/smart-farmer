@@ -3,8 +3,11 @@ import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import PDFDocument from "pdfkit";
+import { guardAccountingEntry } from "../accounting/bridge.js";
 import { z } from "zod";
 import { ApiError, audit, manageRoles, type Context } from "../context.js";
+import { currencyScale, decimalFromMinor, halfUp } from "../accounting/money.js";
+import { outstandingInvoices } from "../accounting/reports.js";
 import {
   uuid,
   when,
@@ -53,6 +56,20 @@ export const reportQuery = z
     "invalid_report_period",
   );
 type ReportQuery = z.infer<typeof reportQuery>;
+function reportCurrencyScale(code: string) { try { return currencyScale(code); } catch { return 3; } }
+// PostgreSQL numeric sums/divisions may contain arbitrary trailing zeroes and
+// exceed one invoice's input limit. Parse their exact thousandths without Number.
+function reportScaled(value: unknown): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value));
+  if (!match || (match[3] ?? "").slice(3).replaceAll("0", "")) throw new ApiError("accounting_amount_invariant", 500);
+  const amount = BigInt(match[2]) * 1000n + BigInt((match[3] ?? "").slice(0, 3).padEnd(3, "0"));
+  return match[1] ? -amount : amount;
+}
+function reportAmount(value: bigint, code: string) {
+  const scale = reportCurrencyScale(code), divisor = 10n ** BigInt(3 - scale);
+  const rounded = (value < 0n ? -1n : 1n) * halfUp(value < 0n ? -value : value, divisor);
+  return decimalFromMinor(rounded, scale);
+}
 export async function reportSummary(
   db: pg.Pool | pg.PoolClient,
   farmId: string,
@@ -74,7 +91,34 @@ export async function reportSummary(
   const args = [farmId, q.projectId ?? null, q.from ?? null, q.to ?? null];
   // A shared expense remains one farm expense. Project allocations move cost attribution
   // without creating cash or a second expense. Purchase costs remain separate from use.
-  const effective = `WITH effective AS(SELECT f.*,CASE WHEN $2::uuid IS NULL THEN f.amount WHEN f.project_id=$2 THEN f.amount-COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id),0)+COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id AND a.project_id=$2),0) ELSE COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id AND a.project_id=$2),0) END AS effective_amount FROM financial_entries f WHERE f.farm_id=$1 AND ($3::timestamptz IS NULL OR f.observed_at>=$3) AND ($4::timestamptz IS NULL OR f.observed_at<$4))`;
+  const effective = `WITH payment_history AS(
+    SELECT p.*,sum(p.amount_minor) OVER(PARTITION BY p.invoice_id ORDER BY p.paid_on,p.created_at,p.id ROWS UNBOUNDED PRECEDING) AS cumulative_minor
+    FROM accounting_payments p WHERE p.farm_id=$1
+  ),effective AS(
+    SELECT f.*,CASE WHEN $2::uuid IS NULL THEN f.amount
+      WHEN managed.id IS NOT NULL THEN COALESCE(attributed.amount,0)
+      WHEN f.project_id=$2 THEN f.amount-COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id),0)+COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id AND a.project_id=$2),0)
+      ELSE COALESCE((SELECT sum(a.amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id AND a.project_id=$2),0) END AS effective_amount
+    FROM financial_entries f
+    LEFT JOIN payment_history cash ON f.kind IN('payment','cash_out') AND
+      (cash.legacy_entry_id=f.id OR (f.source_type IN('accounting_payment','record_correction') AND cash.id=f.source_id))
+    LEFT JOIN accounting_invoices managed ON managed.farm_id=f.farm_id AND managed.finalized_at IS NOT NULL AND (
+      managed.financial_entry_id=f.id OR
+      (f.source_type='record_correction' AND f.kind IN('expense','revenue') AND managed.id=f.source_id AND EXISTS(SELECT 1 FROM accounting_journals v WHERE v.farm_id=managed.farm_id AND v.source_kind='invoice_void' AND v.source_id=managed.id)) OR
+      managed.id=cash.invoice_id)
+    LEFT JOIN LATERAL(SELECT sum(CASE WHEN cash.id IS NULL THEN
+        round(f.amount*part.cumulative/NULLIF(managed.total_minor,0),managed.minor_unit)
+        -round(f.amount*(part.cumulative-part.amount)/NULLIF(managed.total_minor,0),managed.minor_unit)
+      ELSE (round(cash.cumulative_minor*part.cumulative/NULLIF(managed.total_minor,0),0)
+        -round(cash.cumulative_minor*(part.cumulative-part.amount)/NULLIF(managed.total_minor,0),0)
+        -round((cash.cumulative_minor-cash.amount_minor)*part.cumulative/NULLIF(managed.total_minor,0),0)
+        +round((cash.cumulative_minor-cash.amount_minor)*(part.cumulative-part.amount)/NULLIF(managed.total_minor,0),0))/power(10::numeric,managed.minor_unit) END) AS amount
+      FROM (SELECT item->>'projectId' AS project_id,(item->>'totalMinor')::numeric AS amount,
+        sum((item->>'totalMinor')::numeric) OVER(ORDER BY position) AS cumulative
+        FROM jsonb_array_elements(managed.snapshot->'lines') WITH ORDINALITY AS lines(item,position)) part
+      WHERE part.project_id::uuid=$2::uuid) attributed ON managed.id IS NOT NULL AND $2::uuid IS NOT NULL
+    WHERE f.farm_id=$1 AND ($3::timestamptz IS NULL OR f.observed_at>=$3) AND ($4::timestamptz IS NULL OR f.observed_at<$4))`;
+
   const totals = (
     await db.query(
       `${effective} SELECT currency,kind,sum(effective_amount)::text AS amount FROM effective GROUP BY currency,kind HAVING sum(effective_amount)<>0 ORDER BY currency,kind`,
@@ -107,10 +151,34 @@ export async function reportSummary(
   ).rows;
   const receivables = (
     await db.query(
-      `WITH obligations AS(SELECT f.currency,f.amount,CASE f.source_type WHEN 'animal_event' THEN COALESCE((SELECT sum(p.amount) FROM manual_payment_records p JOIN financial_entries cash ON cash.farm_id=p.farm_id AND cash.source_type='manual_animal_payment' AND cash.source_id=p.id AND cash.kind='payment' WHERE p.revenue_id=f.id AND ($3::timestamptz IS NULL OR cash.observed_at<$3)),0) WHEN 'market_order' THEN COALESCE((SELECT sum(p.amount) FROM commerce_payments p JOIN financial_entries cash ON cash.farm_id=f.farm_id AND cash.source_type='manual_market_payment' AND cash.source_id=p.id AND cash.kind='payment' WHERE p.order_id=f.source_id AND ($3::timestamptz IS NULL OR cash.observed_at<$3)),0) WHEN 'service_booking' THEN COALESCE((SELECT sum(CASE WHEN p.kind='refund' THEN -p.amount ELSE p.amount END) FROM service_payment_records p WHERE p.booking_id=f.source_id AND p.status='recorded' AND ($3::timestamptz IS NULL OR p.acknowledged_at<$3)),0) ELSE 0 END AS paid FROM financial_entries f WHERE f.farm_id=$1 AND ($2::uuid IS NULL OR f.project_id=$2) AND f.kind='revenue' AND ($3::timestamptz IS NULL OR f.observed_at<$3) UNION ALL SELECT currency,sum(CASE WHEN kind='sales' THEN amount ELSE 0 END),sum(CASE WHEN kind='cash_received' THEN amount ELSE 0 END) FROM opening_financial_balances WHERE farm_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND ($3::timestamptz IS NULL OR as_of_date::timestamp AT TIME ZONE $4<$3) GROUP BY currency,project_id) SELECT currency,sum(GREATEST(0,amount-paid)) AS amount FROM obligations GROUP BY currency`,
+      `WITH obligations AS(SELECT f.currency,f.amount,CASE f.source_type WHEN 'animal_event' THEN COALESCE((SELECT sum(p.amount) FROM manual_payment_records p JOIN financial_entries cash ON cash.farm_id=p.farm_id AND cash.source_type='manual_animal_payment' AND cash.source_id=p.id AND cash.kind='payment' WHERE p.revenue_id=f.id AND ($3::timestamptz IS NULL OR cash.observed_at<$3)),0) WHEN 'market_order' THEN COALESCE((SELECT sum(p.amount) FROM commerce_payments p JOIN financial_entries cash ON cash.farm_id=f.farm_id AND cash.source_type='manual_market_payment' AND cash.source_id=p.id AND cash.kind='payment' WHERE p.order_id=f.source_id AND ($3::timestamptz IS NULL OR cash.observed_at<$3)),0) WHEN 'service_booking' THEN COALESCE((SELECT sum(CASE WHEN p.kind='refund' THEN -p.amount ELSE p.amount END) FROM service_payment_records p WHERE p.booking_id=f.source_id AND p.status='recorded' AND ($3::timestamptz IS NULL OR p.acknowledged_at<$3)),0) ELSE 0 END AS paid FROM financial_entries f WHERE f.farm_id=$1 AND ($2::uuid IS NULL OR f.project_id=$2) AND f.kind='revenue' AND NOT EXISTS(SELECT 1 FROM accounting_invoices i WHERE i.farm_id=f.farm_id AND (i.source_entry_id=f.id OR i.financial_entry_id=f.id) AND i.finalized_at IS NOT NULL) AND ($3::timestamptz IS NULL OR f.observed_at<$3) UNION ALL SELECT currency,sum(CASE WHEN kind='sales' THEN amount ELSE 0 END),sum(CASE WHEN kind='cash_received' THEN amount ELSE 0 END) FROM opening_financial_balances WHERE farm_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND ($3::timestamptz IS NULL OR as_of_date::timestamp AT TIME ZONE $4<$3) GROUP BY currency,project_id) SELECT currency,sum(GREATEST(0,amount-paid)) AS amount FROM obligations GROUP BY currency`,
       [farmId, q.projectId ?? null, q.to ?? null, farm.timezone],
     )
   ).rows;
+  const accountingAsOf = (await db.query("SELECT ((COALESCE($1::timestamptz,clock_timestamp())-CASE WHEN $1::timestamptz IS NULL THEN interval '0 seconds' ELSE interval '1 microsecond' END) AT TIME ZONE $2)::date::text AS day", [q.to ?? null, farm.timezone])).rows[0].day;
+  const accountingOutstanding = await outstandingInvoices(db, farmId, accountingAsOf);
+  const projectCredits = q.projectId ? (await db.query(`SELECT c.corrects_invoice_id,sum((line->>'totalMinor')::numeric)::text AS amount
+    FROM accounting_invoices c CROSS JOIN LATERAL jsonb_array_elements(c.snapshot->'lines') line
+    WHERE c.farm_id=$1 AND c.finalized_at IS NOT NULL AND c.corrects_invoice_id IS NOT NULL AND c.issue_date<=$2
+      AND (line->>'projectId')::uuid=$3::uuid
+      AND NOT EXISTS(SELECT 1 FROM accounting_journals v WHERE v.farm_id=c.farm_id AND v.source_kind='invoice_void' AND v.source_id=c.id AND v.posted_on<=$2)
+    GROUP BY c.corrects_invoice_id`, [farmId, accountingAsOf, q.projectId])).rows : [];
+  for (const invoice of accountingOutstanding.filter(invoice => invoice.kind === "sale")) {
+    let amount = BigInt(invoice.balance_minor);
+    if (q.projectId) {
+      let cumulative = 0n, previous = 0n, share = 0n;
+      const total = BigInt(invoice.snapshot.totals.totalMinor);
+      const paid = BigInt(invoice.paid_minor);
+      for (const line of invoice.snapshot.lines) {
+        cumulative += BigInt(line.totalMinor);
+        const allocated = total ? halfUp(paid * cumulative, total) : 0n;
+        if (line.projectId === q.projectId) share += BigInt(line.totalMinor) - (allocated - previous);
+        previous = allocated;
+      }
+      amount = share - BigInt(projectCredits.find(credit => credit.corrects_invoice_id === invoice.id)?.amount ?? "0");
+    }
+    receivables.push({ currency: invoice.currency, amount: decimalFromMinor(amount, invoice.minor_unit) });
+  }
   const deposits = (
     await db.query(
       `SELECT p.currency,sum(CASE WHEN p.kind='refund' THEN -p.amount ELSE p.amount END) AS amount FROM service_payment_records p JOIN service_bookings b ON b.id=p.booking_id JOIN service_listings s ON s.id=b.service_id WHERE s.farm_id=$1 AND $2::uuid IS NULL AND p.status='recorded' AND ($3::timestamptz IS NULL OR p.acknowledged_at<$3) AND NOT EXISTS(SELECT 1 FROM financial_entries f WHERE f.farm_id=$1 AND f.kind='revenue' AND f.source_type='service_booking' AND f.source_id=b.id AND ($3::timestamptz IS NULL OR f.observed_at<$3)) GROUP BY p.currency`,
@@ -130,29 +198,36 @@ export async function reportSummary(
     ),
   ].sort();
   const byCurrency = currencies.map((code) => {
-    const sum = (rows: any[], kind?: string) =>
+    const sum = (rows: any[], kind?: string): bigint =>
       rows
         .filter((r) => r.currency === code && (!kind || r.kind === kind))
-        .reduce((n, r) => n + Number(r.amount), 0);
+        .reduce<bigint>((n, r) => n + reportScaled(r.amount), 0n);
     const recordedCosts = sum(costRows) + sum(opening, "cost") + sum(transfers),
       recordedSales = sum(totals, "revenue") + sum(opening, "sales"),
       cashReceived = sum(totals, "payment") + sum(opening, "cash_received"),
       cashPaid = sum(totals, "cash_out");
+    const exact = {
+      recordedCosts: reportAmount(recordedCosts, code), recordedSales: reportAmount(recordedSales, code),
+      cashReceived: reportAmount(cashReceived, code), cashPaid: reportAmount(cashPaid, code),
+      outstandingRecordedSales: reportAmount(sum(receivables), code), unearnedServiceDeposits: reportAmount(sum(deposits), code),
+      recordedMargin: reportAmount(recordedSales - recordedCosts, code), inventoryPurchases: reportAmount(sum(purchases), code),
+      inputConsumption: reportAmount(sum(totals, "input_consumption"), code), allocatedTransferNet: reportAmount(sum(transfers), code),
+    };
     return {
-      currency: code,
-      recordedCosts: Math.round(recordedCosts * 100) / 100,
-      recordedSales,
-      cashReceived,
-      cashPaid,
-      outstandingRecordedSales: Math.round(sum(receivables) * 100) / 100,
+      currency: code, minorUnit: reportCurrencyScale(code), exact,
+      recordedCosts: Number(exact.recordedCosts),
+      recordedSales: Number(exact.recordedSales),
+      cashReceived: Number(exact.cashReceived),
+      cashPaid: Number(exact.cashPaid),
+      outstandingRecordedSales: Number(exact.outstandingRecordedSales),
       receivablesAsOf: q.to ?? new Date().toISOString(),
-      unearnedServiceDeposits: Math.round(sum(deposits) * 100) / 100,
-      recordedMargin: Math.round((recordedSales - recordedCosts) * 100) / 100,
-      inventoryPurchases: sum(purchases),
-      inputConsumption: sum(totals, "input_consumption"),
+      unearnedServiceDeposits: Number(exact.unearnedServiceDeposits),
+      recordedMargin: Number(exact.recordedMargin),
+      inventoryPurchases: Number(exact.inventoryPurchases),
+      inputConsumption: Number(exact.inputConsumption),
       profit: null,
       costsByCategory: costRows.filter((r) => r.currency === code),
-      allocatedTransferNet: sum(transfers),
+      allocatedTransferNet: Number(exact.allocatedTransferNet),
     };
   });
   const missing = (
@@ -182,12 +257,12 @@ export async function reportSummary(
         budgetByCurrency.push(bucket);
       }
       bucket.budget =
-        Math.round((bucket.budget + Number(line.amount)) * 100) / 100;
+        Math.round((bucket.budget + Number(line.amount)) * 10 ** reportCurrencyScale(line.currency)) / 10 ** reportCurrencyScale(line.currency);
     }
   for (const b of budgetByCurrency) {
     b.recordedCosts =
       byCurrency.find((x) => x.currency === b.currency)?.recordedCosts ?? 0;
-    b.variance = Math.round((b.budget - b.recordedCosts) * 100) / 100;
+    b.variance = Math.round((b.budget - b.recordedCosts) * 10 ** reportCurrencyScale(b.currency)) / 10 ** reportCurrencyScale(b.currency);
   }
   const bucket = q.period === "week" ? "week" : "day";
   const series =
@@ -203,6 +278,7 @@ export async function reportSummary(
     farmName: farm.name,
     timezone: farm.timezone,
     projectId: q.projectId ?? null,
+    projectReceivables: q.projectId ? { scope: "attributed_invoice_balance", signed: true, settlement: "invoice_only" } : null,
     from: q.from ?? null,
     to: q.to ?? null,
     period: q.period,
@@ -320,7 +396,7 @@ export async function summaryPdf(summary: any, language: "sn" | "nd") {
       ["outstandingRecordedSales", h.asOf],
       ["unearnedServiceDeposits", h.deposit],
     ])
-      doc.text(`${label}: ${Number(b[key]).toFixed(2)}`);
+      doc.text(`${label}: ${b.exact?.[key as keyof typeof b.exact] ?? Number(b[key]).toFixed(b.minorUnit)}`);
     doc.moveDown();
   }
   doc.fontSize(14).text(h.inventory).fontSize(9).text(h.stockDate).fontSize(10);
@@ -513,7 +589,7 @@ export function registerFinance(app: FastifyInstance, ctx: Context) {
     return page(
       (
         await ctx.db.query(
-          "SELECT f.*,EXISTS(SELECT 1 FROM financial_corrections c WHERE c.entry_id=f.id) AS reversed,COALESCE((SELECT sum(amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id),0) AS allocated FROM financial_entries f WHERE farm_id=$1 AND kind='expense' AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
+          "SELECT f.*,(SELECT i.id FROM accounting_invoices i WHERE i.farm_id=f.farm_id AND i.finalized_at IS NOT NULL AND f.id IN(i.source_entry_id,i.financial_entry_id) LIMIT 1) AS \"accountingInvoiceId\",EXISTS(SELECT 1 FROM accounting_invoices i WHERE i.farm_id=f.farm_id AND i.finalized_at IS NOT NULL AND f.id IN(i.source_entry_id,i.financial_entry_id)) AS \"accountingManaged\",EXISTS(SELECT 1 FROM financial_corrections c WHERE c.entry_id=f.id) AS reversed,COALESCE((SELECT sum(amount) FROM expense_allocations a WHERE a.reversed_at IS NULL AND a.entry_id=f.id),0) AS allocated FROM financial_entries f WHERE farm_id=$1 AND kind='expense' AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
           [a.farmId, q.cursor ?? null, q.limit + 1],
         )
       ).rows,
@@ -626,6 +702,7 @@ export function registerFinance(app: FastifyInstance, ctx: Context) {
         b.id,
         { operation: "allocate", entryId, ...b },
         async (c) => {
+          await guardAccountingEntry(c, a.farmId, entryId);
           const expense = row(
             (
               await c.query(
@@ -878,11 +955,11 @@ export function registerFinance(app: FastifyInstance, ctx: Context) {
           [h.currency, h.cost, h.sales, h.received, h.paid, h.margin],
           ...summary.byCurrency.map((b) => [
             b.currency,
-            b.recordedCosts,
-            b.recordedSales,
-            b.cashReceived,
-            b.cashPaid,
-            b.recordedMargin,
+            b.exact.recordedCosts,
+            b.exact.recordedSales,
+            b.exact.cashReceived,
+            b.exact.cashPaid,
+            b.exact.recordedMargin,
           ]),
         ];
         return reply

@@ -1,5 +1,5 @@
-import React, { useState, type ReactNode } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
+import React, { useEffect, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export const colors = { ink: '#17382C', green: '#1D654B', pale: '#E8F1EA', paper: '#F7F8F3', white: '#FFFFFF', muted: '#55675E', line: '#D1DED3', orange: '#8C4B0D', red: '#9B302A', blue: '#245E7B' };
@@ -39,12 +39,28 @@ export function Button({ title, onPress, secondary = false, danger = false, disa
   </Pressable>;
 }
 
+// Keep this outside the scrollable form so multiline inputs and numeric keyboards
+// always have an accessible dismissal action, even on a short viewport.
+export function KeyboardDismissButton({ label }: { label: string }) {
+  const [visible, setVisible] = useState(() => Keyboard.isVisible());
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setVisible(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setVisible(false));
+    setVisible(Keyboard.isVisible());
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+  if (!visible) return null;
+  return <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.paper }}>
+    <Button testID="keyboard-dismiss" title={label} secondary onPress={() => Keyboard.dismiss()} />
+  </View>;
+}
+
 export function Field({ label, hint, ...props }: TextInputProps & { label: string; hint?: string }) {
   return <View style={{ gap: 6 }}><Text testID={props.testID ? `${props.testID}-label` : undefined} style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} accessibilityHint={hint} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
 }
 
-export function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void }) {
-  return <View style={styles.between}><View style={{ flex: 1, minWidth: 160 }}><Text style={styles.label}>{label}</Text>{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View><Switch accessibilityLabel={label} value={value} onValueChange={onChange} trackColor={{ false: '#A4B5A7', true: colors.green }} /></View>;
+export function Toggle({ label, hint, value, onChange, testID }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void; testID?: string }) {
+  return <View style={styles.between}><View style={{ flex: 1, minWidth: 160 }}><Text style={styles.label}>{label}</Text>{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View><Switch testID={testID} accessibilityLabel={label} value={value} onValueChange={onChange} trackColor={{ false: '#A4B5A7', true: colors.green }} /></View>;
 }
 
 export function Card({ title, children, style }: { title?: string; children: ReactNode; style?: object }) {
@@ -55,22 +71,23 @@ export function Notice({ text, error = false }: { text: string; error?: boolean 
   return <View style={error ? styles.error : [styles.card, styles.warning]} accessibilityRole={error ? 'alert' : 'text'} accessibilityLiveRegion="polite"><Text style={styles.text}>{text}</Text></View>;
 }
 
-export function Sheet({ title, visible, onClose, closeLabel, children, dismissible = true }: { title: string; visible: boolean; onClose: () => void; closeLabel: string; children: ReactNode; dismissible?: boolean }) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen">
-    <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modal}>
+export function Sheet({ title, visible, onClose, onDismiss, closeLabel, keyboardDismissLabel, children, dismissible = true }: { title: string; visible: boolean; onClose: () => void; onDismiss?: () => void; closeLabel: string; keyboardDismissLabel?: string; children: ReactNode; dismissible?: boolean }) {
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={onDismiss} presentationStyle="overFullScreen">
+    <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modal}>
       <View style={[styles.between, styles.modalHeader]}><Text style={[styles.heading, { flex: 1 }]} accessibilityRole="header">{title}</Text>{dismissible ? <Button testID="sheet-close" title={closeLabel} onPress={onClose} secondary /> : null}</View>
+      {visible && keyboardDismissLabel ? <KeyboardDismissButton label={keyboardDismissLabel} /> : null}
       <ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>{children}</ScrollView>
     </KeyboardAvoidingView></SafeAreaView>
   </Modal>;
 }
 
-export function Choice<T extends string>({ label, value, options, onChange, closeLabel, testID }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; closeLabel: string; testID?: string }) {
+export function Choice<T extends string>({ label, value, options, onChange, closeLabel, testID }: { label: string; value: T; options: { value: T; label: string; disabled?: boolean }[]; onChange: (value: T) => void; closeLabel: string; testID?: string }) {
   const [open, setOpen] = useState(false);
   const selected = options.find(option => option.value === value);
   return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text>
     <Button testID={testID} secondary title={selected?.label || label} onPress={() => setOpen(true)} />
     <Sheet title={label} visible={open} onClose={() => setOpen(false)} closeLabel={closeLabel}>
-      {options.map(option => <Pressable key={option.value} testID={testID ? `${testID}-option-${option.value}` : undefined} accessibilityRole="radio" accessibilityState={{ selected: option.value === value }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
+      {options.map(option => <Pressable key={option.value} testID={testID ? `${testID}-option-${option.value}` : undefined} accessibilityRole="radio" disabled={option.disabled} accessibilityState={{ selected: option.value === value, disabled: Boolean(option.disabled) }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, option.disabled && styles.disabled, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
     </Sheet>
   </View>;
 }

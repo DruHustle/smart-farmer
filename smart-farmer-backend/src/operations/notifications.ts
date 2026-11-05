@@ -59,6 +59,7 @@ const messages: Record<string, Record<string, string>> = {
 export function notificationText(row: any, language: string) {
   const catalog = messages[language] ?? messages.sn;
   return {
+    language: language === "nd" ? "nd" : "sn",
     title: catalog[row.message_key] ?? catalog.reminder,
     privatePushBody:
       language === "nd"

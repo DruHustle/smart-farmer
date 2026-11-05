@@ -1,0 +1,8 @@
+FROM postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+# The upstream entrypoint invokes `gosu postgres`; su-exec supports that same
+# user/command form without the vulnerable Go binary in this pinned base.
+RUN apk add --no-cache 'su-exec=0.3-r0' 'musl=1.2.6-r3' 'musl-utils=1.2.6-r3' 'zlib=1.3.2-r1' && \
+    sed -i 's/exec gosu postgres /exec su-exec postgres /' /usr/local/bin/docker-entrypoint.sh && \
+    ! grep -q 'exec gosu postgres ' /usr/local/bin/docker-entrypoint.sh && \
+    grep -q 'exec su-exec postgres ' /usr/local/bin/docker-entrypoint.sh && \
+    rm /usr/local/bin/gosu

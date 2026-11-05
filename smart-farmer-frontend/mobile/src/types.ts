@@ -55,7 +55,7 @@ export type Mutation = {
 };
 export type MediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'audio/mp4' | 'audio/mpeg' | 'audio/webm' | 'audio/wav' | 'application/pdf';
 export type Attachment = {
-  id: string; farmId: string; activityId?: string; assetId?: string; financial?: boolean; mimeType: MediaType; filename: string;
+  id: string; farmId: string; activityId?: string; assetId?: string; accountingDocument?: boolean; documentId?: string; financial?: boolean; mimeType: MediaType; filename: string;
   dataBase64: string; sizeBytes: number; state: 'draft' | 'pending' | 'synced' | 'blocked' | 'conflict';
   attempts: number; lastError: string | null; createdAt: string;
 };

@@ -118,6 +118,8 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     const b=z.object({role:z.enum(['owner','manager','worker','adviser'])}).strict().parse(req.body);
     await transaction(async c=>{
       await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);
+      const actor=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,id]);
+      if(actor.rows[0]?.role!=='owner')throw new ApiError('not_found',404);
       const previous=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!previous.rowCount)throw new ApiError('not_found',404);
       if(previous.rows[0].role==='owner'&&b.role!=='owner'){const owners=await c.query("SELECT count(*) FROM memberships WHERE farm_id=$1 AND role='owner'",[farmId]);if(Number(owners.rows[0].count)<2)throw new ApiError('last_owner',409);}
       await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);await audit(c,farmId,id,'membership',userId,'role_changed','owner_review',previous.rows[0],b);
@@ -126,7 +128,10 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   app.delete('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
     const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     await transaction(async c=>{
-      await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);const m=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!m.rowCount)throw new ApiError('not_found',404);
+      await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);
+      const actor=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,id]);
+      if(actor.rows[0]?.role!=='owner')throw new ApiError('not_found',404);
+      const m=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!m.rowCount)throw new ApiError('not_found',404);
       if(m.rows[0].role==='owner'){const owners=await c.query("SELECT count(*) FROM memberships WHERE farm_id=$1 AND role='owner'",[farmId]);if(Number(owners.rows[0].count)<2)throw new ApiError('last_owner',409);}
       await c.query('UPDATE tasks SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);
       await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',[farmId,userId]);await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');

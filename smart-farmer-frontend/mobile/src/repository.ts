@@ -160,7 +160,10 @@ export class LocalRepository {
   }
 
   attach(attachment: Attachment): Promise<void> {
-    if (!UUID.test(attachment.id) || !UUID.test(attachment.activityId || attachment.assetId || '') || Boolean(attachment.activityId) === Boolean(attachment.assetId) || !UUID.test(attachment.farmId)) throw new Error('invalid_record');
+    if (!UUID.test(attachment.id) || !UUID.test(attachment.farmId)) throw new Error('invalid_record');
+    if (attachment.accountingDocument) {
+      if (attachment.activityId || attachment.assetId || attachment.financial !== true || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(attachment.mimeType)) throw new Error('invalid_record');
+    } else if (!UUID.test(attachment.activityId || attachment.assetId || '') || Boolean(attachment.activityId) === Boolean(attachment.assetId)) throw new Error('invalid_record');
     if (attachment.sizeBytes > 5 * 1024 * 1024 || attachment.sizeBytes <= 0) throw new Error('media_too_large');
     const encodedSize = Math.floor(attachment.dataBase64.length * 3 / 4) - (attachment.dataBase64.endsWith('==') ? 2 : attachment.dataBase64.endsWith('=') ? 1 : 0);
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(attachment.dataBase64) || encodedSize !== attachment.sizeBytes) throw new Error('invalid_record');
@@ -168,7 +171,8 @@ export class LocalRepository {
       const rows = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments');
       const used = rows.reduce((total, row) => { const prior = JSON.parse(row.value) as Attachment; return total + (prior.state === 'synced' ? 0 : prior.sizeBytes); }, 0);
       if (used + attachment.sizeBytes > 50 * 1024 * 1024) throw new Error('local_quota');
-      await this.db.runAsync('INSERT INTO attachments(id, farm_id, activity_id, value) VALUES(?, ?, ?, ?)', attachment.id, attachment.farmId, attachment.assetId ? `asset:${attachment.assetId}` : attachment.activityId!, JSON.stringify(attachment));
+      const parent = attachment.accountingDocument ? `accounting:${attachment.id}` : attachment.assetId ? `asset:${attachment.assetId}` : attachment.activityId!;
+      await this.db.runAsync('INSERT INTO attachments(id, farm_id, activity_id, value) VALUES(?, ?, ?, ?)', attachment.id, attachment.farmId, parent, JSON.stringify(attachment));
     });
   }
 
@@ -193,6 +197,18 @@ export class LocalRepository {
         }
         await this.db.execAsync('COMMIT');
       } catch (error) { await this.db.execAsync('ROLLBACK'); throw error; }
+    });
+  }
+
+  /** Upload/extraction is explicit; it never creates or posts an invoice or expense. */
+  queueAccountingDocument(farmId: string, id: string): Promise<void> {
+    if (!UUID.test(farmId) || !UUID.test(id)) throw new Error('invalid_record');
+    return this.exclusive(async () => {
+      const row = await this.db.getFirstAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ? AND id = ?', farmId, id);
+      if (!row) throw new Error('invalid_record');
+      const attachment = JSON.parse(row.value) as Attachment;
+      if (!attachment.accountingDocument || attachment.state !== 'draft') throw new Error('invalid_record');
+      await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ? AND farm_id = ?', JSON.stringify({ ...attachment, state: 'pending' }), id, farmId);
     });
   }
 

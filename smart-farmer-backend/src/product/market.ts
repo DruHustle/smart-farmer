@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import sharp from "sharp";
+import { guardAccountingSource, managedSourceBalance } from "../accounting/bridge.js";
 import { ApiError, audit, manageRoles, type Context } from "../context.js";
 import {
   uuid,
@@ -459,15 +460,14 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
     const actor = await ctx.user(req, reply);
     if (!actor) return;
     const q = listQuery.parse(req.query);
-    return page(
-      (
-        await ctx.db.query(
-          "SELECT o.id,o.listing_id,l.title,o.quantity,o.unit,o.amount,o.currency,o.status,o.created_at,o.expires_at,o.cancellation_reason,o.identity_ids,(o.buyer_id=$1) AS is_buyer,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager')) AS is_seller,COALESCE((SELECT sum(p.amount) FROM commerce_payments p WHERE p.order_id=o.id),0) AS manually_recorded_paid FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE (o.buyer_id=$1 OR EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager'))) AND ($2::uuid IS NULL OR o.id<$2) ORDER BY o.id DESC LIMIT $3",
-          [actor, q.cursor ?? null, q.limit + 1],
-        )
-      ).rows,
-      q.limit,
-    );
+    const orders=(await ctx.db.query(
+      "SELECT o.id,o.listing_id,l.farm_id AS seller_farm_id,l.title,o.quantity,o.unit,o.amount,o.currency,o.status,o.created_at,o.expires_at,o.cancellation_reason,o.identity_ids,(o.buyer_id=$1) AS is_buyer,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager')) AS is_seller,COALESCE((SELECT sum(p.amount) FROM commerce_payments p WHERE p.order_id=o.id),0) AS manually_recorded_paid FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE (o.buyer_id=$1 OR EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager'))) AND ($2::uuid IS NULL OR o.id<$2) ORDER BY o.id DESC LIMIT $3",
+      [actor,q.cursor??null,q.limit+1])).rows;
+    return page(await Promise.all(orders.map(async ({seller_farm_id,...order})=>{
+      // Buyers must not receive the seller's private bookkeeping identifiers or adjustments.
+      const managed=order.is_seller?await managedSourceBalance(ctx.db,seller_farm_id,'market_order',order.id):null;
+      return {...order,accountingInvoiceId:managed?.accountingInvoiceId??null,accountingFarmId:managed?seller_farm_id:null,accountingManaged:!!managed,...(managed?{manually_recorded_paid:managed.paid,accountingOutstanding:managed.balance,accountingCredited:managed.credited}:{})};
+    })),q.limit);
   });
   app.post("/v1/market/orders/:orderId/status", async (req, reply) => {
     const actor = await ctx.user(req, reply);
@@ -524,6 +524,7 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
       b.id,
       { operation: "market_payment", orderId, ...b },
       async (c) => {
+        await guardAccountingSource(c, snapshot.farm_id, 'market_order', orderId);
         const o = row(
           (
             await c.query(

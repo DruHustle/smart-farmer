@@ -1,4 +1,6 @@
 import { createServer, request } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import { join } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -7,8 +9,8 @@ import assert from 'node:assert/strict';
 const origin = process.env.NATIVE_API_ORIGIN || 'http://127.0.0.1:3000';
 const credentials = { username: 'native_owner', password: 'NativeAcceptanceOnly!2026' };
 const sellerCredentials = { username: 'native_seller', password: 'NativeAcceptanceOnly!2026' };
-async function api(path, body, token) {
-  const response = await fetch(origin + path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+async function api(path, body, token, method = body ? 'POST' : 'GET') {
+  const response = await fetch(origin + path, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const value = await response.json();
   assert.ok(response.ok, `${response.status}: ${JSON.stringify(value)}`);
   return value;
@@ -20,9 +22,11 @@ if (process.argv[2] === 'seed') {
   await api('/v1/register', { ...credentials, farmName: 'Native acceptance farm', language: 'sn' });
   const session = await api('/v1/sessions', credentials);
   const { items: farms } = await api('/v1/farms', null, session.token);
-  const ids = { farmId: farms[0].id, projectId: randomUUID(), templateId: randomUUID(), planId: randomUUID(), assetId: randomUUID(), cameraId: randomUUID(), cameraEventId: randomUUID(), stockId: randomUUID(), listingId: randomUUID(), serviceId: randomUUID() };
+  const ids = { farmId: farms[0].id, projectId: randomUUID(), templateId: randomUUID(), planId: randomUUID(), assetId: randomUUID(), cameraId: randomUUID(), cameraEventId: randomUUID(), stockId: randomUUID(), listingId: randomUUID(), serviceId: randomUUID(), purchaseInvoiceId: randomUUID() };
   const base = `/v1/farms/${ids.farmId}`;
   await api(`${base}/projects`, { id: ids.projectId, name: 'Native acceptance maize', enterpriseType: 'crop', crop: 'maize', irrigation: true }, session.token);
+  await api(`${base}/accounting/settings`, { id: randomUUID(), version: 0, business: { legalName: 'Synthetic native acceptance farm', tradingName: '', address: 'Synthetic test address; not a real business', email: 'native@example.test', phone: '', registrationNumber: '', taxNumber: '' }, defaultCurrency: 'USD', invoicePrefix: 'NATIVE', startingNumber: 1, taxRates: [{ name: 'Synthetic configured test rate', rateBps: 1500 }], lockedThrough: null, reason: 'Isolated native acceptance fixture; not tax registration or a production business' }, session.token, 'PUT');
+  await api(`${base}/accounting/invoices`, { id: ids.purchaseInvoiceId, kind: 'purchase', party: { name: 'Synthetic native supplier', address: '', email: '', phone: '', taxNumber: '' }, currency: 'USD', reference: 'NATIVE-BILL-100', issueDate: new Date().toISOString().slice(0, 10), dueDate: null, notes: 'Synthetic supplier draft; native UI must review and post', terms: '', documentId: null, sourceEntryId: null, lines: [{ id: randomUUID(), description: 'Synthetic feed supplies', quantity: '4', unitPrice: '5.00', discountMinor: '0', taxRateBps: 0, accountCode: '5000', projectId: ids.projectId }] }, session.token);
   await api(`${base}/templates`, { id: ids.templateId, name: 'Native sourced template', enterpriseType: 'crop', source: 'Synthetic native acceptance fixture; no agronomic advice', sourceDate: new Date().toISOString().slice(0, 10), language: 'sn', steps: [{ key: 'observe', title: 'Native approved observation task', instructions: 'Synthetic observation only', offsetDays: 1, requiredEvidence: 'Record an observation' }] }, session.token);
   await api(`${base}/projects/${ids.projectId}/plans`, { id: ids.planId, templateId: ids.templateId, templateVersion: 1, anchorAt: new Date().toISOString(), note: 'Native approval preview' }, session.token);
   await api(`${base}/assets`, { id: ids.assetId, name: 'Native acceptance simulator pump', category: 'pump', protocol: 'simulator', staleAfterSeconds: 3600 }, session.token);
@@ -39,7 +43,7 @@ if (process.argv[2] === 'seed') {
   await api(`${sellerBase}/listings`, { id: ids.listingId, stockItemId: ids.stockId, title: 'Native acceptance beans', quantity: 10, price: 6, priceBasis: 'bag', priceQuantity: 2, currency: 'USD', collectionArea: 'Synthetic acceptance collection area' }, seller.token);
   await api(`${sellerBase}/services`, { id: ids.serviceId, name: 'Native acceptance tractor', description: 'Synthetic acceptance service; no external provider', serviceArea: 'Synthetic acceptance area', rate: 25, currency: 'USD', rateBasis: 'hour', minimumCharge: 25, mobilisationCharge: 5, operatorIncluded: true, fuelIncluded: false }, seller.token);
   writeFileSync(process.env.NATIVE_FIXTURE_PATH, JSON.stringify(ids), { mode: 0o600 });
-  console.log('Native crop, sourced plan, simulator equipment/camera and separate seller/service fixtures seeded through authenticated API.');
+  console.log('Native crop, sourced plan, simulator equipment/camera, synthetic accounting settings and unposted supplier draft, and separate seller/service fixtures seeded through authenticated API.');
 } else if (process.argv[2] === 'verify') {
   const session = await api('/v1/sessions', credentials);
   const { items: farms } = await api('/v1/farms', null, session.token);
@@ -48,7 +52,7 @@ if (process.argv[2] === 'seed') {
   console.log('Verified exactly one offline record after native restart and reconciliation.');
 } else if (process.argv[2] === 'ids') {
   const ids = fixture();
-  const values = ['projectId', 'planId', 'assetId', 'cameraId', 'cameraEventId', 'listingId', 'serviceId'].map(key => ids[key]);
+  const values = ['projectId', 'planId', 'assetId', 'cameraId', 'cameraEventId', 'listingId', 'serviceId', 'purchaseInvoiceId'].map(key => ids[key]);
   assert.ok(values.every(value => /^[0-9a-f-]{36}$/.test(value)), 'Only fixture UUIDs may be passed into the native runner');
   console.log(values.join(' '));
 } else if (process.argv[2] === 'verify-products') {
@@ -56,7 +60,7 @@ if (process.argv[2] === 'seed') {
   const session = await api('/v1/sessions', credentials);
   const seller = await api('/v1/sessions', sellerCredentials);
   const base = `/v1/farms/${ids.farmId}`;
-  const [plans, tasks, expenses, orders, bookings, commands, assets, events, stock] = await Promise.all([
+  const [plans, tasks, expenses, orders, bookings, commands, assets, events, stock, invoices, summary, journals] = await Promise.all([
     api(`${base}/projects/${ids.projectId}/plans`, null, session.token),
     api(`${base}/tasks`, null, session.token),
     api(`${base}/expenses`, null, session.token),
@@ -66,6 +70,9 @@ if (process.argv[2] === 'seed') {
     api(`${base}/assets`, null, session.token),
     api(`${base}/camera-events`, null, session.token),
     api(`/v1/farms/${ids.sellerFarmId}/stock`, null, seller.token),
+    api(`${base}/accounting/invoices`, null, session.token),
+    api(`${base}/accounting/summary`, null, session.token),
+    api(`${base}/accounting/ledger`, null, session.token),
   ]);
   assert.equal(plans.items.find(item => item.id === ids.planId)?.status, 'approved', 'Native plan approval must be explicit');
   assert.equal(tasks.items.filter(item => item.title === 'Native approved observation task').length, 1, 'Plan approval must materialize exactly one task');
@@ -95,12 +102,89 @@ if (process.argv[2] === 'seed') {
   assert.equal(event.kind, 'motion', 'Motion is not relabeled as a person');
   assert.ok(event.acknowledged_at, 'Native camera-event acknowledgement reaches the API');
   assert.equal(event.source, 'simulator');
-  console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, and private motion acknowledgement.');
+  const purchase = invoices.items.find(item => item.id === ids.purchaseInvoiceId);
+  assert.equal(purchase.status, 'posted', 'A supplier draft requires explicit native posting');
+  assert.equal(purchase.totals.totalMinor, '2000'); assert.equal(purchase.paidMinor, '750'); assert.equal(purchase.balanceMinor, '1250'); assert.equal(purchase.paymentStatus, 'partial');
+  assert.equal(purchase.payments.filter(item => !item.reversalOf).length, 1, 'Native supplier payment is recorded once');
+  const sales = invoices.items.filter(item => item.party.name === 'Native accepted customer' && item.reference === 'NATIVE-SALE-UI');
+  assert.equal(sales.length, 1, 'Native invoice creation must preserve one invoice identity');
+  const sale = sales[0]; assert.equal(sale.status, 'issued'); assert.ok(sale.number.startsWith('NATIVE-'));
+  assert.equal(sale.totals.totalMinor, '3050'); assert.equal(sale.paidMinor, '1000'); assert.equal(sale.balanceMinor, '2050'); assert.equal(sale.paymentStatus, 'partial');
+  assert.equal(sale.payments.filter(item => !item.reversalOf).length, 1, 'Native customer receipt is recorded once');
+  assert.equal(sale.snapshot.totals.totalMinor, '3050', 'Payment must not mutate the issued snapshot');
+  const usd = summary.byCurrency.find(item => item.currency === 'USD');
+  assert.equal(usd.salesMinor, '3050'); assert.equal(usd.expensesMinor, '2000'); assert.equal(usd.cashReceivedMinor, '1000'); assert.equal(usd.cashPaidMinor, '750'); assert.equal(usd.receivableMinor, '2050'); assert.equal(usd.payableMinor, '1250');
+  assert.equal(summary.exchangeRatesApplied, false);
+  for (const journal of journals.items) assert.equal(journal.lines.reduce((sum, line) => sum + BigInt(line.debitMinor), 0n), journal.lines.reduce((sum, line) => sum + BigInt(line.creditMinor), 0n), 'Native accounting produces balanced journals');
+  const pdf = await fetch(`${origin}${base}/accounting/invoices/${sale.id}/pdf`, { headers: { authorization: `Bearer ${session.token}` } });
+  assert.equal(pdf.status, 200); assert.ok(pdf.headers.get('content-type').startsWith('application/pdf')); assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+  console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, private motion acknowledgement, supplier posting, issued sales invoice, exact partial payments, currency summary, balanced journals and authenticated PDF generation. Native camera/gallery/file-picker and OS sharing are not asserted by this journey.');
 } else if (process.argv[2] === 'proxy') {
-  createServer((incoming, outgoing) => {
-    if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) { outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return; }
-    const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => { outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing); });
-    upstream.on('error', () => { outgoing.writeHead(503); outgoing.end(); });
+  // Test-only diagnostics: fixed categories, no URLs, headers, payloads or raw errors.
+  // Cap the entire process log as well as the fields in each event.
+  let logged = 0;
+  let sequence = 0;
+  let connectionSequence = 0;
+  const connections = new WeakMap();
+  const log = (event, fields = {}) => {
+    if (logged > 4096) return;
+    const value = logged === 4096 ? { event: 'native_proxy_log_limit' } : { event, ...fields };
+    console.log(JSON.stringify({ at: new Date().toISOString(), ...value }));
+    logged++;
+  };
+  const connection = socket => {
+    if (!connections.has(socket)) connections.set(socket, ++connectionSequence);
+    return connections.get(socket);
+  };
+  const routeCategory = url => {
+    const path = (url || '').split('?')[0];
+    if (path === '/health') return 'health';
+    if (path === '/ready') return 'ready';
+    if (path === '/v1/sessions') return 'sessions';
+    if (path === '/v1/sessions/current') return 'session_current';
+    if (path.startsWith('/v1/farms/')) return 'farm';
+    return path.startsWith('/v1/') ? 'api' : 'other';
+  };
+  const handler = (incoming, outgoing) => {
+    const started = performance.now();
+    const id = ++sequence;
+    const event = (name, fields = {}) => log(name, { sequence: id, duration_ms: Math.round(performance.now() - started), ...fields });
+    event('native_proxy_request', {
+      connection: connection(incoming.socket),
+      method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(incoming.method) ? incoming.method : 'OTHER',
+      route: routeCategory(incoming.url),
+    });
+    incoming.once('end', () => event('native_proxy_request_end'));
+    incoming.once('aborted', () => event('native_proxy_request_aborted'));
+    outgoing.once('finish', () => event('native_proxy_response_finish', { status: outgoing.statusCode }));
+    outgoing.once('close', () => { if (!outgoing.writableFinished) event('native_proxy_response_aborted'); });
+    if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) {
+      event('native_proxy_offline', { status: 503 });
+      outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return;
+    }
+    const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => {
+      event('native_proxy_upstream_response', { status: response.statusCode });
+      response.once('end', () => event('native_proxy_upstream_end'));
+      outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing);
+    });
+    upstream.once('socket', socket => {
+      event('native_proxy_upstream_socket', { connecting: socket.connecting });
+      if (socket.connecting) socket.once('connect', () => event('native_proxy_upstream_connected'));
+      else event('native_proxy_upstream_connected');
+    });
+    upstream.once('finish', () => event('native_proxy_upstream_finish'));
+    upstream.on('error', () => { event('native_proxy_upstream_error'); outgoing.writeHead(503); outgoing.end(); });
     incoming.pipe(upstream);
-  }).listen(3001, '127.0.0.1', () => console.log('Native acceptance network proxy ready.'));
+  };
+  const tlsDirectory = process.env.NATIVE_TLS_DIR;
+  const server = tlsDirectory
+    ? createTlsServer({ key: readFileSync(join(tlsDirectory, 'server.key')), cert: readFileSync(join(tlsDirectory, 'server.pem')), minVersion: 'TLSv1.2' }, handler)
+    : createServer(handler);
+  if (tlsDirectory) {
+    server.on('secureConnection', socket => log('native_proxy_tls_secure', { connection: connection(socket) }));
+    server.on('tlsClientError', (_error, socket) => log('native_proxy_tls_error', { connection: connection(socket) }));
+  }
+  const port = Number(process.env.NATIVE_PROXY_PORT || 3001);
+  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
+  server.listen(port, '127.0.0.1', () => console.log('Native acceptance network proxy ready.'));
 }

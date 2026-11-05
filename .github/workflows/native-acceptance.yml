@@ -11,6 +11,8 @@ permissions:
 env:
   CI: 'true'
   EXPO_NO_TELEMETRY: '1'
+  # Fixed-category local-session diagnostics are enabled only in acceptance binaries/Metro.
+  EXPO_PUBLIC_NATIVE_SESSION_TRACE: '1'
   EXPO_PUBLIC_API_URL: http://127.0.0.1:3001
   WEB_ORIGIN: http://127.0.0.1:3001
   LOG_LEVEL: silent
@@ -55,6 +57,8 @@ jobs:
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install local invoice extraction tools
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr tesseract-ocr-eng poppler-utils
       - name: Cache Android compiler dependencies for this native configuration
         uses: actions/cache@v4
         with:
@@ -124,6 +128,8 @@ jobs:
             smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/*.apk
             ${{ runner.temp }}/native-evidence
   ios:
+    # Use the standard ARM simulator runner. The Intel XCTest process exceeded
+    # the startup deadline before it served its first request; retain that deadline.
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
@@ -131,6 +137,10 @@ jobs:
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
+      EXPO_PUBLIC_API_URL: https://127.0.0.1:3001
+      WEB_ORIGIN: https://127.0.0.1:3001
+      # Bound driver startup separately from the unchanged application assertions.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -146,12 +156,25 @@ jobs:
           "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install local invoice extraction tools
+        run: brew install tesseract poppler
+      - name: Bind simulator cache to the active Xcode and SDK
+        id: ios-toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          xcodebuild -version > "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          xcrun --sdk iphonesimulator --show-sdk-version >> "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          xcrun --sdk iphonesimulator --show-sdk-build-version >> "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          fingerprint=$(shasum -a 256 "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt" | cut -d ' ' -f 1)
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore matching native iOS simulator binary
         id: ios-binary
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/SmartFarmer-simulator.zip
-          key: native-ios-simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
+          # Release embeds JavaScript: bind the entire checked-out revision as well as Xcode.
+          key: native-ios-release-adhoc-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-toolchain.outputs.fingerprint }}-${{ github.sha }}
       - name: Compile native SQLCipher iOS simulator application
         if: steps.ios-binary.outputs.cache-hit != 'true'
         working-directory: smart-farmer-frontend/mobile
@@ -161,8 +184,15 @@ jobs:
           npx expo prebuild --no-install --platform ios
           cd ios
           pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
-          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
-          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
+          if NODE_ENV=production xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build > "$RUNNER_TEMP/native-evidence/ios-build.log" 2>&1; then
+            echo 'Native iOS compilation passed; complete output is retained in the evidence artifact.'
+          else
+            NATIVE_BUILD_STATUS=$?
+            tail -n 120 "$RUNNER_TEMP/native-evidence/ios-build.log"
+            exit "$NATIVE_BUILD_STATUS"
+          fi
+          test -s "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app/main.jsbundle"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
       - name: Save successful iOS compilation before UI journeys
         if: steps.ios-binary.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -171,10 +201,16 @@ jobs:
           key: ${{ steps.ios-binary.outputs.cache-primary-key }}
       - name: Restore simulator app and inspect native signing
         run: |
-          mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
-          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
-          codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
-      - name: Start isolated API and Metro
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator"
+          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator"
+          NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
+          test -s "$NATIVE_APP/main.jsbundle"
+          codesign -d --entitlements :- "$NATIVE_APP" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
+          codesign --verify --deep --strict "$NATIVE_APP"
+          git rev-parse HEAD > "$RUNNER_TEMP/native-evidence/ios-embedded-source.txt"
+          shasum -a 256 "$NATIVE_APP/main.jsbundle" >> "$RUNNER_TEMP/native-evidence/ios-embedded-source.txt"
+      - name: Start isolated API with trusted simulator TLS
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh ios
       - name: Install pinned Maestro CLI
         run: |
@@ -182,7 +218,9 @@ jobs:
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       - name: Native iPhone and iPad journeys
-        run: bash smart-farmer-frontend/mobile/acceptance/ios.sh
+        run: |
+          set -euo pipefail
+          bash smart-farmer-frontend/mobile/acceptance/ios.sh 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-journey.log"
       - name: Retain simulator app and native evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApi } from '../api';
 import { errorText, textFor } from '../i18n';
 import type { Language, Session } from '../types';
-import { Button, Card, Choice, Field, Notice, styles } from '../ui';
+import { KeyboardDismissButton, Button, Card, Choice, Field, Notice, styles } from '../ui';
 
 export function AuthScreen({ origin, language, onLanguage, onSession }: { origin: string; language: Language; onLanguage: (language: Language) => void; onSession: (session: Session, recoveryCode?: string) => Promise<void> }) {
   const t = textFor(language);
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<'signIn' | 'register' | 'join' | 'recover'>('signIn');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +42,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
     } catch (value) { setError(value); } finally { setBusy(false); }
   }
 
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { maxWidth: 580, paddingTop: 28 }]}>
+  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={insets.top}><ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { maxWidth: 580, paddingTop: 28 }]}>
     <View style={styles.between}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} value={language} onChange={onLanguage} closeLabel={t.close} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /></View>
     <Text style={styles.title} accessibilityRole="header">{t.welcome}</Text><Text style={styles.muted}>{t.intro}</Text>
     {error ? <Notice text={errorText(language, error)} error /> : null}
@@ -52,5 +54,5 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       {mode === 'join' || mode === 'recover' ? <Field label={mode === 'join' ? t.invitationCode : t.recoveryCode} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} secureTextEntry /> : null}
       <Button testID="auth-submit" title={t.submit} busy={busy} onPress={() => { void submit(); }} />
     </Card><Text style={styles.caption}>{t.translations}</Text>
-  </ScrollView></KeyboardAvoidingView>;
+  </ScrollView><KeyboardDismissButton label={t.hideKeyboard} /></KeyboardAvoidingView>;
 }

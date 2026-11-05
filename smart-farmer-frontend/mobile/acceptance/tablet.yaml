@@ -1,5 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
+- runFlow: activate-ios.yaml
 - tapOn:
     id: tab-farm
 - scrollUntilVisible:
@@ -15,7 +16,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: project-open-${PROJECT_ID}
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: project-workspace
     direction: DOWN

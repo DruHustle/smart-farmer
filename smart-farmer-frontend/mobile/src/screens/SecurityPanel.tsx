@@ -5,6 +5,7 @@ import { Action, c, dateField, Facts, farmPath, Form, memberOptions, numericFiel
 import { allPages, object, rows, string, type FormField, type Row } from '../product';
 import { ApiError } from '../api';
 import { textFor } from '../i18n';
+import { observePrivatePlayback, type PrivatePlaybackState } from '../private-playback';
 import { farmNow, formatFarmTime } from '../time';
 import type { Language, Session } from '../types';
 import { Button, Card, Choice, Notice, Sheet, styles } from '../ui';
@@ -42,25 +43,22 @@ export function SecurityPanel({ work, language }: Props) {
     <Card title={c(language, 'cameraEvents')}><Records items={data.value?.events || []} language={language} timezone={zone(work)} titleKey="name" fields={['kind', 'source', 'observed_at', 'received_at', 'delayed', 'acknowledged_at', 'expires_at']}>
       {item => <>{!item.acknowledged_at ? <Action testID={`camera-ack-${item.id}`} work={work} language={language} title={c(language, 'acknowledge')} action={() => work.api.request(farmPath(work, `/camera-events/${item.id}/acknowledge`), 'POST', {})} onSaved={data.reload} /> : null}{item.clip_available ? <Action testID={`camera-playback-${item.id}`} work={work} language={language} title={c(language, 'playback')} detail={c(language, 'cameraSessionHint')} action={() => stream(farmPath(work, `/camera-events/${item.id}/session`))} /> : null}{['owner', 'manager', 'worker'].includes(work.selectedFarm?.role || '') ? <Button secondary title={c(language, 'incidents')} onPress={() => setEvent(item)} /> : null}</>}
     </Records></Card>
-    <Sheet title={c(language, 'settings')} visible={Boolean(camera)} onClose={() => setSelected('')} closeLabel={textFor(language).close}>{camera ? <CameraSettings work={work} language={language} camera={camera} onSaved={data.reload} /> : null}</Sheet>
-    <Sheet title={c(language, 'live')} visible={Boolean(video)} onClose={() => setVideo(null)} closeLabel={textFor(language).close}>{video ? <PrivateVideo key={video.id} work={work} language={language} session={video} /> : null}</Sheet>
-    <Sheet title={c(language, 'snapshot')} visible={Boolean(snapshot)} onClose={() => setSnapshot(null)} closeLabel={textFor(language).close}>{snapshot ? <><Image source={{ uri: snapshot.uri }} style={{ width: '100%', height: 300 }} resizeMode="contain" accessibilityLabel={c(language, 'snapshot')} /><Text style={styles.caption}>{snapshot.observedAt ? formatFarmTime(snapshot.observedAt, zone(work), language) : textFor(language).unknown} · {c(language, snapshot.source || 'unknown')}</Text></> : null}</Sheet>
-    <Sheet title={c(language, 'incidents')} visible={Boolean(event)} onClose={() => setEvent(null)} closeLabel={textFor(language).close}>{event ? <Form work={work} language={language} fields={[textField('title', true), textField('description', false, { multiline: true }), selectField('severity', options(language, ['low', 'medium', 'high', 'urgent']), true), ...(work.canManage ? [selectField('assigneeId', memberOptions(work))] : [])]} initial={{ title: string(event.name), severity: 'medium' }} submit={body => work.api.request(farmPath(work, `/camera-events/${event.id}/incident`), 'POST', { ...body, confirmed: true })} onSaved={async () => { setEvent(null); await data.reload(); }} /> : null}</Sheet>
+    <Sheet title={c(language, 'settings')} visible={Boolean(camera)} onClose={() => setSelected('')} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{camera ? <CameraSettings work={work} language={language} camera={camera} onSaved={data.reload} /> : null}</Sheet>
+    <Sheet title={c(language, 'live')} visible={Boolean(video)} onClose={() => setVideo(null)} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{video ? <PrivateVideo key={video.id} work={work} language={language} session={video} /> : null}</Sheet>
+    <Sheet title={c(language, 'snapshot')} visible={Boolean(snapshot)} onClose={() => setSnapshot(null)} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{snapshot ? <><Image source={{ uri: snapshot.uri }} style={{ width: '100%', height: 300 }} resizeMode="contain" accessibilityLabel={c(language, 'snapshot')} /><Text style={styles.caption}>{snapshot.observedAt ? formatFarmTime(snapshot.observedAt, zone(work), language) : textFor(language).unknown} · {c(language, snapshot.source || 'unknown')}</Text></> : null}</Sheet>
+    <Sheet title={c(language, 'incidents')} visible={Boolean(event)} onClose={() => setEvent(null)} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{event ? <Form work={work} language={language} fields={[textField('title', true), textField('description', false, { multiline: true }), selectField('severity', options(language, ['low', 'medium', 'high', 'urgent']), true), ...(work.canManage ? [selectField('assigneeId', memberOptions(work))] : [])]} initial={{ title: string(event.name), severity: 'medium' }} submit={body => work.api.request(farmPath(work, `/camera-events/${event.id}/incident`), 'POST', { ...body, confirmed: true })} onSaved={async () => { setEvent(null); await data.reload(); }} /> : null}</Sheet>
   </>;
 }
 
 function PrivateVideo({ work, language, session }: Props & { session: CameraSession }) {
-  const [expired, setExpired] = useState(false); const [failed, setFailed] = useState(false);
+  const [playback, setPlayback] = useState<PrivatePlaybackState>('loading');
   const player = useVideoPlayer({ uri: work.session.origin + session.playlistPath, headers: { Authorization: `Bearer ${session.token}` }, contentType: 'hls', useCaching: false }, player => { player.loop = false; player.play(); });
-  const [playbackStatus, setPlaybackStatus] = useState(() => player.status);
   useEffect(() => {
-    setPlaybackStatus(player.status);
-    const timer = setTimeout(() => { player.pause(); setExpired(true); }, Math.max(0, Date.parse(session.expiresAt) - Date.now()));
+    const stop = observePrivatePlayback(player, Date.parse(session.expiresAt), setPlayback);
     const listener = AppState.addEventListener('change', state => { if (state !== 'active') player.pause(); });
-    const errors = player.addListener('statusChange', event => { setPlaybackStatus(event.status); if (event.status === 'error') setFailed(true); });
-    return () => { clearTimeout(timer); listener.remove(); errors.remove(); };
-  }, [session.id, player]);
-  return <><Notice text={c(language, 'cameraSessionHint')} /><Text style={styles.caption}>{c(language, session.mode)} · {formatFarmTime(session.expiresAt, zone(work), language)}</Text>{expired || failed ? <View testID="camera-player-error" collapsable={false}><Notice text={c(language, expired ? 'expired' : 'camera_unavailable')} /></View> : <><Text testID={playbackStatus === 'readyToPlay' ? 'camera-player-ready' : 'camera-player-loading'} accessibilityLiveRegion="polite" style={styles.caption}>{playbackStatus === 'readyToPlay' ? c(language, 'playbackReady') : textFor(language).loading}</Text><VideoView player={player} style={{ width: '100%', height: 300 }} nativeControls allowsPictureInPicture={false} contentFit="contain" accessibilityLabel={c(language, 'live')} /></>}</>;
+    return () => { stop(); listener.remove(); };
+  }, [session.id, session.expiresAt, player]);
+  return <><Notice text={c(language, 'cameraSessionHint')} /><Text style={styles.caption}>{c(language, session.mode)} · {formatFarmTime(session.expiresAt, zone(work), language)}</Text>{playback === 'expired' || playback === 'failed' ? <View testID="camera-player-error" collapsable={false}><Notice text={c(language, playback === 'expired' ? 'expired' : 'camera_unavailable')} /></View> : <><Text testID={playback === 'ready' || playback === 'completed' ? 'camera-player-ready' : 'camera-player-loading'} accessibilityLiveRegion="polite" style={styles.caption}>{playback === 'completed' ? c(language, 'playbackCompleted') : playback === 'ready' ? c(language, 'playbackReady') : textFor(language).loading}</Text><VideoView player={player} style={{ width: '100%', height: 300 }} nativeControls allowsPictureInPicture={false} contentFit="contain" accessibilityLabel={c(language, 'live')} /></>}</>;
 }
 
 function CameraSettings({ work, language, camera, onSaved }: Props & { camera: Row; onSaved: () => Promise<void> }) {
