@@ -101,6 +101,8 @@ The iOS and product journeys retain Maestro’s `maestro.log` alongside the exis
 
 The iPhone 17 Pro and iPad Pro 13-inch (M5) journeys select the installed runtime matching the active simulator SDK. They fail if either exact device is unavailable or ambiguous, rather than depending on the order of preinstalled runtimes. The selected SDK, Xcode version and device inventory are retained with the evidence. Runtime selection does not bypass screenshot failures or establish successful native acceptance; the full journeys must still pass.
 
+The iOS job uses the standard `macos-26` ARM runner. At `96b7737`, the Intel runner's XCTest HTTP server started about 21 seconds after the existing 180-second startup deadline; no application assertions ran. The architecture change keeps that deadline and every journey unchanged. Complete compilation output and the separate journey transcript are retained in the evidence artifact, so compiler output cannot hide the failure in the combined job log. A failed compiler or journey still fails the job.
+
 Both platforms have compiled the final dependency set, including SQLCipher and the document picker, and passed executed native acceptance:
 
 | Platform | Verified job and artifact | Result |

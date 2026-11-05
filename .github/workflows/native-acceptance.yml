@@ -124,16 +124,15 @@ jobs:
             smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/*.apk
             ${{ runner.temp }}/native-evidence
   ios:
-    # Standard Intel capacity avoids repeated arm64 runner-acquisition cancellations.
-    # Keep the same macOS release and the complete iPhone/iPad acceptance journeys.
-    runs-on: macos-26-intel
+    # Use the standard ARM simulator runner. The Intel XCTest process exceeded
+    # the startup deadline before it served its first request; retain that deadline.
+    runs-on: macos-26
     timeout-minutes: 75
     concurrency:
       group: native-ios-${{ github.ref }}
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
-      # On the Intel runner XCTest became ready just after Maestro's 120 s default.
       # Bound driver startup separately from the unchanged application assertions.
       MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
     steps:
@@ -176,7 +175,13 @@ jobs:
           npx expo prebuild --no-install --platform ios
           cd ios
           pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
-          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
+          if xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build > "$RUNNER_TEMP/native-evidence/ios-build.log" 2>&1; then
+            echo 'Native iOS compilation passed; complete output is retained in the evidence artifact.'
+          else
+            NATIVE_BUILD_STATUS=$?
+            tail -n 120 "$RUNNER_TEMP/native-evidence/ios-build.log"
+            exit "$NATIVE_BUILD_STATUS"
+          fi
           ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
       - name: Save successful iOS compilation before UI journeys
         if: steps.ios-binary.outputs.cache-hit != 'true'
@@ -197,7 +202,9 @@ jobs:
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       - name: Native iPhone and iPad journeys
-        run: bash smart-farmer-frontend/mobile/acceptance/ios.sh
+        run: |
+          set -euo pipefail
+          bash smart-farmer-frontend/mobile/acceptance/ios.sh 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-journey.log"
       - name: Retain simulator app and native evidence
         if: always()
         uses: actions/upload-artifact@v4
