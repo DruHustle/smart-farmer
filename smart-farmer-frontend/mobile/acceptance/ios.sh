@@ -12,6 +12,7 @@ xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl keychain "$NATIVE_PHONE" add-root-cert "$RUNNER_TEMP/native-tls/ca.pem"
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
+NATIVE_TLS_DIR="$RUNNER_TEMP/native-tls" node "$NATIVE_DIR/acceptance/simulator-tls.mjs" ready >> "$EVIDENCE/ios-tls-after-boot.txt"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --debug-output "$EVIDENCE/ios-offline" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
@@ -28,6 +29,7 @@ xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl keychain "$NATIVE_TABLET" add-root-cert "$RUNNER_TEMP/native-tls/ca.pem"
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
+NATIVE_TLS_DIR="$RUNNER_TEMP/native-tls" node "$NATIVE_DIR/acceptance/simulator-tls.mjs" ready >> "$EVIDENCE/ios-tls-after-boot.txt"
 maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --debug-output "$EVIDENCE/ipad-products" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"

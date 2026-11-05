@@ -99,16 +99,70 @@ if (process.argv[2] === 'seed') {
   assert.equal(event.source, 'simulator');
   console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, and private motion acknowledgement.');
 } else if (process.argv[2] === 'proxy') {
+  // Test-only diagnostics: fixed categories, no URLs, headers, payloads or raw errors.
+  // Cap the entire process log as well as the fields in each event.
+  let logged = 0;
+  let sequence = 0;
+  let connectionSequence = 0;
+  const connections = new WeakMap();
+  const log = (event, fields = {}) => {
+    if (logged > 4096) return;
+    const value = logged === 4096 ? { event: 'native_proxy_log_limit' } : { event, ...fields };
+    console.log(JSON.stringify({ at: new Date().toISOString(), ...value }));
+    logged++;
+  };
+  const connection = socket => {
+    if (!connections.has(socket)) connections.set(socket, ++connectionSequence);
+    return connections.get(socket);
+  };
+  const routeCategory = url => {
+    const path = (url || '').split('?')[0];
+    if (path === '/health') return 'health';
+    if (path === '/ready') return 'ready';
+    if (path === '/v1/sessions') return 'sessions';
+    if (path === '/v1/sessions/current') return 'session_current';
+    if (path.startsWith('/v1/farms/')) return 'farm';
+    return path.startsWith('/v1/') ? 'api' : 'other';
+  };
   const handler = (incoming, outgoing) => {
-    if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) { outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return; }
-    const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => { outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing); });
-    upstream.on('error', () => { outgoing.writeHead(503); outgoing.end(); });
+    const started = performance.now();
+    const id = ++sequence;
+    const event = (name, fields = {}) => log(name, { sequence: id, duration_ms: Math.round(performance.now() - started), ...fields });
+    event('native_proxy_request', {
+      connection: connection(incoming.socket),
+      method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(incoming.method) ? incoming.method : 'OTHER',
+      route: routeCategory(incoming.url),
+    });
+    incoming.once('end', () => event('native_proxy_request_end'));
+    incoming.once('aborted', () => event('native_proxy_request_aborted'));
+    outgoing.once('finish', () => event('native_proxy_response_finish', { status: outgoing.statusCode }));
+    outgoing.once('close', () => { if (!outgoing.writableFinished) event('native_proxy_response_aborted'); });
+    if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) {
+      event('native_proxy_offline', { status: 503 });
+      outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return;
+    }
+    const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => {
+      event('native_proxy_upstream_response', { status: response.statusCode });
+      response.once('end', () => event('native_proxy_upstream_end'));
+      outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing);
+    });
+    upstream.once('socket', socket => {
+      event('native_proxy_upstream_socket', { connecting: socket.connecting });
+      if (socket.connecting) socket.once('connect', () => event('native_proxy_upstream_connected'));
+      else event('native_proxy_upstream_connected');
+    });
+    upstream.once('finish', () => event('native_proxy_upstream_finish'));
+    upstream.on('error', () => { event('native_proxy_upstream_error'); outgoing.writeHead(503); outgoing.end(); });
     incoming.pipe(upstream);
   };
   const tlsDirectory = process.env.NATIVE_TLS_DIR;
   const server = tlsDirectory
     ? createTlsServer({ key: readFileSync(join(tlsDirectory, 'server.key')), cert: readFileSync(join(tlsDirectory, 'server.pem')), minVersion: 'TLSv1.2' }, handler)
     : createServer(handler);
+  if (tlsDirectory) {
+    server.on('secureConnection', socket => log('native_proxy_tls_secure', { connection: connection(socket) }));
+    server.on('tlsClientError', (_error, socket) => log('native_proxy_tls_error', { connection: connection(socket) }));
+  }
   const port = Number(process.env.NATIVE_PROXY_PORT || 3001);
   assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
   server.listen(port, '127.0.0.1', () => console.log('Native acceptance network proxy ready.'));

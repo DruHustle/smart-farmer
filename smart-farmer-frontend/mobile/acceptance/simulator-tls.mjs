@@ -14,9 +14,9 @@ assert.equal(origin.protocol, 'https:');
 assert.equal(origin.hostname, '127.0.0.1');
 assert.ok(!origin.username && !origin.password && !origin.search && !origin.hash && origin.pathname === '/');
 function openssl(...args) { execFileSync('openssl', args, { stdio: 'pipe' }); }
-function request(options) {
+function request(options, path = '/health') {
   return new Promise((resolve, reject) => {
-    const req = get(new URL('/health', origin), { timeout: 5000, ...options }, response => {
+    const req = get(new URL(path, origin), { timeout: 5000, ...options }, response => {
       response.resume();
       response.once('end', () => resolve(response.statusCode));
     });
@@ -61,6 +61,21 @@ subjectAltName=IP:127.0.0.1,DNS:localhost
   await assert.rejects(request({}), error => ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT_IN_CHAIN'].includes(error.code));
   await assert.rejects(request({ ca, servername: 'wrong-host.invalid' }), { code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
   console.log('PASS: TLS API readiness, untrusted CA rejection and wrong-host rejection.');
+} else if (process.argv[2] === 'ready') {
+  // One read-only probe per endpoint after simulator boot; never create a session
+  // or retry a mutation. This measures the host's real TLS/API path, not the app.
+  const ca = readFileSync(file('ca.pem'));
+  for (const route of ['health', 'ready']) {
+    const started = performance.now();
+    let status;
+    try { status = await request({ ca, signal: AbortSignal.timeout(5000) }, `/${route}`); }
+    catch {
+      console.log(JSON.stringify({ event: 'native_tls_readiness', at: new Date().toISOString(), route, outcome: 'transport_error', duration_ms: Math.round(performance.now() - started) }));
+      throw new Error('Read-only TLS/API readiness transport failed');
+    }
+    console.log(JSON.stringify({ event: 'native_tls_readiness', at: new Date().toISOString(), route, status, duration_ms: Math.round(performance.now() - started) }));
+    assert.equal(status, 200, `Read-only ${route} check must pass through the trusted TLS proxy`);
+  }
 } else {
-  throw new Error('Expected prepare or verify');
+  throw new Error('Expected prepare, verify or ready');
 }
