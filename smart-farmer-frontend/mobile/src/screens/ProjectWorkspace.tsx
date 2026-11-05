@@ -18,11 +18,11 @@ type Props = { work: Workspace; language: Language; project: Project; animals?: 
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
 const projectPath = (work: Workspace, project: Project, suffix = '') => farmPath(work, `/projects/${project.id}${suffix}`);
 
-export function ProjectWorkspace(props: Props) {
+export function ProjectWorkspace(props: Props & { onNativePrompt: (active: boolean) => void }) {
   const { work, language } = props;
   const [tab, setTab] = useState('companion');
   return <Card title={c(language, 'details')}><Choice testID="project-workspace" label={c(language, 'details')} value={tab} onChange={setTab} closeLabel={textFor(language).close} options={options(language, ['companion', 'planning', 'assessments', 'performance', 'history', ...(work.canManage ? ['finance'] : [])])} />
-    <View testID={`project-panel-${tab}`} collapsable={false} style={{ gap: 14 }}>{tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} /> : <CompanionPanel {...props} onNavigate={setTab} />}</View>
+    <View testID={`project-panel-${tab}`} collapsable={false} style={{ gap: 14 }}>{tab === 'planning' ? <PlanningPanel {...props} /> : tab === 'assessments' ? <ProjectRecords {...props} /> : tab === 'performance' ? <PerformancePanel {...props} /> : tab === 'history' ? <ProjectHistory {...props} /> : tab === 'finance' ? <FinancePanel work={work} language={language} project={props.project} onNativePrompt={props.onNativePrompt} /> : <CompanionPanel {...props} onNavigate={setTab} />}</View>
   </Card>;
 }
 

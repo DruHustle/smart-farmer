@@ -29,7 +29,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {work.notice ? <Notice text={label(language, work.notice)} /> : null}
       {tab === 'today' ? <TodayScreen work={work} language={language} onRecord={() => setTab('record')} /> : null}
-      {tab === 'farm' ? <FarmScreen work={work} language={language} /> : null}
+      {tab === 'farm' ? <FarmScreen work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
       {tab === 'record' ? <RecordScreen work={work} language={language} nativeBusy={nativeBusy} onNativePrompt={onNativePrompt} /> : null}
       {tab === 'more' ? <MoreScreen work={work} language={language} onLogout={onLogout} onLock={onLock} onNativePrompt={onNativePrompt} /> : null}
     </ScrollView>

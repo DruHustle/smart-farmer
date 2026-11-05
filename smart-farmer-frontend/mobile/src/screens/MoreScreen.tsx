@@ -19,6 +19,7 @@ type DeviceSession = { id: string; label: string; created_at: string; expires_at
 export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void; onNativePrompt: (active: boolean) => void }) {
   const t = textFor(language);
   const [screen, setScreen] = useState<string | null>(null);
+  const [accountingLink, setAccountingLink] = useState<{ farmId: string; invoiceId: string } | null>(null);
   const [role, setRole] = useState('worker'); const [code, setCode] = useState(''); const [inviteToken, setInviteToken] = useState('');
   const [password, setPassword] = useState(''); const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [conflict, setConflict] = useState<Mutation | null>(null);
@@ -28,7 +29,13 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
   const pendingMedia = work.attachments.filter(item => item.state !== 'synced' && item.state !== 'draft');
   const timezone = work.snapshot?.farm.timezone || 'Africa/Harare';
 
-  function open(value: NonNullable<typeof screen>) { setScreen(value); setCode(''); setInviteToken(''); setPassword(''); setConflict(null); setServerTask(null); work.setError(null); }
+  function open(value: NonNullable<typeof screen>) { setScreen(value); setAccountingLink(null); setCode(''); setInviteToken(''); setPassword(''); setConflict(null); setServerTask(null); work.setError(null); }
+  async function openAccountingInvoice(farmId: string, invoiceId: string) {
+    const farm = work.farms.find(item => item.id === farmId);
+    if (!invoiceId || !farm || !['owner', 'manager'].includes(farm.role)) throw new Error('forbidden');
+    await work.selectFarm(farmId);
+    open('finance'); setAccountingLink({ farmId, invoiceId });
+  }
   useEffect(() => {
     if (screen === 'sessions') void work.onlineAction(async () => { const result = await work.api.request<{ items: DeviceSession[] }>('/v1/sessions'); setDevices(result.items); });
   }, [screen]);
@@ -98,9 +105,9 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
         {work.mutations.filter(item => item.state === 'resolved').map(item => <Text key={item.id} style={styles.caption}>{t.resolved} · {item.id.slice(0, 8)}</Text>)}
       </> : null}
       {screen === 'equipment' ? <EquipmentPanel work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
-      {screen === 'market' ? <MarketplacePanel work={work} language={language} /> : null}
-      {screen === 'services' ? <ServicesPanel work={work} language={language} /> : null}
-      {screen === 'finance' && work.canManage ? <FinancePanel work={work} language={language} /> : null}
+      {screen === 'market' ? <MarketplacePanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
+      {screen === 'services' ? <ServicesPanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
+      {screen === 'finance' && work.canManage ? <FinancePanel key={`${work.farmId}:${accountingLink?.invoiceId || ''}`} work={work} language={language} onNativePrompt={onNativePrompt} initialInvoiceId={accountingLink?.farmId === work.farmId ? accountingLink.invoiceId : undefined} /> : null}
       {screen === 'incidents' ? <IncidentsPanel work={work} language={language} /> : null}
       {screen === 'weather' ? <WeatherPanel work={work} language={language} /> : null}
       {screen === 'notifications' ? <NotificationsPanel work={work} language={language} /> : null}

@@ -135,7 +135,7 @@ test('maize facts, version conflict, offline-ID retry, transactional stock/cost/
     await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:100,currency:'ZAR'});
     for(const amount of [0.1,0.3])await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount,currency:'USD'});
     const fractionalMoney=await f.send('POST','/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:0.000000001,currency:'USD'});assert.equal(fractionalMoney.statusCode,400);
-    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.40');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.00');
+    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.400');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.000');
     const stock=await f.stock('Harvested maize','kg',0,{projectId:p.id});await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'harvest',observedAt,stockItemId:stock.id,quantity:12,unit:'kg'});
     await f.post(`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'consumption',quantity:2,unit:'kg',observedAt,reason:'Household consumption'});assert.equal(await f.balance(stock.id),10);
     const tiny=await f.send('POST',`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'adjustment',quantity:0.000000001,unit:'kg',observedAt,reason:'Must not round a recorded operation to zero'});assert.equal(tiny.statusCode,400);assert.equal(await f.balance(stock.id),10);
@@ -177,7 +177,7 @@ test('broilers: placement, feeding, sampled growth, losses, partial sales, payme
     const over=await f.send('POST',`/projects/${p.id}/payments`,{...pay,id:randomUUID(),amount:1});assert.equal(over.statusCode,409);
     await f.event(p.id,'close',{note:'All birds reconciled'});assert.equal((await f.get('/projects')).items[0].status,'closed');
     const after=await f.send('POST',`/projects/${p.id}/events`,{id:randomUUID(),type:'observation',observedAt,note:'Should not mutate closed cycle'});assert.equal(after.statusCode,409);
-    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.00');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.50');
+    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.000');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.500');
   }finally{await f.close();}
 });
 

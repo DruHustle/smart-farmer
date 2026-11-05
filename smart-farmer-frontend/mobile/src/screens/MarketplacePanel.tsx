@@ -13,7 +13,7 @@ type Props = { work: Workspace; language: Language };
 const categories = ['produce', 'input', 'animal', 'equipment', 'other'];
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
 
-export function MarketplacePanel({ work, language }: Props) {
+export function MarketplacePanel({ work, language, onAccounting }: Props & { onAccounting: (farmId: string, invoiceId: string) => Promise<void> }) {
   const [tab, setTab] = useState('listings'); const [query, setQuery] = useState(''); const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Row | null>(null); const [edit, setEdit] = useState<Row | null>(null); const [request, setRequest] = useState<Row | null>(null);
   const data = usePanel(work, `market:${search}`, async () => {
@@ -35,7 +35,7 @@ export function MarketplacePanel({ work, language }: Props) {
     {tab === 'orders' ? <Records items={data.value?.orders || []} language={language} timezone={zone(work)} fields={['status', 'quantity', 'unit', 'amount', 'currency', 'manually_recorded_paid', 'expires_at', 'cancellation_reason']}>
       {order => <>
         {order.status === 'reserved' ? <View style={{ gap: 12 }}>{order.is_seller ? <Action work={work} language={language} title={c(language, 'fulfill')} detail={`${order.quantity} ${order.unit} · ${order.amount} ${order.currency}`} action={() => work.api.request(`/v1/market/orders/${order.id}/status`, 'POST', { status: 'fulfilled' })} onSaved={reload} /> : null}<Action work={work} language={language} title={t.cancel} danger action={() => work.api.request(`/v1/market/orders/${order.id}/status`, 'POST', { status: 'cancelled' })} onSaved={reload} /></View> : null}
-        {order.status === 'fulfilled' && order.is_seller ? <Form work={work} language={language} title={c(language, 'payment')} hint={c(language, 'paymentHint')} fields={[numericField('amount', true, { minimum: 0.01 }), textField('currency', true, { maxLength: 3 }), textField('note')]} initial={{ currency: order.currency }} submit={body => work.api.request(`/v1/market/orders/${order.id}/payments`, 'POST', body)} onSaved={reload} /> : null}
+        {order.accountingManaged && order.is_seller ? <><Notice text={c(language, 'accountingSettlementLocation')} /><Text style={styles.caption}>{t.farm}: {work.farms.find(item => item.id === order.accountingFarmId)?.name || string(order.accountingFarmId)}</Text><Facts value={order} fields={['accountingOutstanding', 'accountingCredited']} language={language} />{order.accountingFarmId && order.accountingInvoiceId ? <Button secondary title={c(language, 'openAccountingInvoice')} busy={work.busy} onPress={() => { void onAccounting(string(order.accountingFarmId), string(order.accountingInvoiceId)).catch(work.setError); }} /> : null}</> : order.status === 'fulfilled' && order.is_seller ? <Form work={work} language={language} title={c(language, 'payment')} hint={c(language, 'paymentHint')} fields={[numericField('amount', true, { minimum: 0.01 }), textField('currency', true, { maxLength: 3 }), textField('note')]} initial={{ currency: order.currency }} submit={body => work.api.request(`/v1/market/orders/${order.id}/payments`, 'POST', body)} onSaved={reload} /> : null}
         {order.status === 'fulfilled' && order.is_buyer ? <ReviewForm work={work} language={language} target={{ orderId: order.id }} onSaved={reload} /> : null}
       </>}
     </Records> : null}

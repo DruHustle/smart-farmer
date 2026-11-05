@@ -37,5 +37,12 @@ export function displayNumber(value: unknown, language: 'sn' | 'nd', decimals = 
 }
 export function displayMoney(value: unknown, currency: string, language: 'sn' | 'nd'): string {
   if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
-  return `${currency} ${new Intl.NumberFormat(`${language}-ZW`, {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value))}`;
+  const digits = currencyMinorUnit(currency);
+  return `${currency} ${new Intl.NumberFormat(`${language}-ZW`, {minimumFractionDigits: digits, maximumFractionDigits: digits}).format(Number(value))}`;
+}
+
+/** Legacy operational reports retain the precision of the explicitly recorded currency. */
+export function currencyMinorUnit(currency: string): number {
+  try {return new Intl.NumberFormat('en', {style: 'currency', currency}).resolvedOptions().maximumFractionDigits ?? 2;}
+  catch {return 2;}
 }

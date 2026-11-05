@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ApiError, audit, manageRoles, type Context } from "../context.js";
 import { uuid, money } from "../core.js";
+import { guardAccountingEntry } from "../accounting/bridge.js";
 import {
   auth,
   idempotent,
@@ -120,6 +121,7 @@ export function registerFinancialCorrections(
         b.id,
         { operation: "reallocate", entryId, ...b },
         async (c) => {
+          await guardAccountingEntry(c, a.farmId, entryId);
           const expense = row(
             (
               await c.query(
@@ -204,6 +206,7 @@ export function registerFinancialCorrections(
         b.id,
         { operation: "expense_correction", entryId, ...b },
         async (c) => {
+          await guardAccountingEntry(c, a.farmId, entryId);
           const original = row(
             (
               await c.query(

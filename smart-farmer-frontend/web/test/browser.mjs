@@ -8,6 +8,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
+import {accountingJourneys} from './browser-accounting.mjs';
 import {catalog} from '../src/locales.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,6 +18,7 @@ if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL must poin
 const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
+env.MEDIA_ROOT = resolve(artifacts, 'private-media');
 const children = []; let browser; let page;
 const steps = []; const diagnostics = []; const errors = []; let stage = 'setup';
 // Accelerated multi-day journeys share one localhost IP. Respect the real API
@@ -166,6 +168,7 @@ try {
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
 
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
+  await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
 
   checkpoint('Phone and desktop notifications evidence');
   await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-notifications.png');

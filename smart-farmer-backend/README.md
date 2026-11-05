@@ -9,6 +9,8 @@ The repository has been reviewed against the complete [Codex build prompt](docs/
 - [Setup, independent builds, deployment, backup and rollback](docs/operations.md)
 - [Architecture and permission boundaries](docs/architecture.md)
 - [Core API and animal workflows](docs/core-api.md)
+- [Farmer accounting: supplier scans, sales invoices and books](docs/accounting.md)
+- [Accounting API and exact amount contracts](docs/accounting-api.md)
 - [Equipment, media and commerce API](docs/integrations-api.md)
 - [Hardware compatibility and commissioning](docs/hardware-and-commissioning.md)
 - [Native application instructions](../smart-farmer-frontend/mobile/README.md)
@@ -18,7 +20,7 @@ The repository has been reviewed against the complete [Codex build prompt](docs/
 
 From this directory, copy `.env.example` to a private `.env`, replace the local database password, and run `docker compose up --build -d`. This starts PostgreSQL, migration, API and maintenance-worker processes with persistent database/media volumes and localhost-bound ports. Then run `npm ci` and `npm run dev` in `../smart-farmer-frontend/web`.
 
-Alternatively use Node 24 and an existing isolated PostgreSQL 17 database: export `DATABASE_URL` and `WEB_ORIGIN`, run `npm ci`, `npm run migrate`, `npm run dev`, and run `npm run worker` separately. Each frontend has its own dependency lockfile; neither imports backend implementation or the other frontend's UI.
+Alternatively use Node 24 and an existing isolated PostgreSQL 17 database: export `DATABASE_URL` and `WEB_ORIGIN`, run `npm ci`, `npm run migrate`, `npm run dev`, and run `npm run worker` separately. Invoice scanning additionally requires `tesseract` with the English language data and Poppler's `pdfinfo`, `pdftotext` and `pdftoppm` on the worker's PATH. The backend image includes these tools. Each frontend has its own dependency lockfile; neither imports backend implementation or the other frontend's UI.
 
 The web also has an [optional static Docker/PWA image and localhost-only Compose service](../smart-farmer-frontend/web/README.md#optional-static-container). It uses the same public build-time API origin and leaves this backend/database/worker stack independent. Private Safari camera playback still requires the documented same-origin HTTPS ingress.
 

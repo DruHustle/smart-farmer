@@ -1,0 +1,191 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "workspace-language"
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "more-finance"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "more-finance"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "finance-tabs"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "finance-tabs"
+- tapOn:
+    id: "finance-tabs-option-accounting"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "accounting-tabs"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "accounting-tabs"
+- tapOn:
+    id: "accounting-tabs-option-supplierBills"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-open-${PURCHASE_INVOICE_ID}"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-open-${PURCHASE_INVOICE_ID}"
+- runFlow:
+    file: accounting-finalize.yaml
+    env:
+      FINAL_STATUS: "Yakanyorwa mumabhuku"
+- runFlow:
+    file: accounting-payment.yaml
+    env:
+      PAYMENT_AMOUNT: "7.50"
+      PAYMENT_REFERENCE: "Native supplier payment"
+      OUTSTANDING_AMOUNT: "USD 12.50"
+- takeScreenshot: accounting-posted-bill-partial-payment
+- tapOn:
+    id: "sheet-close"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "accounting-tabs"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "accounting-tabs"
+- tapOn:
+    id: "accounting-tabs-option-salesInvoices"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-new-sale"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-new-sale"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-party"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-party"
+- inputText: "Native accepted customer"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-reference"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-reference"
+- inputText: "NATIVE-SALE-UI"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-line-0-description"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-line-0-description"
+- inputText: "Native accepted crop produce"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-line-0-quantity"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-line-0-quantity"
+- eraseText
+- inputText: "2"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-line-0-price"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-line-0-price"
+- inputText: "15.25"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-review-draft"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-review-draft"
+- scrollUntilVisible:
+    element:
+      id: "invoice-total"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "invoice-total"
+    text: "USD 30.50"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-confirm-draft"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-confirm-draft"
+- extendedWaitUntil:
+    notVisible:
+      id: "invoice-confirm-draft"
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: "invoice-balance"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "invoice-balance"
+    text: "USD 0.00"
+- takeScreenshot: accounting-unposted-sales-draft
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-preview"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-preview"
+- assertVisible: "Synthetic native acceptance farm"
+- takeScreenshot: accounting-draft-preview
+- tapOn:
+    id: "sheet-close"
+- runFlow:
+    file: accounting-finalize.yaml
+    env:
+      FINAL_STATUS: "Yakabudiswa"
+- runFlow:
+    file: accounting-payment.yaml
+    env:
+      PAYMENT_AMOUNT: "10.00"
+      PAYMENT_REFERENCE: "Native customer receipt"
+      OUTSTANDING_AMOUNT: "USD 20.50"
+- takeScreenshot: accounting-issued-invoice-partial-receipt
+- tapOn:
+    id: "sheet-close"
+- tapOn:
+    id: "sheet-close"
