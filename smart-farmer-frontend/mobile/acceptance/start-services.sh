@@ -8,7 +8,15 @@ npm run build --prefix smart-farmer-backend
 (cd smart-farmer-backend && node dist/server.js) > "$RUNNER_TEMP/native-evidence/api.log" 2>&1 &
 node -e 'async function run(){for(let i=0;i<60;i++){try{const r=await fetch("http://127.0.0.1:3000/health");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("API not ready");}run();'
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs seed
+if [ "$NATIVE_PLATFORM" = ios ]; then
+  export NATIVE_TLS_DIR="$RUNNER_TEMP/native-tls"
+  node smart-farmer-frontend/mobile/acceptance/simulator-tls.mjs prepare
+fi
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/native-evidence/proxy.log" 2>&1 &
+if [ "$NATIVE_PLATFORM" = ios ]; then
+  node smart-farmer-frontend/mobile/acceptance/simulator-tls.mjs verify > "$RUNNER_TEMP/native-evidence/ios-tls.txt"
+  exit 0
+fi
 cd smart-farmer-frontend/mobile
 npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
 node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("http://127.0.0.1:8081/status");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("Metro not ready");}run();'

@@ -1,4 +1,6 @@
 import { createServer, request } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import { join } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -97,10 +99,17 @@ if (process.argv[2] === 'seed') {
   assert.equal(event.source, 'simulator');
   console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, and private motion acknowledgement.');
 } else if (process.argv[2] === 'proxy') {
-  createServer((incoming, outgoing) => {
+  const handler = (incoming, outgoing) => {
     if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) { outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return; }
     const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => { outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing); });
     upstream.on('error', () => { outgoing.writeHead(503); outgoing.end(); });
     incoming.pipe(upstream);
-  }).listen(3001, '127.0.0.1', () => console.log('Native acceptance network proxy ready.'));
+  };
+  const tlsDirectory = process.env.NATIVE_TLS_DIR;
+  const server = tlsDirectory
+    ? createTlsServer({ key: readFileSync(join(tlsDirectory, 'server.key')), cert: readFileSync(join(tlsDirectory, 'server.pem')), minVersion: 'TLSv1.2' }, handler)
+    : createServer(handler);
+  const port = Number(process.env.NATIVE_PROXY_PORT || 3001);
+  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
+  server.listen(port, '127.0.0.1', () => console.log('Native acceptance network proxy ready.'));
 }

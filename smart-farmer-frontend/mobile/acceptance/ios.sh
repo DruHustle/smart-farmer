@@ -2,7 +2,7 @@
 set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
-NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
 NATIVE_IOS_SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
 xcodebuild -version > "$EVIDENCE/ios-toolchain.txt"
 printf 'Simulator SDK: %s\n' "$NATIVE_IOS_SDK" >> "$EVIDENCE/ios-toolchain.txt"
@@ -10,6 +10,7 @@ xcrun simctl list devices available -j > "$EVIDENCE/ios-device-inventory.json"
 NATIVE_PHONE=$(node "$NATIVE_DIR/acceptance/ios-device.mjs" "$NATIVE_IOS_SDK" 'iPhone 17 Pro' "$EVIDENCE/ios-device-inventory.json")
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
+xcrun simctl keychain "$NATIVE_PHONE" add-root-cert "$RUNNER_TEMP/native-tls/ca.pem"
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 xcrun simctl launch "$NATIVE_PHONE" eu.onesa.smartfarmer
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
@@ -25,6 +26,7 @@ xcrun simctl shutdown "$NATIVE_PHONE"
 NATIVE_TABLET=$(node "$NATIVE_DIR/acceptance/ios-device.mjs" "$NATIVE_IOS_SDK" 'iPad Pro 13-inch (M5)' "$EVIDENCE/ios-device-inventory.json")
 xcrun simctl boot "$NATIVE_TABLET"
 xcrun simctl bootstatus "$NATIVE_TABLET" -b
+xcrun simctl keychain "$NATIVE_TABLET" add-root-cert "$RUNNER_TEMP/native-tls/ca.pem"
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
 xcrun simctl launch "$NATIVE_TABLET" eu.onesa.smartfarmer
