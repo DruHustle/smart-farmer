@@ -4,7 +4,7 @@ Farmer owners and managers can record supplier bills, issue sales invoices, reco
 
 ## Set up the farm's books
 
-Open Accounting and enter the farm's business details, default currency, invoice prefix and starting number. Enter only tax rates that apply to the business. The farm's legal identity and tax registration are not inferred from its display name. Zero tax is an explicit selection; there is no assumed tax jurisdiction, conversion rate or recoverable purchase tax.
+On the web, open **More → Accounting**. In the native app, open **More → Finance → Accounting**. Enter the farm's business details, default currency, invoice prefix and starting number. Enter only tax rates that apply to the business. The farm's legal identity and tax registration are not inferred from its display name. Zero tax is an explicit selection; there is no assumed tax jurisdiction, conversion rate or recoverable purchase tax.
 
 Settings changes apply to future documents. Issued invoices retain the reviewed business identity, customer details, prices, tax, terms and number from their issue time. Numbers are assigned when a sales invoice or credit is issued, not when a draft is saved. Voiding a document never recycles its number.
 
@@ -27,6 +27,8 @@ Create a sales draft with the customer, date, due date, currency and items sold.
 Review the draft and its PDF, then explicitly issue it. Issuance atomically allocates the next number, fixes the document snapshot, records revenue and creates the receivable. The private PDF can be downloaded, printed or shared using the device's normal share flow. Issuing an invoice does not automatically email the customer.
 
 An existing recorded sale or expense can be linked when creating the invoice. The backend verifies the farm, kind, currency, amount and project allocation, adopts its provenance and existing receipts, and avoids a second operational income/expense entry. The original recognition date remains the accounting posting date even when the invoice is issued later. Earlier receipts/payments are recorded as customer/supplier advances and applied at recognition, preserving their actual dates. Invoice-managed sources use the accounting payment/correction flow thereafter.
+
+Posting a supplier bill or issuing a sales invoice does not change inventory quantities. Record physical stock receipts and sales in the inventory or marketplace workflows. If that workflow has already recorded the expense or sale, select that existing source when creating the invoice so the money is counted once.
 
 The source picker shows historical amounts exactly. If an old record has more precision than its currency supports, it is marked ineligible for linking; the amount is not silently rounded. Review and correct that historical record through its audited workflow first.
 

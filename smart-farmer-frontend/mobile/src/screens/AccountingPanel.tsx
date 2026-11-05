@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
-import { editableInvoice, money, type Account, type AccountingSource, type AccountingSummary, type EditableInvoice, type Invoice, type SettingsResponse } from '../accounting';
+import { editableInvoice, money, newInvoiceLine, type Account, type AccountingSource, type AccountingSummary, type EditableInvoice, type Invoice, type SettingsResponse } from '../accounting';
 import { c, Form, options, usePanel } from '../completion-ui';
 import { sharePrivateReport } from '../exports';
 import { textFor } from '../i18n';
@@ -35,7 +35,7 @@ export function AccountingPanel({ work, language, project, onNativePrompt, initi
   function reload() { void Promise.all([context.reload(), invoices.reload(), summary.reload()]); }
   function changed(invoice: Invoice) { setSelected(invoice); setEditing(null); void invoices.reload(); void summary.reload(); }
   function newDraft(kind: 'purchase' | 'sale') {
-    const value: EditableInvoice = { id: Crypto.randomUUID(), kind, party: { name: '', address: '', email: '', phone: '', taxNumber: '' }, currency: context.value?.settings.settings?.defaultCurrency || '', issueDate: farmNow(work.snapshot?.farm.timezone || 'Africa/Harare').slice(0, 10), dueDate: null, reference: '', notes: '', terms: '', documentId: null, sourceEntryId: null, lines: [{ id: Crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', discountAmount: '0', taxRateBps: 0, accountCode: kind === 'purchase' ? '5000' : '4000', projectId: project?.id || null }] };
+    const value: EditableInvoice = { id: Crypto.randomUUID(), kind, party: { name: '', address: '', email: '', phone: '', taxNumber: '' }, currency: context.value?.settings.settings?.defaultCurrency || '', issueDate: farmNow(work.snapshot?.farm.timezone || 'Africa/Harare').slice(0, 10), dueDate: null, reference: '', notes: '', terms: '', documentId: null, sourceEntryId: null, lines: [newInvoiceLine(kind, Crypto.randomUUID(), project?.id || null)] };
     setEditing({ initial: value });
   }
   function sourceDraft(initial: EditableInvoice) { setDocumentId(null); setSelected(null); setEditing({ initial }); }

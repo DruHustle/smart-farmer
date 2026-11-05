@@ -19,6 +19,10 @@ export type AccountingSummary = { from: string | null; to: string | null; asOf: 
 export type FinancialDocument = { id: string; farmId: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'; filename: string; sizeBytes: number; contentHash: string; state: 'queued' | 'processing' | 'ready' | 'failed'; extraction: { schemaVersion: 1; engine: 'local_tesseract' | 'pdf_text' | 'mixed'; language: 'eng'; pageCount: number; text: string; confidence: number | null; suggestions: { party: { name: string } | null; reference: string | null; issueDate: string | null; dueDate: string | null; currency: string | null; lines: { description: string; quantity: string; unitPrice: string }[]; reportedTotal: string | null }; warnings: string[] } | null; errorCode: string | null; attempts: number; createdAt: string; updatedAt: string };
 export type EditableLine = Omit<InvoiceLineInput, 'discountMinor' | 'taxRateBps'> & { discountAmount: string; taxRateBps: number | null };
 export type EditableInvoice = Omit<InvoiceDraft, 'lines'> & { lines: EditableLine[] };
+/** Every new line requires an explicit tax choice, including an intentional zero rate. */
+export function newInvoiceLine(kind: InvoiceDraft['kind'], id: string, projectId: string | null = null): EditableLine {
+  return { id, description: '', quantity: '1', unitPrice: '', discountAmount: '0', taxRateBps: null, accountCode: kind === 'purchase' ? '5000' : '4000', projectId };
+}
 export type Journal = { id: string; currency: string; minorUnit: CurrencyScale; postedOn: string; description: string; reason: string; sourceType: string; sourceId: string; reversalOf: string | null; reversedBy: string | null; lines: { accountCode: string; debitMinor: string; creditMinor: string; description: string; projectId?: string | null }[] };
 export type AccountingReports = {
   summary: AccountingSummary;
@@ -134,5 +138,5 @@ export function editableInvoice(invoice: Invoice): EditableInvoice {
 /** Extraction is untrusted input: missing amounts stay empty and never imply tax. */
 export function extractionDraft(document: FinancialDocument, id: string, lineId: () => string, projectId: string | null = null): EditableInvoice {
   const suggestion = document.extraction?.suggestions;
-  return { id, kind: 'purchase', party: { name: suggestion?.party?.name || '', address: '', email: '', phone: '', taxNumber: '' }, currency: suggestion?.currency || '', issueDate: suggestion?.issueDate || '', dueDate: suggestion?.dueDate || null, reference: suggestion?.reference || '', notes: '', terms: '', documentId: document.id, sourceEntryId: null, lines: (suggestion?.lines || []).map(line => ({ id: lineId(), description: line.description, quantity: line.quantity, unitPrice: line.unitPrice, discountAmount: '0', taxRateBps: null, accountCode: '5000', projectId })) };
+  return { id, kind: 'purchase', party: { name: suggestion?.party?.name || '', address: '', email: '', phone: '', taxNumber: '' }, currency: suggestion?.currency || '', issueDate: suggestion?.issueDate || '', dueDate: suggestion?.dueDate || null, reference: suggestion?.reference || '', notes: '', terms: '', documentId: document.id, sourceEntryId: null, lines: (suggestion?.lines || []).map(line => ({ ...newInvoiceLine('purchase', lineId(), projectId), description: line.description, quantity: line.quantity, unitPrice: line.unitPrice })) };
 }

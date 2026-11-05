@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
-import { fromMinor, invoiceTotals, reviewedDraft, scaleFor, type Account, type EditableInvoice, type EditableLine, type Invoice, type InvoiceDraft, type SettingsResponse } from '../accounting';
+import { fromMinor, invoiceTotals, newInvoiceLine, reviewedDraft, scaleFor, type Account, type EditableInvoice, type EditableLine, type Invoice, type InvoiceDraft, type SettingsResponse } from '../accounting';
 import { c, projectOptions } from '../completion-ui';
 import { errorText, textFor } from '../i18n';
 import type { Language } from '../types';
@@ -98,7 +98,7 @@ export function InvoiceEditor({ work, language, initial, version = null, setting
       <Choice label={c(language, 'projectId')} value={line.projectId || ''} onChange={projectId => lineUpdate(line.id, { projectId: projectId || null })} closeLabel={t.close} options={[{ value: '', label: '—' }, ...projectOptions(work)]} />
       <Button secondary title={t.remove} disabled={sending} onPress={() => update({ ...value, lines: value.lines.filter(item => item.id !== line.id) })} />
     </Card>)}
-    <Button testID="invoice-add-line" secondary title={c(language, 'addInvoiceLine')} disabled={value.lines.length >= 100 || sending} onPress={() => update({ ...value, lines: [...value.lines, { id: Crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', discountAmount: '0', taxRateBps: value.documentId ? null : 0, accountCode: value.kind === 'purchase' ? '5000' : '4000', projectId: value.lines[0]?.projectId || null }] })} />
+    <Button testID="invoice-add-line" secondary title={c(language, 'addInvoiceLine')} disabled={value.lines.length >= 100 || sending} onPress={() => update({ ...value, lines: [...value.lines, newInvoiceLine(value.kind, Crypto.randomUUID(), value.lines[0]?.projectId || null)] })} />
     {sources.length || value.sourceEntryId ? <><Choice label={c(language, 'sourceEntryId')} value={value.sourceEntryId || ''} onChange={sourceEntryId => update({ ...value, sourceEntryId: sourceEntryId || null })} closeLabel={t.close} options={[{ value: '', label: c(language, 'newAccountingEntry') }, ...sources]} />{sources.some(source => source.disabled) ? <Notice text={c(language, 'source_currency_precision')} /> : null}{value.sourceEntryId ? <Notice text={c(language, 'sourceAttributionHint')} /> : null}</> : null}
     <Field label={c(language, 'terms')} value={value.terms} multiline onChangeText={terms => update({ ...value, terms })} maxLength={2000} />
     <Field label={c(language, 'notes')} value={value.notes} multiline onChangeText={notes => update({ ...value, notes })} maxLength={2000} />

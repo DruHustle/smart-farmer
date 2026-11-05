@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { actionBody, decimal, definiteAccountingRejection, editableInvoice, extractionDraft, fromMinor, invoiceTotals, journalLines, reviewedDraft, scaleFor, toMinor, type FinancialDocument, type Invoice, type InvoiceLineInput } from '../src/accounting';
+import { actionBody, decimal, definiteAccountingRejection, editableInvoice, extractionDraft, fromMinor, invoiceTotals, journalLines, newInvoiceLine, reviewedDraft, scaleFor, toMinor, type EditableInvoice, type FinancialDocument, type Invoice, type InvoiceLineInput } from '../src/accounting';
 import { ApiError, type ApiClient } from '../src/api';
 import { LocalRepository } from '../src/repository';
 import { mutationRequest, Synchronizer } from '../src/sync';
@@ -47,6 +47,24 @@ test('scan suggestions cannot silently infer tax, identity fields, a missing cur
   const existing = editableInvoice({ ...reviewed, minorUnit: 2, lines: reviewed.lines.map(item => ({ ...item, taxRateBps: 1500 })) } as Invoice);
   assert.equal(existing.lines[0]!.taxRateBps, 1500, 'Editing an existing draft keeps its reviewed rate');
   assert.equal(existing.lines[0]!.discountAmount, '0.00');
+});
+
+test('new manual purchase and sale lines require explicit tax while existing reviewed rates remain intact', () => {
+  const currencies = [{ code: 'USD', minorUnit: 2 as const }]; const projectId = randomUUID();
+  for (const kind of ['purchase', 'sale'] as const) {
+    const draft: EditableInvoice = { id: randomUUID(), kind, party: { name: 'Synthetic manual party', address: '', email: '', phone: '', taxNumber: '' }, currency: 'USD', issueDate: '2026-11-05', dueDate: null, reference: 'MANUAL-REVIEW', notes: '', terms: '', documentId: null, sourceEntryId: null, lines: [{ ...newInvoiceLine(kind, randomUUID(), projectId), description: 'Manually reviewed produce', quantity: '2', unitPrice: '12.50' }] };
+    assert.equal(draft.lines[0]!.taxRateBps, null);
+    assert.throws(() => reviewedDraft(draft, currencies), /tax_review_required/, 'Untouched tax must not become zero when a manual invoice is reviewed');
+    for (const rateBps of [0, 1500]) {
+      const reviewed = reviewedDraft({ ...draft, lines: draft.lines.map(line => ({ ...line, taxRateBps: rateBps })) }, currencies);
+      assert.equal(invoiceTotals(reviewed.lines, 2).totalMinor, rateBps === 0 ? '2500' : '2875');
+      const existing = editableInvoice({ ...reviewed, minorUnit: 2 } as Invoice);
+      assert.equal(existing.lines[0]!.taxRateBps, rateBps, 'Editing preserves the explicit zero or configured rate');
+      const added = { ...newInvoiceLine(kind, randomUUID(), projectId), description: 'Additional line', unitPrice: '1' };
+      assert.throws(() => reviewedDraft({ ...existing, lines: [...existing.lines, added] }, currencies), /tax_review_required/, 'Adding a line requires its own choice instead of inheriting an earlier rate');
+      assert.equal(existing.lines[0]!.taxRateBps, rateBps);
+    }
+  }
 });
 
 test('manual journals require balanced exact amounts with one positive side per line', () => {

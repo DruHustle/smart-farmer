@@ -133,6 +133,33 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "invoice-review-draft"
+# An untouched tax choice must block review, even when the intended rate is zero.
+- scrollUntilVisible:
+    element:
+      text: "Ongorora mutero nemaoko."
+    direction: UP
+    timeout: 30000
+- assertVisible: "Ongorora mutero nemaoko."
+- assertNotVisible:
+    id: "invoice-confirm-draft"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-line-0-tax"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-line-0-tax"
+- tapOn:
+    id: "invoice-line-0-tax-option-0"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-review-draft"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-review-draft"
 - scrollUntilVisible:
     element:
       id: "invoice-total"
