@@ -99,6 +99,8 @@ Latest local verification after the document-picker dependency:
 
 The iOS and product journeys retain Maestro’s `maestro.log` alongside the existing test output. Maestro’s `--test-output-dir` alone does not retain its driver connection log; `--debug-output` now uses the same evidence directory. Driver-startup failures remain failures, with unchanged startup deadlines, application assertions and retry behavior. The logs come only from the disposable CI installation; never run this diagnostic workflow with production credentials or data.
 
+The iPhone 17 Pro and iPad Pro 13-inch (M5) journeys select the installed runtime matching the active simulator SDK. They fail if either exact device is unavailable or ambiguous, rather than depending on the order of preinstalled runtimes. The selected SDK, Xcode version and device inventory are retained with the evidence. Runtime selection does not bypass screenshot failures or establish successful native acceptance; the full journeys must still pass.
+
 Both platforms have compiled the final dependency set, including SQLCipher and the document picker, and passed executed native acceptance:
 
 | Platform | Verified job and artifact | Result |

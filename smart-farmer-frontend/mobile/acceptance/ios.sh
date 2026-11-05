@@ -3,7 +3,11 @@ set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
-NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
+NATIVE_IOS_SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
+xcodebuild -version > "$EVIDENCE/ios-toolchain.txt"
+printf 'Simulator SDK: %s\n' "$NATIVE_IOS_SDK" >> "$EVIDENCE/ios-toolchain.txt"
+xcrun simctl list devices available -j > "$EVIDENCE/ios-device-inventory.json"
+NATIVE_PHONE=$(node "$NATIVE_DIR/acceptance/ios-device.mjs" "$NATIVE_IOS_SDK" 'iPhone 17 Pro' "$EVIDENCE/ios-device-inventory.json")
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
@@ -18,7 +22,7 @@ maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-rec
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/ios-exactly-once.txt"
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
 xcrun simctl shutdown "$NATIVE_PHONE"
-NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')
+NATIVE_TABLET=$(node "$NATIVE_DIR/acceptance/ios-device.mjs" "$NATIVE_IOS_SDK" 'iPad Pro 13-inch (M5)' "$EVIDENCE/ios-device-inventory.json")
 xcrun simctl boot "$NATIVE_TABLET"
 xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large

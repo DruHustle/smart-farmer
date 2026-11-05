@@ -151,12 +151,22 @@ jobs:
           "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Bind simulator cache to the active Xcode and SDK
+        id: ios-toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          xcodebuild -version > "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          xcrun --sdk iphonesimulator --show-sdk-version >> "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          xcrun --sdk iphonesimulator --show-sdk-build-version >> "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt"
+          fingerprint=$(shasum -a 256 "$RUNNER_TEMP/native-evidence/ios-build-toolchain.txt" | cut -d ' ' -f 1)
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore matching native iOS simulator binary
         id: ios-binary
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/SmartFarmer-simulator.zip
-          key: native-ios-simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
+          key: native-ios-simulator-adhoc-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-toolchain.outputs.fingerprint }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
       - name: Compile native SQLCipher iOS simulator application
         if: steps.ios-binary.outputs.cache-hit != 'true'
         working-directory: smart-farmer-frontend/mobile
