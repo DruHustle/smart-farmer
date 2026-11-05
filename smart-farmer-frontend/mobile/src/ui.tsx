@@ -71,8 +71,8 @@ export function Notice({ text, error = false }: { text: string; error?: boolean 
   return <View style={error ? styles.error : [styles.card, styles.warning]} accessibilityRole={error ? 'alert' : 'text'} accessibilityLiveRegion="polite"><Text style={styles.text}>{text}</Text></View>;
 }
 
-export function Sheet({ title, visible, onClose, closeLabel, keyboardDismissLabel, children, dismissible = true }: { title: string; visible: boolean; onClose: () => void; closeLabel: string; keyboardDismissLabel?: string; children: ReactNode; dismissible?: boolean }) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen">
+export function Sheet({ title, visible, onClose, onDismiss, closeLabel, keyboardDismissLabel, children, dismissible = true }: { title: string; visible: boolean; onClose: () => void; onDismiss?: () => void; closeLabel: string; keyboardDismissLabel?: string; children: ReactNode; dismissible?: boolean }) {
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={onDismiss} presentationStyle="overFullScreen">
     <SafeAreaView style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modal}>
       <View style={[styles.between, styles.modalHeader]}><Text style={[styles.heading, { flex: 1 }]} accessibilityRole="header">{title}</Text>{dismissible ? <Button testID="sheet-close" title={closeLabel} onPress={onClose} secondary /> : null}</View>
       {visible && keyboardDismissLabel ? <KeyboardDismissButton label={keyboardDismissLabel} /> : null}

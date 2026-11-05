@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { fromMinor, invoiceTotals, newInvoiceLine, reviewedDraft, scaleFor, type Account, type EditableInvoice, type EditableLine, type Invoice, type InvoiceDraft, type SettingsResponse } from '../accounting';
 import { c, projectOptions } from '../completion-ui';
@@ -8,12 +8,16 @@ import type { Language } from '../types';
 import type { Workspace } from '../use-workspace';
 import { Button, Card, Choice, Field, Notice, Sheet, styles } from '../ui';
 import { accountingMutation, Totals } from './accounting-ui';
+import { createFormCompletion, persistAndSubmitDraft, type FormAttempt } from '../form-completion';
 
 type Stored = { value: EditableInvoice; version: number | null };
 export function InvoiceEditor({ work, language, initial, version = null, settings, accounts, onSaved, sources = [] }: { work: Workspace; language: Language; initial: EditableInvoice; version?: number | null; settings: SettingsResponse; accounts: Account[]; onSaved: (invoice: Invoice) => void; sources?: { value: string; label: string; disabled?: boolean }[] }) {
   const t = textFor(language); const [value, setValue] = useState(initial); const latest = useRef(initial);
   const [loaded, setLoaded] = useState(false); const [restored, setRestored] = useState(false); const [stale, setStale] = useState(false);
-  const [review, setReview] = useState<InvoiceDraft | null>(null); const [sending, setSending] = useState(false); const busy = useRef(false);
+  const [review, setReview] = useState<InvoiceDraft | null>(null); const [sending, setSending] = useState(false);
+  const [reviewVisible, setReviewVisible] = useState(false); const [reviewToken, setReviewToken] = useState(0);
+  const completion = useRef(createFormCompletion(Platform.OS === 'ios')).current;
+  useEffect(() => { completion.attach(); return () => completion.dispose(); }, [completion]);
   const baseVersion = useRef(version);
   const draftKey = `accounting-editor:${initial.kind}:${version === null ? 'new' : initial.id}:${initial.documentId || 'manual'}`;
   useEffect(() => {
@@ -26,7 +30,8 @@ export function InvoiceEditor({ work, language, initial, version = null, setting
     return () => { active = false; };
   }, [work.farmId, work.repository, draftKey, version]);
   function update(next: EditableInvoice) {
-    latest.current = next; setValue(next); setReview(null);
+    latest.current = next; setValue(next);
+    if (!completion.closeReview(reviewToken, hideReview)) setReview(null);
     void work.repository.saveFormDraft(work.farmId, draftKey, { value: next, version: baseVersion.current }).catch(work.setError);
   }
   function lineUpdate(id: string, patch: Partial<EditableLine>) { update({ ...latest.current, lines: latest.current.lines.map(line => line.id === id ? { ...line, ...patch } : line) }); }
@@ -35,7 +40,8 @@ export function InvoiceEditor({ work, language, initial, version = null, setting
     try {
       const prepared = reviewedDraft(value, settings.currencies);
       for (const line of prepared.lines) if (line.taxRateBps && !settings.settings?.taxRates.some(rate => rate.rateBps === line.taxRateBps)) throw new Error('tax_rate_unconfigured');
-      setReview(prepared);
+      const token = completion.openReview();
+      if (token !== null) { setReviewToken(token); setReview(prepared); setReviewVisible(true); }
     } catch (error) { work.setError(error); }
   }
   async function restoreUnconfirmed() {
@@ -48,22 +54,33 @@ export function InvoiceEditor({ work, language, initial, version = null, setting
       work.setError(null);
     } catch (error) { work.setError(error); }
   }
+  function hideReview() { setReviewVisible(false); if (Platform.OS !== 'ios') setReview(null); }
   async function save() {
-    if (!review || busy.current || stale) return;
-    busy.current = true; setSending(true);
-    try {
-      await work.onlineAction(async () => {
-        // A fresh draft's identity is persisted before its first request, including untouched defaults.
-        await work.repository.saveFormDraft(work.farmId, draftKey, { value, version });
-        let invoice: Invoice;
-        if (version === null) invoice = await accountingMutation<Invoice>(work, '/invoices', review, 'POST', review.id);
-        else { const { kind: _kind, ...body } = review; invoice = await accountingMutation<Invoice>(work, `/invoices/${initial.id}`, { ...body, version }, 'PATCH'); }
-        setReview(null);
-        // A storage/refresh failure after commit must not offer the same action as an unsaved draft.
-        void work.repository.saveFormDraft(work.farmId, draftKey, null).catch(work.setError);
-        onSaved(invoice);
-      });
-    } finally { busy.current = false; setSending(false); }
+    if (!review || stale) return;
+    const prepared = review;
+    await completion.run({
+      reviewToken,
+      attempt: async (): Promise<FormAttempt<Invoice>> => {
+        let result: FormAttempt<Invoice> = { accepted: false };
+        await work.onlineAction(async () => {
+          const invoice = await persistAndSubmitDraft({
+            // A fresh draft's identity is persisted before its first request, including untouched defaults.
+            persist: () => work.repository.saveFormDraft(work.farmId, draftKey, { value, version }),
+            submit: () => {
+              if (version === null) return accountingMutation<Invoice>(work, '/invoices', prepared, 'POST', prepared.id);
+              const { kind: _kind, ...body } = prepared;
+              return accountingMutation<Invoice>(work, `/invoices/${initial.id}`, { ...body, version }, 'PATCH');
+            },
+            clear: () => work.repository.saveFormDraft(work.farmId, draftKey, null),
+            cleanupError: work.setError,
+          });
+          result = { accepted: true, result: invoice };
+        });
+        return result;
+      },
+      accepted: () => {}, reset: () => {}, hideReview,
+      saved: onSaved, busy: setSending, error: work.setError,
+    });
   }
   if (!loaded) return <Notice text={work.error ? errorText(language, work.error) : t.loading} error={Boolean(work.error)} />;
   const currency = settings.currencies.find(item => item.code === value.currency);
@@ -105,7 +122,7 @@ export function InvoiceEditor({ work, language, initial, version = null, setting
     {totals && currency ? <Totals language={language} currency={value.currency} scale={currency.minorUnit} totals={totals} /> : null}
     <Text style={styles.caption}>{c(language, 'accountingDraftPrivacy')}</Text>
     <Button testID="invoice-review-draft" title={c(language, 'saveInvoiceDraft')} disabled={stale || !work.online || !settings.configured} busy={sending} onPress={prepare} />
-    <Sheet title={c(language, 'review')} visible={Boolean(review)} onClose={() => { if (!sending) setReview(null); }} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
+    <Sheet key={reviewToken} title={c(language, 'review')} visible={reviewVisible} onClose={() => { completion.closeReview(reviewToken, hideReview); }} onDismiss={() => { if (completion.dismissed(reviewToken)) setReview(null); }} dismissible={!sending} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       <Notice text={c(language, 'savedDraftOnly')} />
       {review ? <><Text style={styles.heading}>{review.party.name}</Text><Text style={styles.text}>{review.reference} · {review.issueDate}</Text>{review.lines.map(line => <View key={line.id} style={styles.item}><Text style={styles.text}>{line.description}</Text><Text style={styles.text}>{line.quantity} × {review.currency} {line.unitPrice}</Text></View>)}<Totals language={language} totals={invoiceTotals(review.lines, scaleFor(settings.currencies, review.currency))} currency={review.currency} scale={scaleFor(settings.currencies, review.currency)} /></> : null}

@@ -80,9 +80,10 @@ export function InvoiceDetail({ work, language, invoice, onChanged, onEdit, onNa
       }} onSaved={change} /> : null}
       {action === 'void' ? <Form key={`void:${invoice.version}`} work={work} language={language} hint={c(language, 'voidInvoiceHint')} fields={[textField('reason', true)]} submit={body => accountingMutation<Invoice>(work, `/invoices/${invoice.id}/void`, { reason: body.reason, version: invoice.version, confirmed: true })} onSaved={change} /> : null}
       {action.startsWith('reverse:') ? <Form key={`${action}:${invoice.version}`} work={work} language={language} hint={c(language, 'reversePaymentHint')} fields={[textField('reason', true), { key: 'paidOn', type: 'date', required: true }]} initial={{ paidOn: today }} submit={body => accountingMutation<Invoice>(work, `/invoices/${invoice.id}/payments/${action.slice(8)}/reverse`, { reason: body.reason, paidOn: calendarDate(string(body.paidOn)), version: invoice.version, confirmed: true })} onSaved={change} /> : null}
-      {action === 'credit' ? <Form key={`credit:${invoice.version}`} work={work} language={language} hint={c(language, 'creditInvoiceHint')} fields={[textField('amount', true), { key: 'issueDate', type: 'date', required: true }, textField('reason', true)]} initial={{ issueDate: today }} submit={async body => {
+      {action === 'credit' ? <Form key={`credit:${invoice.version}`} work={work} language={language} hint={c(language, 'creditInvoiceHint')} fields={[textField('amount', true), { key: 'issueDate', type: 'date', required: true }, textField('reason', true)]} initial={{ issueDate: today }} submit={body => {
         const amountMinor = toMinor(string(body.amount), invoice.minorUnit); if (BigInt(amountMinor) <= 0n || BigInt(amountMinor) > outstanding) throw new Error('payment_exceeds_balance');
-        await accountingMutation(work, `/invoices/${invoice.id}/credits`, { version: invoice.version, amountMinor, issueDate: calendarDate(string(body.issueDate)), reason: body.reason, confirmed: true });
+        return accountingMutation<Invoice>(work, `/invoices/${invoice.id}/credits`, { version: invoice.version, amountMinor, issueDate: calendarDate(string(body.issueDate)), reason: body.reason, confirmed: true });
+      }} onSaved={() => {
         // The credit response is the new credit; refresh its originating invoice separately.
         setAction(''); void work.api.request<Invoice>(accountingPath(work, `/invoices/${invoice.id}`)).then(onChanged).catch(work.setError);
       }} /> : null}

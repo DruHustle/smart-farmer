@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { errorText, label, textFor } from './i18n';
 import { completionText } from './completion-i18n';
@@ -8,6 +8,7 @@ import { initials, numberText, object, parseFields, rows, string, type FormField
 import type { Language } from './types';
 import type { Workspace } from './use-workspace';
 import { Button, Card, Choice, Field, Notice, Sheet, Toggle, styles } from './ui';
+import { createFormCompletion, type FormAttempt } from './form-completion';
 
 export function c(language: Language, key: string): string { return completionText(language, key) ?? label(language, key); }
 export function options(language: Language, values: readonly string[]) { return values.map(value => ({ value, label: c(language, value) })); }
@@ -38,24 +39,34 @@ export function Fields({ fields, value, onChange, language, prefix = 'form' }: {
 export function Form({ work, language, title, fields, initial = {}, submit, onSaved, hint, confirmation = true, includeId = true, offline = false, draftKey }: { work: Workspace; language: Language; title?: string; fields: FormField[]; initial?: Row; submit: (body: Row) => Promise<unknown>; onSaved?: (result: unknown) => void | Promise<void>; hint?: string; confirmation?: boolean; includeId?: boolean; offline?: boolean; draftKey?: string }) {
   const [values, setValues] = useState<Row>(() => initials(fields, initial));
   const [review, setReview] = useState<Row | null>(null);
+  const [reviewVisible, setReviewVisible] = useState(false); const [reviewToken, setReviewToken] = useState(0);
   const [sending, setSending] = useState(false);
+  const completion = useRef(createFormCompletion(Platform.OS === 'ios')).current;
+  useEffect(() => { completion.attach(); return () => completion.dispose(); }, [completion]);
   const id = useRef(Crypto.randomUUID()); const t = textFor(language);
   const draftReady = useRef(!draftKey);
   const [draftLoaded, setDraftLoaded] = useState(!draftKey);
   useEffect(() => { let active = true; if (draftKey) void work.repository.formDraft<{ id: string; values: Row }>(work.farmId, draftKey).then(saved => { if (active && saved) { id.current = saved.id; setValues(saved.values); } if (active) { draftReady.current = true; setDraftLoaded(true); } }).catch(work.setError); return () => { active = false; }; }, [draftKey, work.farmId]);
   const updateValues = (next: Row) => { setValues(next); if (draftKey && draftReady.current) void work.repository.saveFormDraft(work.farmId, draftKey, { id: id.current, values: next }).catch(work.setError); };
+  function hideReview() { setReviewVisible(false); if (Platform.OS !== 'ios') setReview(null); }
   async function send(body: Row) {
-    if (sending) return;
-    setSending(true);
-    const run = async () => { const result = await submit({ ...(includeId ? { id: id.current } : {}), ...body }); if (onSaved) await onSaved(result); };
-    let success = false;
-    if (offline) { try { await run(); success = true; } catch (error) { work.setError(error); } } else success = await work.onlineAction(run);
-    if (success) { id.current = Crypto.randomUUID(); setReview(null); updateValues(initials(fields, initial)); }
-    setSending(false);
+    await completion.run({
+      reviewToken: confirmation ? reviewToken : undefined,
+      attempt: async (): Promise<FormAttempt<unknown>> => {
+        let result: unknown;
+        const run = async () => { result = await submit({ ...(includeId ? { id: id.current } : {}), ...body }); };
+        let success = false;
+        if (offline) { try { await run(); success = true; } catch (error) { work.setError(error); } } else success = await work.onlineAction(run);
+        return success ? { accepted: true, result } : { accepted: false };
+      },
+      accepted: () => { id.current = Crypto.randomUUID(); },
+      reset: () => updateValues(initials(fields, initial)),
+      hideReview, saved: onSaved, busy: setSending, error: work.setError,
+    });
   }
-  function prepare() { work.setError(null); try { const body = parseFields(fields, values, work.snapshot?.farm.timezone || 'Africa/Harare'); if (confirmation) setReview(body); else void send(body); } catch (error) { work.setError(error); } }
+  function prepare() { work.setError(null); try { const body = parseFields(fields, values, work.snapshot?.farm.timezone || 'Africa/Harare'); if (confirmation) { const token = completion.openReview(); if (token !== null) { setReviewToken(token); setReview(body); setReviewVisible(true); } } else void send(body); } catch (error) { work.setError(error); } }
   if (!draftLoaded) return <Card title={title}>{work.error ? <Notice error text={errorText(language, work.error)} /> : <Text style={styles.muted}>{t.loading}</Text>}</Card>;
-  return <Card title={title}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{hint ? <Notice text={hint} /> : null}<Fields fields={fields} value={values} onChange={updateValues} language={language} /><Button testID="product-review" title={offline ? t.save : c(language, confirmation ? 'review' : 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={prepare} /><Text style={styles.caption}>{offline ? t.savedLocally : c(language, 'onlineOnly')}</Text><Sheet title={c(language, 'review')} visible={Boolean(review)} onClose={() => setReview(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{review ? <FormSummary fields={fields} value={review} language={language} timezone={work.snapshot?.farm.timezone || 'Africa/Harare'} /> : null}<Button testID="product-confirm" title={c(language, 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={() => { if (review) void send(review); }} /></Sheet></Card>;
+  return <Card title={title}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{hint ? <Notice text={hint} /> : null}<Fields fields={fields} value={values} onChange={updateValues} language={language} /><Button testID="product-review" title={offline ? t.save : c(language, confirmation ? 'review' : 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={prepare} /><Text style={styles.caption}>{offline ? t.savedLocally : c(language, 'onlineOnly')}</Text><Sheet key={reviewToken} title={c(language, 'review')} visible={reviewVisible} onClose={() => { completion.closeReview(reviewToken, hideReview); }} onDismiss={() => { if (completion.dismissed(reviewToken)) setReview(null); }} dismissible={!sending} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{review ? <FormSummary fields={fields} value={review} language={language} timezone={work.snapshot?.farm.timezone || 'Africa/Harare'} /> : null}<Button testID="product-confirm" title={c(language, 'confirm')} disabled={!offline && !work.online} busy={sending} onPress={() => { if (review) void send(review); }} /></Sheet></Card>;
 }
 function FormSummary({ fields, value, language, timezone }: { fields: FormField[]; value: Row; language: Language; timezone: string }) {
   return <>{fields.filter(field => field.type !== 'password' && value[field.key] !== undefined).map(field => <View key={field.key} style={styles.item}><Text style={styles.label}>{field.label || c(language, field.key)}</Text>{field.type === 'rows' ? rows(value[field.key]).map((item, i) => <Card key={i}><FormSummary fields={field.fields || []} value={item} language={language} timezone={timezone} /></Card>) : <Text style={styles.text}>{field.type === 'boolean' ? c(language, value[field.key] ? 'yes' : 'no') : field.type === 'datetime' ? formatFarmTime(string(value[field.key]), timezone, language) : field.type === 'choice' ? field.options?.find(option => option.value === value[field.key])?.label : field.type === 'multi' ? (value[field.key] as string[]).map(item => field.options?.find(option => option.value === item)?.label).join(' · ') : string(value[field.key])}</Text>}</View>)}</>;
