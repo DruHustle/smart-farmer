@@ -66,7 +66,14 @@ async function expectText(locator, text) {
   await expectVisible(locator.filter({hasText: text}));
   assert.ok((await locator.textContent()).includes(text));
 }
-async function navigate(target, text = sn[target]) {await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();}
+async function navigate(target, text = sn[target]) {
+  await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();
+  for (const selector of ['.mobile-nav', '.desktop-nav nav']) {
+    const current = page.locator(selector).locator('[aria-current="page"]');
+    assert.equal(await current.count(), 1, 'navigation exposes exactly one current page');
+    assert.equal(await current.textContent(), text);
+  }
+}
 async function more(target, text = sn[target]) {await navigate('more'); await page.locator('.menu-panel').getByRole('button', {name: text, exact: true}).click();}
 async function waitProject(name) {await expectVisible(page.getByRole('button', {name: new RegExp(name)}));}
 function pass(text) {steps.push(text); console.log(`PASS: ${text}`);}

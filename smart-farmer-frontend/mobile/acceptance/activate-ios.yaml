@@ -1,0 +1,13 @@
+appId: eu.onesa.smartfarmer
+---
+# A fresh XCTest driver session does not establish the app's input focus.
+# Bring the existing process forward without resetting its SQLCipher state,
+# permissions, session, or unsaved form. Every separate iOS journey uses this.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions:
+            all: unset

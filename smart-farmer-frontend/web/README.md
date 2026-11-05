@@ -97,6 +97,8 @@ All datetime input uses the farm's IANA timezone, normally `Africa/Harare`. `src
 
 Forms provide accessible labels/descriptions, translated validation, keyboard focus, native modal semantics and phone-sized controls. Tables scroll inside their own labelled region. The browser suite performs separate small-phone, tablet and desktop overflow checks and axe WCAG A/AA scans in both languages. Browser viewport evidence does not demonstrate a native iOS or Android build, screen-reader usability or physical-device microphone behavior.
 
+Desktop and mobile primary navigation expose the selected destination with `aria-current="page"`. Browser journeys check that exactly one destination is current after navigation. Busy-state text uses the darker application green to retain contrast during actual API requests.
+
 ## Tests and acceptance evidence
 
 ```bash

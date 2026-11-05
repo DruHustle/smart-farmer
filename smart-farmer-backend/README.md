@@ -24,4 +24,6 @@ The web also has an [optional static Docker/PWA image and localhost-only Compose
 
 Run backend tests with an explicit isolated `TEST_DATABASE_URL`. The integration suite fails if its database is missing rather than reporting skipped tests as success. The web/native READMEs and operations guide list their independent verification commands.
 
+Membership changes and removals recheck the acting owner's role inside the farm-locked transaction. A request queued before that owner is demoted cannot restore its own authority or remove another member. PostgreSQL concurrency tests cover both cases while preserving the last-owner guard.
+
 No real farm measurements, animal counts, balances, hardware credentials, payment-provider settlement or native signing identities are supplied as seed data. Unknown facts stay unknown. Demonstration/test fixtures are isolated and must not be published as real listings or farm data.

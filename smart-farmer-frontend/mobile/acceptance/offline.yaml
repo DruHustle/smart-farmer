@@ -1,8 +1,12 @@
 appId: eu.onesa.smartfarmer
 ---
+- runFlow: activate-ios.yaml
 - tapOn:
     id: record-note
 - inputText: Native durable offline observation
+- assertVisible:
+    id: record-note
+    text: '^Native durable offline observation$'
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
