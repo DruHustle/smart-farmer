@@ -8,24 +8,29 @@ import { farmNow } from '../time';
 import type { Language } from '../types';
 import { Button, Card, Choice, Field, Notice, Sheet, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
+import {MarketDiscoveryPanel} from './MarketDiscovery';
 
 type Props = { work: Workspace; language: Language };
 const categories = ['produce', 'input', 'animal', 'equipment', 'other'];
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
 
 export function MarketplacePanel({ work, language, onAccounting }: Props & { onAccounting: (farmId: string, invoiceId: string) => Promise<void> }) {
-  const [tab, setTab] = useState('listings'); const [query, setQuery] = useState(''); const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('listings'); const [query, setQuery] = useState(''); const [search, setSearch] = useState(''); const [showFilters,setShowFilters]=useState(false); const [area,setArea]=useState(''); const [currencyFilter,setCurrencyFilter]=useState(''); const [minFilter,setMinFilter]=useState(''); const [maxFilter,setMaxFilter]=useState(''); const [activeFilters,setActiveFilters]=useState({area:'',currency:'',minPrice:'',maxPrice:''});
   const [selected, setSelected] = useState<Row | null>(null); const [edit, setEdit] = useState<Row | null>(null); const [request, setRequest] = useState<Row | null>(null);
-  const data = usePanel(work, `market:${search}`, async () => {
-    const [listings, own, orders, requests, myRequests, moderation, media] = await Promise.all([allPages<Row>(work.api, `/v1/market/listings?q=${encodeURIComponent(search)}`), work.canManage ? allPages<Row>(work.api, farmPath(work, '/listings')) : Promise.resolve([]), allPages<Row>(work.api, '/v1/market/orders'), allPages<Row>(work.api, `/v1/market/requests?q=${encodeURIComponent(search)}`), allPages<Row>(work.api, '/v1/market/my-requests'), work.canManage ? allPages<Row>(work.api, farmPath(work, '/moderation')) : Promise.resolve([]), work.canManage ? allPages<Row>(work.api, farmPath(work, '/media')) : Promise.resolve([])]);
+  const filterQuery=Object.entries(activeFilters).filter(([,value])=>value.trim()).map(([key,value])=>`&${key}=${encodeURIComponent(value.trim())}`).join('');
+  const data = usePanel(work, `market:${search}:${filterQuery}`, async () => {
+    const [listings, own, orders, requests, myRequests, moderation, media] = await Promise.all([allPages<Row>(work.api, `/v1/market/listings?q=${encodeURIComponent(search)}${filterQuery}`), work.canManage ? allPages<Row>(work.api, farmPath(work, '/listings')) : Promise.resolve([]), allPages<Row>(work.api, '/v1/market/orders'), allPages<Row>(work.api, `/v1/market/requests?q=${encodeURIComponent(search)}`), allPages<Row>(work.api, '/v1/market/my-requests'), work.canManage ? allPages<Row>(work.api, farmPath(work, '/moderation')) : Promise.resolve([]), work.canManage ? allPages<Row>(work.api, farmPath(work, '/media')) : Promise.resolve([])]);
     return { listings, own, orders, requests, myRequests, moderation, media };
   });
   const t = textFor(language);
   const requestFields: FormField[] = [textField('title', true), selectField('category', options(language, categories), true), numericField('quantity', true, { minimum: 0.000001 }), textField('unit', true), textField('area', true, { label: c(language, 'collectionArea') }), textField('details', true, { multiline: true }), dateField('expiresAt')];
   async function reload() { await data.reload(); await work.refresh(); }
   return <>
-    <Notice text={c(language, 'onlineOnly')} /><Choice testID="market-tabs" label={t.market} value={tab} onChange={setTab} options={options(language, ['listings', 'orders', 'requests', ...(work.canManage ? ['ownListings', 'moderation'] : [])])} closeLabel={t.close} />
-    <Field label={c(language, 'search')} value={query} onChangeText={setQuery} maxLength={100} /><View style={styles.row}><Button secondary title={c(language, 'search')} onPress={() => setSearch(query.trim())} /><Button secondary title={t.refresh} busy={data.loading} onPress={() => { void data.reload(); }} /></View>
+    <Notice text={c(language, 'onlineOnly')} /><Choice testID="market-tabs" label={t.market} value={tab} onChange={setTab} options={[...options(language, ['listings']),{value:'discover',label:'Saved & alerts'},...options(language, ['orders', 'requests', ...(work.canManage ? ['ownListings', 'moderation'] : [])])]} closeLabel={t.close} />
+    <Field label={c(language, 'search')} value={query} onChangeText={setQuery} maxLength={100} /><View style={styles.row}><Button secondary title={c(language, 'search')} onPress={() => {setSearch(query.trim());setActiveFilters({area:area.trim(),currency:currencyFilter.trim().toUpperCase(),minPrice:minFilter.trim(),maxPrice:maxFilter.trim()});}} /><Button secondary title={t.refresh} busy={data.loading} onPress={() => { void data.reload(); }} /></View>
+    <Button secondary title={showFilters?'Hide filters':'Filter by location & price'} onPress={()=>setShowFilters(!showFilters)}/>
+    {showFilters&&<View style={styles.card}><Field label="Area" value={area} onChangeText={setArea} maxLength={150}/><Field label="Currency" value={currencyFilter} onChangeText={setCurrencyFilter} maxLength={3} autoCapitalize="characters"/><Field label="Min price" value={minFilter} onChangeText={setMinFilter} keyboardType="decimal-pad"/><Field label="Max price" value={maxFilter} onChangeText={setMaxFilter} keyboardType="decimal-pad"/></View>}
+    {tab==='discover'&&<MarketDiscoveryPanel work={work} language={language} onListing={setSelected}/>}
     {tab === 'listings' || tab === 'ownListings' ? <>
       <Records items={(tab === 'listings' ? data.value?.listings : data.value?.own) || []} language={language} timezone={zone(work)} fields={['category', 'available_quantity', 'remaining_quantity', 'unit', 'count_basis', 'expected_harvest', 'expected_quantity', 'price', 'currency', 'price_basis', 'price_quantity', 'collection_area', 'grade', 'status', 'expires_at']}>
         {item => <>{item.count_basis === 'estimated' ? <Notice text={t.estimated} /> : null}<Button testID={`listing-open-${item.id}`} secondary title={c(language, 'details')} onPress={() => setSelected(item)} />{tab === 'ownListings' ? <Button secondary title={t.edit} onPress={() => setEdit(item)} /> : null}</>}
@@ -61,7 +66,7 @@ function ListingForm({ work, language, listing, media, onSaved }: Props & { list
 }
 
 function ListingDetail({ work, language, listing, own, onSaved }: Props & { listing: Row; own: boolean; onSaved: () => Promise<void> }) {
-  const [tab, setTab] = useState('reserve'); const [showPhotos, setShowPhotos] = useState(!work.dataSaver);
+  const [tab, setTab] = useState('reserve'); const [showPhotos, setShowPhotos] = useState(!work.dataSaver); const [saved,setSaved]=useState(false); const [following,setFollowing]=useState(false);
   const data = usePanel(work, `listing:${listing.id}`, async () => { const [enquiries, offers, reviews] = await Promise.all([allPages<Row>(work.api, `/v1/market/listings/${listing.id}/enquiries`), allPages<Row>(work.api, `/v1/market/listings/${listing.id}/offers`), allPages<Row>(work.api, `/v1/market/listings/${listing.id}/reviews`)]); return { enquiries, offers, reviews }; });
   async function reload() { await data.reload(); await onSaved(); }
   return <>
@@ -69,6 +74,8 @@ function ListingDetail({ work, language, listing, own, onSaved }: Props & { list
     {listing.expected_harvest ? <Notice text={c(language, 'expectedHarvest')} /> : null}
     {Array.isArray(listing.photo_media_ids) && listing.photo_media_ids.length ? <><Button secondary title={textFor(language).photos} disabled={!work.online} onPress={() => setShowPhotos(!showPhotos)} />{showPhotos ? listing.photo_media_ids.map(id => <Image key={string(id)} source={{ uri: `${work.session.origin}/v1/market/listings/${listing.id}/photos/${id}` }} style={{ width: '100%', height: 210 }} resizeMode="contain" accessibilityLabel={textFor(language).photos} />) : null}</> : null}
     <Button secondary title={c(language, 'share')} onPress={() => { const origin = process.env.EXPO_PUBLIC_WEB_URL; if (!origin || !/^https:\/\/[^/]+$/.test(origin)) { work.setError(new Error('web_unconfigured')); return; } void Share.share({ message: `${listing.title}\n${origin}/?listing=${listing.id}` }).catch(work.setError); }} />
+    {!own&&<Button secondary title={saved?'Saved listing':'Save listing'} disabled={!work.online||saved} onPress={()=>{void work.api.request('/v1/market/favorites/'+listing.id,'PUT').then(()=>{setSaved(true);return onSaved();}).catch(work.setError);}}/>}
+    {!own&&listing.seller_farm_id&&<Button secondary title={following?'Following seller':'Follow seller'} disabled={!work.online||following} onPress={()=>{void work.api.request('/v1/market/follows/'+listing.seller_farm_id,'PUT').then(()=>{setFollowing(true);return onSaved();}).catch(work.setError);}}/>}
     <Choice label={c(language, 'details')} value={tab} onChange={setTab} options={options(language, [!own && !listing.expected_harvest ? 'reserve' : 'details', 'enquiries', 'offers', 'reviews', 'report'])} closeLabel={textFor(language).close} />
     {tab === 'reserve' && !own && !listing.expected_harvest ? <Form work={work} language={language} hint={c(language, 'reservationHint')} fields={[numericField('quantity', true, { minimum: 0.000001, maximum: Number(listing.available_quantity || 0) })]} submit={body => work.api.request(`/v1/market/listings/${listing.id}/orders`, 'POST', body)} onSaved={reload} /> : null}
     {tab === 'enquiries' ? <><Form work={work} language={language} fields={[textField('message', true, { multiline: true })]} submit={body => work.api.request(`/v1/market/listings/${listing.id}/enquiries`, 'POST', body)} onSaved={data.reload} /><Records items={data.value?.enquiries || []} language={language} timezone={zone(work)} fields={['created_at']}>{item => <><Records items={rows(item.messages)} language={language} timezone={zone(work)} fields={['message', 'created_at']} /><Form work={work} language={language} fields={[textField('message', true, { multiline: true })]} submit={body => work.api.request(`/v1/market/enquiries/${item.id}/messages`, 'POST', body)} onSaved={data.reload} /></>}</Records></> : null}
