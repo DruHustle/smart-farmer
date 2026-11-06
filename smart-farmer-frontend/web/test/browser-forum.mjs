@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
+import {writeFile} from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 import {forumText} from '../src/forum.ts';
 
@@ -74,7 +75,7 @@ export async function forumJourneys({page,context,apiCall,farm,token,sn,nd,uniqu
       await page.setViewportSize({width,height});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`Forum overflow at ${width}`);await page.screenshot({path:resolve(artifacts,`forum-${name}.png`),fullPage:true});
     }
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.style.fontSize='200%');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'Forum large-text overflow');await page.screenshot({path:resolve(artifacts,'forum-large-text-viewport.png'),fullPage:false});await page.screenshot({path:resolve(artifacts,'forum-large-text.png'),fullPage:true});await page.evaluate(()=>document.documentElement.style.fontSize='');
-    const accessibility=await new AxeBuilder({page}).include('.workspace').analyze();assert.deepEqual(accessibility.violations.filter(item=>['critical','serious'].includes(item.impact)).map(item=>({id:item.id,nodes:item.nodes.length})),[]);
+    const accessibility=await new AxeBuilder({page}).include('.workspace').analyze();await writeFile(resolve(artifacts,'axe-forum.json'),JSON.stringify(accessibility,null,2));assert.deepEqual(accessibility.violations.filter(item=>['critical','serious'].includes(item.impact)).map(item=>({id:item.id,nodes:item.nodes.length})),[]);
     const storage=await page.evaluate(async()=>({local:{...localStorage},session:{...sessionStorage},cached:(await Promise.all((await caches.keys()).map(async key=>(await (await caches.open(key)).keys()).map(request=>request.url)))).flat()}));
     assert.equal(JSON.stringify(storage.local).includes('Unshared synthetic local text.'),false);assert.equal(JSON.stringify(storage.session).includes('Unshared synthetic local text.'),false);assert.equal(storage.cached.some(url=>new URL(url).pathname.includes('/v1/')),false);
     pass('Forum never queues offline publication, supports Shona/Ndebele and responsive large text, and passes serious/critical accessibility checks');

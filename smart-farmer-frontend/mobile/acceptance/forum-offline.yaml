@@ -11,6 +11,10 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: forum-compose-title
 - inputText: Native forum offline draft must stay unshared
+- assertVisible:
+    id: forum-compose-title
+    text: '^Native forum offline draft must stay unshared$'
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
       id: forum-compose-body
@@ -20,6 +24,9 @@ appId: eu.onesa.smartfarmer
     id: forum-compose-body
 - inputText: Synthetic unshared offline forum text.
 - runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: forum-compose-body
+    text: '^Synthetic unshared offline forum text[.]$'
 - scrollUntilVisible:
     element:
       id: forum-compose-consent
@@ -29,6 +36,7 @@ appId: eu.onesa.smartfarmer
     id: forum-compose-consent
 - tapOn:
     id: forum-compose-submit
+    enabled: true
 - scrollUntilVisible:
     element:
       id: forum-compose-error

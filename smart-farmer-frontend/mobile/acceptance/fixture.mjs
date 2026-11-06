@@ -142,7 +142,7 @@ if (process.argv[2] === 'seed') {
       : 'other';
     const method = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(incoming.method) ? incoming.method : 'OTHER';
     const started = performance.now();
-    const observe = status => console.log('[native-proxy]', JSON.stringify({ method, route, status, elapsedMs: Math.round(performance.now() - started) }));
+    const observe = status => console.log('[native-proxy]', JSON.stringify({ timestamp: new Date().toISOString(), method, route, status, elapsedMs: Math.round(performance.now() - started) }));
     observe('pending');
     let recorded = false;
     const completed = () => { if (!recorded) { recorded = true; observe(outgoing.writableFinished ? outgoing.statusCode : 'closed'); } };

@@ -11,6 +11,10 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: forum-compose-title
 - inputText: Native shared farming notes
+- assertVisible:
+    id: forum-compose-title
+    text: '^Native shared farming notes$'
+- runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     element:
       id: forum-compose-body
@@ -20,6 +24,9 @@ appId: eu.onesa.smartfarmer
     id: forum-compose-body
 - inputText: <b>Native synthetic farming discussion.</b>
 - runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: forum-compose-body
+    text: '^<b>Native synthetic farming discussion[.]</b>$'
 - scrollUntilVisible:
     element:
       id: forum-compose-submit
