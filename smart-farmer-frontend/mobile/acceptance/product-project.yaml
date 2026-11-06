@@ -1,7 +1,22 @@
 appId: eu.onesa.smartfarmer
 ---
-- tapOn:
-    id: "tab-farm"
+# A driver-acknowledged tap can leave Record selected after earlier journeys.
+# Bound only this read-only navigation retry and require the actual Farm state.
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: "tab-farm"
+        selected: true
+    commands:
+      - tapOn:
+          id: "tab-farm"
+          enabled: true
+- extendedWaitUntil:
+    visible:
+      id: "tab-farm"
+      selected: true
+    timeout: 5000
 - scrollUntilVisible:
     element:
       id: "workspace-language"
