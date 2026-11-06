@@ -1,0 +1,29 @@
+appId: eu.onesa.smartfarmer
+---
+# Only read-only tab navigation is bounded; publication is never retried.
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: tab-forum
+        selected: true
+    commands:
+      - tapOn:
+          id: tab-forum
+          enabled: true
+- extendedWaitUntil:
+    visible:
+      id: tab-forum
+      selected: true
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: forum-new
+      enabled: true
+    direction: DOWN
+    timeout: 30000

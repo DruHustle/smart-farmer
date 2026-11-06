@@ -50,3 +50,4 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: sheet-close
 - runFlow: product-language.yaml
+- runFlow: forum-read.yaml

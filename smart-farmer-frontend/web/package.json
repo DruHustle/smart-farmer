@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "test": "node --test test/*.test.mjs",
     "test:browser": "node test/browser.mjs",
-    "test:e2e": "node test/browser.mjs"
+    "test:e2e": "node test/browser.mjs",
+    "test:forum": "node test/forum-browser-runner.mjs"
   },
   "dependencies": {
     "hls.js": "^1.6.16",

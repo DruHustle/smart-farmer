@@ -43,8 +43,8 @@ export function Field({ label, hint, ...props }: TextInputProps & { label: strin
   return <View style={{ gap: 6 }}><Text testID={props.testID ? `${props.testID}-label` : undefined} style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} accessibilityHint={hint} placeholderTextColor={colors.muted} style={[styles.input, props.multiline && { minHeight: 92, textAlignVertical: 'top' }]} {...props} />{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View>;
 }
 
-export function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void }) {
-  return <View style={styles.between}><View style={{ flex: 1, minWidth: 160 }}><Text style={styles.label}>{label}</Text>{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View><Switch accessibilityLabel={label} value={value} onValueChange={onChange} trackColor={{ false: '#A4B5A7', true: colors.green }} /></View>;
+export function Toggle({ label, hint, value, onChange, disabled, testID }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void; disabled?:boolean; testID?:string }) {
+  return <View style={styles.between}><View style={{ flex: 1, minWidth: 160 }}><Text style={styles.label}>{label}</Text>{hint ? <Text style={styles.caption}>{hint}</Text> : null}</View><Switch testID={testID} disabled={disabled} accessibilityLabel={label} value={value} onValueChange={onChange} trackColor={{ false: '#A4B5A7', true: colors.green }} /></View>;
 }
 
 export function Card({ title, children, style }: { title?: string; children: ReactNode; style?: object }) {
@@ -64,13 +64,13 @@ export function Sheet({ title, visible, onClose, closeLabel, children, dismissib
   </Modal>;
 }
 
-export function Choice<T extends string>({ label, value, options, onChange, closeLabel, testID }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; closeLabel: string; testID?: string }) {
+export function Choice<T extends string>({ label, value, options, onChange, closeLabel, testID, disabled }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; closeLabel: string; testID?: string; disabled?:boolean }) {
   const [open, setOpen] = useState(false);
   const selected = options.find(option => option.value === value);
   return <View style={{ gap: 6 }}><Text style={styles.label}>{label}</Text>
-    <Button testID={testID} secondary title={selected?.label || label} onPress={() => setOpen(true)} />
+    <Button testID={testID} secondary disabled={disabled} title={selected?.label || label} onPress={() => setOpen(true)} />
     <Sheet title={label} visible={open} onClose={() => setOpen(false)} closeLabel={closeLabel}>
-      {options.map(option => <Pressable key={option.value} testID={testID ? `${testID}-option-${option.value}` : undefined} accessibilityRole="radio" accessibilityState={{ selected: option.value === value }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
+      {options.map(option => <Pressable key={option.value} disabled={disabled} testID={testID ? `${testID}-option-${option.value}` : undefined} accessibilityRole="radio" accessibilityState={{ selected: option.value === value, disabled }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={[styles.item, { minHeight: 48, justifyContent: 'center' }]}><Text style={styles.text}>{option.value === value ? '✓ ' : ''}{option.label}</Text></Pressable>)}
     </Sheet>
   </View>;
 }

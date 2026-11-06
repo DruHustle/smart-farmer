@@ -1,5 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
+- runFlow: forum-offline.yaml
 - tapOn:
     id: record-note
 - inputText: Native durable offline observation

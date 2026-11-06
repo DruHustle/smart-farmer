@@ -1,0 +1,134 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: forum-read.yaml
+- runFlow: forum-moderation.yaml
+- runFlow: forum-open.yaml
+- tapOn:
+    id: forum-new
+- tapOn:
+    id: forum-compose-name
+- inputText: NativeForumGrower
+- tapOn:
+    id: forum-compose-title
+- inputText: Native shared farming notes
+- scrollUntilVisible:
+    element:
+      id: forum-compose-body
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-body
+- inputText: <b>Native synthetic farming discussion.</b>
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: forum-compose-submit
+    enabled: false
+- tapOn:
+    id: forum-compose-consent
+- tapOn:
+    id: forum-compose-submit
+    enabled: true
+- extendedWaitUntil:
+    notVisible:
+      id: forum-compose-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: <b>Native synthetic farming discussion.</b>
+    direction: DOWN
+    timeout: 30000
+- assertVisible: <b>Native synthetic farming discussion.</b>
+- scrollUntilVisible:
+    element:
+      id: forum-edit-discussion-.*
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-edit-discussion-.*
+- scrollUntilVisible:
+    element:
+      id: forum-compose-body
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-body
+- eraseText
+- inputText: Native reviewed forum note.
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-compose-consent
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-consent
+- tapOn:
+    id: forum-compose-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-compose-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: forum-reply
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-reply
+- tapOn:
+    id: forum-compose-name
+- inputText: NativeForumGrower
+- tapOn:
+    id: forum-compose-body
+- inputText: Native farmer reply shared explicitly.
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: forum-compose-submit
+    enabled: false
+- tapOn:
+    id: forum-compose-consent
+- tapOn:
+    id: forum-compose-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-compose-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: Native farmer reply shared explicitly.
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Native farmer reply shared explicitly.
+- takeScreenshot: native-forum-explicit-post-and-reply
+- scrollUntilVisible:
+    element:
+      id: forum-delete-reply-.*
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-delete-reply-.*
+- tapOn:
+    id: forum-action-consent
+- tapOn:
+    id: forum-action-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-action-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: Munyori abvisa mashoko aya.
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Munyori abvisa mashoko aya.
+- takeScreenshot: native-forum-author-reply-removed

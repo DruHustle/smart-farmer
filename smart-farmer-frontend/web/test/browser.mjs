@@ -8,6 +8,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
+import {forumJourneys} from './browser-forum.mjs';
 import {catalog} from '../src/locales.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -159,6 +160,7 @@ try {
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
 
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
+  await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
 
   checkpoint('Phone and desktop notifications evidence');
   await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-notifications.png');

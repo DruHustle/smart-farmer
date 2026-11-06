@@ -7,3 +7,4 @@ appId: eu.onesa.smartfarmer
 - runFlow: product-security.yaml
 - runFlow: product-language.yaml
 - runFlow: product-equipment.yaml
+- runFlow: product-forum.yaml

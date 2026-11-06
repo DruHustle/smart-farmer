@@ -1,0 +1,122 @@
+appId: eu.onesa.smartfarmer
+---
+# The open discussion belongs to the separate fixture farm, so this owner has
+# report access, but no authority to edit or moderate that other farm's content.
+- scrollUntilVisible:
+    element:
+      id: forum-report-.*
+    direction: DOWN
+    timeout: 30000
+- assertNotVisible:
+    id: forum-moderate-.*
+- assertNotVisible:
+    id: forum-edit-discussion-.*
+- tapOn:
+    id: forum-report-.*
+- tapOn:
+    id: forum-report-reason
+- tapOn:
+    id: forum-report-reason-option-privacy
+- tapOn:
+    id: forum-report-details
+- inputText: Native synthetic privacy review.
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-action-consent
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-action-consent
+- tapOn:
+    id: forum-action-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-action-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: forum-back
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: forum-back
+- runFlow: forum-open.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-mode
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-mode
+- tapOn:
+    id: forum-mode-option-reports
+- scrollUntilVisible:
+    element:
+      id: forum-moderate-.*
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Native moderation fixture
+- tapOn:
+    id: forum-moderate-.*
+- tapOn:
+    id: forum-moderation-reason
+- inputText: Native owner review hides this synthetic fixture.
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-action-consent
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-action-consent
+- tapOn:
+    id: forum-action-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-action-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: forum-mode
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: forum-mode
+- tapOn:
+    id: forum-mode-option-hidden
+- scrollUntilVisible:
+    element:
+      id: forum-moderate-.*
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Native moderation fixture
+- takeScreenshot: native-forum-owner-hidden-content
+- tapOn:
+    id: forum-moderate-.*
+- tapOn:
+    id: forum-moderation-reason
+- inputText: Native owner reviewed and restored the synthetic fixture.
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-action-consent
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-action-consent
+- tapOn:
+    id: forum-action-submit
+- extendedWaitUntil:
+    notVisible:
+      id: forum-action-submit
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: forum-mode
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: forum-mode
+- tapOn:
+    id: forum-mode-option-all

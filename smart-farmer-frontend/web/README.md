@@ -1,6 +1,8 @@
 # Smart Farmer web
 
-An independent React/TypeScript client for the Smart Farmer HTTP API. It does not import backend or native-app implementation code. The primary destinations are Today, Farm, Market, Services, and More; a sidebar replaces the bottom navigation on larger screens. Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`) are the only interface catalogs. The catalogs are machine-authored and still require fluent agricultural review before a farm rollout.
+An independent React/TypeScript client for the Smart Farmer HTTP API. It does not import backend or native-app implementation code. The primary destinations are Today, Farm, Market, Services, Forum, and More; a sidebar replaces the bottom navigation on larger screens. Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`) are the only interface catalogs. The catalogs are machine-authored and still require fluent agricultural review before a farm rollout.
+
+The [Forum](../../smart-farmer-backend/docs/forum.md) lets signed-in farmers deliberately share plain-text discussions and replies under a chosen display name. It includes topics/search, author edits and removal, reports and source-farm-owner moderation. Private records/media are not attached automatically, and Forum publication never joins the offline record queue. `npm run test:forum` runs its focused real-PostgreSQL/browser journeys; the ordinary browser suite includes those same checks.
 
 ## Build and run
 

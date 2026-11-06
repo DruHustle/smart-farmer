@@ -5,6 +5,9 @@ import {completionPhrases} from './completion-locales.ts';
 export const phrases = {
   ...validationPhrases, ...completionPhrases,
   language: ['Mutauro', 'Ulimi'],
+  forum: ['Dare', 'Inkundla'],
+  forum_already_reported: ['Watotumira chichemo chemashoko aya.', 'Usuthumele isikhalazo ngalo mbhalo.'],
+  forum_content_removed: ['Mashoko aya akabviswa. Vandudza dare.', 'Lo mbhalo ususiwe. Vuselela inkundla.'],
   previousPassword: ['Pasiwedhi yekare yezvakachengetwa', 'Igama elidala lokudlula lokugciniweyo'], recoverDrafts: ['Dzosa zvinyorwa zvakachengetwa', 'Buyisela imibhalo egciniweyo'], freshCache: ['Enderera nezvakachengetwa zvitsva', 'Qhubeka ngokugciniweyo okutsha'], recoveryArchiveHint: ['Pasiwedhi itsva yavhura akaundi. Shandisa pasiwwedhi yekare kudzosa zvinyorwa zvisati zvatumirwa, kana enderera. Zvinyorwa zvekare zvinoramba zvakavharirwa kuti zvidzoswe gare gare.', 'Igama elitsha lokudlula livule i-akhawunti. Sebenzisa elidala ukubuyisela imibhalo engakathunyelwa, kumbe uqhubeke. Imibhalo emidala ihlala ivikelwe ukuze ibuyiselwe kamuva.'], savedCode: ['Ndachengeta kodhi', 'Sengiyigcinile ikhodi'], live_animal_market_not_ready: ['Kutengesa zvipfuyo zvipenyu pamusika hakusati kwagadzirirwa. Nyora kutengeswa kwacho muchirongwa chezvipfuyo.', 'Ukuthengisa izifuyo eziphilayo emakethe akukalungiswa. Bhala ukuthengiswa ohlelweni lwezifuyo.'],
 
   yes: ['Hongu', 'Yebo'], no: ['Kwete', 'Hatshi'], interlock_ok: ['Mvumo yemudziyo', 'Imvumo yesisetshenziswa'], flow_l_min: ['Kuyerera (l/min)', 'Ukugeleza (l/min)'], pressure_kpa: ['Kumanikidzwa (kPa)', 'Ingcindezi (kPa)'], authorized: ['Wabvumirwa', 'Uvunyelwe'], simulatedFeedback: ['Simbisa nemhinduro yemuedzo', 'Qinisekisa ngempendulo yesilingiso'], cameraEvent: ['Zviitiko zvekamera', 'Izehlakalo zekhamera'], motion: ['Kufamba kwaonekwa', 'Ukunyakaza okubonakeleyo'], person: ['Munhu aonekwa', 'Umuntu obonakeleyo'], delayed: ['Chauya chanonoka', 'Sifike siphuze'],

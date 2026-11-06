@@ -10,6 +10,7 @@ import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
 import { registerFarmEdgeRoutes } from "./edge.js";
 import { registerLivestock } from "./livestock.js";
+import { registerForum } from "./forum.js";
 import {
   registerIntegrations,
   type IntegrationOptions,
@@ -76,7 +77,7 @@ export function buildApp(
   app.get("/ready", async (_req, reply) => {
     try {
       const r = await db.query(
-        "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
+        "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND to_regclass('forum_entries') IS NOT NULL AND to_regclass('forum_reports') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
       );
       if (!r.rows[0].ready) throw new Error("Schema not ready");
       return { status: "ok" };
@@ -89,6 +90,7 @@ export function buildApp(
   registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
   registerCore(app, ctx);
   registerLivestock(app, ctx);
+  registerForum(app, ctx);
   registerIntegrations(app, ctx, integrations);
   registerProduct(app, ctx);
   registerOperations(app, ctx);
