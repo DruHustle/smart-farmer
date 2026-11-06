@@ -3,11 +3,13 @@ set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+# Expo's pinned native launcher accepts the project URI at process startup.
+NATIVE_PROJECT_URL='smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1'
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
-xcrun simctl launch "$NATIVE_PHONE" eu.onesa.smartfarmer
+xcrun simctl launch "$NATIVE_PHONE" eu.onesa.smartfarmer --initialUrl "$NATIVE_PROJECT_URL"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
@@ -23,7 +25,7 @@ xcrun simctl boot "$NATIVE_TABLET"
 xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
-xcrun simctl launch "$NATIVE_TABLET" eu.onesa.smartfarmer
+xcrun simctl launch "$NATIVE_TABLET" eu.onesa.smartfarmer --initialUrl "$NATIVE_PROJECT_URL"
 maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
