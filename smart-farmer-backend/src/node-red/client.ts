@@ -222,13 +222,17 @@ export class NodeRedClient {
         "Node-RED could not verify the selected package inventory.",
       );
     const module = parsed.data;
+    if (module.version !== match.version)
+      throw new NodeRedError(
+        "The Node-RED inventory changed during verification. Check the saved outcome before another installation.",
+      );
     return {
       ...match,
       version: module.version,
-      pendingVersion: module.pending_version ?? null,
-      loadError: [...module.nodes, ...module.plugins].some((set) =>
-        Boolean(set.err),
-      ),
+      pendingVersion: module.pending_version ?? match.pendingVersion,
+      loadError:
+        match.loadError ||
+        [...module.nodes, ...module.plugins].some((set) => Boolean(set.err)),
     };
   }
 

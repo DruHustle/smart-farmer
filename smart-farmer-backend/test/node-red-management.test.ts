@@ -153,3 +153,26 @@ test('owner authority revoked after durable reservation prevents the remote POST
   await service.install(actor,gateway,installBody(review.reviewToken));
   assert.equal((await waitForOutcome(store)).state,'failed');assert.equal(runtime.state.posts,0);
 });
+for(const discrepancy of ['load error','pending version','different version'] as const)
+test('conflicting inventory '+discrepancy+' cannot be cleared by a later clean module response',async()=>{
+  const {store}=memoryStore(),runtime=runtimeFixture();
+  const fetcher:typeof fetch=async(input,init={})=>{
+    const response=await runtime.fetcher(input,init);
+    if(runtime.state.posts && init.method!=='POST' && String(input).endsWith('/nodes')){
+      const sets=await response.json() as Array<Record<string,unknown>>;
+      for(const set of sets){
+        if(discrepancy==='load error')set.err='synthetic aggregate error';
+        else if(discrepancy==='pending version')set.pending_version=selection.version;
+        else set.version='9.9.9';
+      }
+      return runtime.reply(sets);
+    }
+    return response;
+  };
+  const service=new NodeRedPackageService(store,configurations,fetcher);
+  const review=await service.review(actor,gateway,selection),request=installBody(review.reviewToken);
+  await service.install(actor,gateway,request);
+  assert.equal((await waitForOutcome(store)).state,'unconfirmed');
+  await assert.rejects(service.install(actor,gateway,{...request,requestId:randomUUID()}),/pending or unconfirmed/);
+  assert.equal(runtime.state.posts,1);
+});
