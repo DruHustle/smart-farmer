@@ -22,6 +22,8 @@
 .forum-modes{margin-bottom:16px}.forum-filters{display:grid;grid-template-columns:minmax(160px,1fr) minmax(180px,2fr) auto;gap:12px;align-items:end;margin-bottom:18px}.forum-entry{padding:18px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.forum-entry:first-child{border-top:0;padding-top:0}.forum-entry:last-child{padding-bottom:0}.forum-title{display:flex;justify-content:space-between;width:100%;text-align:left;border:0;padding:0;background:transparent;font-size:1.05rem;overflow-wrap:anywhere}.forum-actions>button{font-size:.8rem}.forum-entry .preserve-lines{white-space:pre-wrap}.forum-entry blockquote{overflow-wrap:anywhere}
 @media(max-width:900px){.mobile-nav{grid-template-columns:repeat(6,minmax(0,1fr))}.mobile-nav>button>span{overflow-wrap:anywhere}}
 @media(max-width:520px){.mobile-nav{grid-template-columns:repeat(3,minmax(0,1fr))}.workspace{padding-bottom:172px}.record-fab{bottom:calc(144px + env(safe-area-inset-bottom))}.forum-filters{grid-template-columns:minmax(0,1fr)}.page-head{flex-wrap:wrap}}
+/* Keep branding and language/lock controls readable when phone text is enlarged. */
+@media(max-width:520px){.app-header{height:auto;min-height:62px;flex-wrap:wrap;padding-block:10px}.app-header .header-actions{margin-left:auto}.app-header .language-select{width:auto;max-width:100%}}
 /* Node-RED package management stays readable on narrow equipment screens. */
 .node-red-packages {margin-top:1.25rem;min-width:0}
 .node-red-packages .section-head {flex-wrap:wrap;gap:.75rem}

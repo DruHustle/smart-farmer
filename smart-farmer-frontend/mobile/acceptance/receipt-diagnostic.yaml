@@ -1,0 +1,24 @@
+appId: eu.onesa.smartfarmer
+---
+# This flow is failure-only evidence. Open the queue without pressing Sync/Retry.
+- tapOn:
+    id: tab-more
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: tab-more
+      selected: true
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: more-sync
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: more-sync
+- takeScreenshot: receipt-failed-outbox

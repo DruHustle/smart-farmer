@@ -133,6 +133,21 @@ if (process.argv[2] === 'seed') {
   console.log('Verified native forum topic/search, cross-farm reading/report privacy, one explicitly shared discussion, author edit/reply/removal, owner hide/restore, and no offline publication replay after restart.');
 } else if (process.argv[2] === 'proxy') {
   createServer((incoming, outgoing) => {
+    // Observe only finite route templates and response metadata, never private
+    // request paths, query strings, headers, account IDs or record bodies.
+    const path = (incoming.url || '').split('?')[0];
+    const route = path === '/v1/sessions' || path === '/v1/farms' ? path
+      : /^\/v1\/farms\/[0-9a-f-]{36}\/activities$/.test(path) ? '/v1/farms/:farmId/activities'
+      : /^\/v1\/farms\/[0-9a-f-]{36}\/forum\/discussions$/.test(path) ? '/v1/farms/:farmId/forum/discussions'
+      : 'other';
+    const method = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(incoming.method) ? incoming.method : 'OTHER';
+    const started = performance.now();
+    const observe = status => console.log('[native-proxy]', JSON.stringify({ method, route, status, elapsedMs: Math.round(performance.now() - started) }));
+    observe('pending');
+    let recorded = false;
+    const completed = () => { if (!recorded) { recorded = true; observe(outgoing.writableFinished ? outgoing.statusCode : 'closed'); } };
+    outgoing.once('finish', completed);
+    outgoing.once('close', completed);
     if (existsSync(process.env.NATIVE_OFFLINE_FLAG)) { outgoing.writeHead(503, { 'content-type': 'application/json' }); outgoing.end('{"error":"network_error"}'); return; }
     const upstream = request(origin + incoming.url, { method: incoming.method, headers: incoming.headers }, response => { outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing); });
     upstream.on('error', () => { outgoing.writeHead(503); outgoing.end(); });
