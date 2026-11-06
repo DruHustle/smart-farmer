@@ -37,8 +37,8 @@ export const farmEdgeEvent = z.discriminatedUnion('kind', [
 type EdgeRequest = FastifyRequest & { rawEdgeBody?: Buffer };
 type EdgeConfig = z.infer<typeof edgeGateway>;
 
-export function farmEdgeGateways(): Record<string, EdgeConfig> {
-  const raw = process.env.SMART_FARMER_EDGE_GATEWAYS;
+export function farmEdgeGateways(env:NodeJS.ProcessEnv=process.env): Record<string, EdgeConfig> {
+  const raw = env.SMART_FARMER_EDGE_GATEWAYS;
   if (!raw) return {};
   try { return gatewaysSchema.parse(JSON.parse(raw)); }
   catch { throw new Error('SMART_FARMER_EDGE_GATEWAYS must be a valid, reviewed gateway/farm/source allowlist'); }

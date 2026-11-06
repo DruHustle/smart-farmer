@@ -10,6 +10,8 @@ services:
       NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?Set Node-RED encryption secret}
       NODE_RED_ADMIN_USER: ${NODE_RED_ADMIN_USER:?Set Node-RED admin user}
       NODE_RED_ADMIN_PASSWORD_HASH: ${NODE_RED_ADMIN_PASSWORD_HASH:?Set bcrypt admin hash}
+      NODE_RED_ADMIN_TOKEN: ${NODE_RED_ADMIN_TOKEN:-}
+      NODE_RED_RUNTIME_ID: ${NODE_RED_RUNTIME_ID:-}
       EDGE_INGRESS_TOKEN: ${EDGE_INGRESS_TOKEN:?Set Python ingress token}
     volumes:
       - node_red_data:/data

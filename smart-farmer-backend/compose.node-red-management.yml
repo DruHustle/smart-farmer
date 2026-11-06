@@ -1,0 +1,49 @@
+# Optional overlay for compose.yml, never included by normal deployment scripts.
+# Explicitly commission the existing private SSH route before enabling management.
+services:
+  api:
+    environment:
+      SMART_FARMER_EDGE_GATEWAYS: ${SMART_FARMER_EDGE_GATEWAYS:-}
+      SMART_FARMER_NODE_RED_MANAGEMENT_ENABLED: ${SMART_FARMER_NODE_RED_MANAGEMENT_ENABLED:-false}
+      SMART_FARMER_NODE_RED_GATEWAYS: ${SMART_FARMER_NODE_RED_GATEWAYS:-}
+  node-red-admin-tunnel:
+    profiles: [node-red-management]
+    image: ${NODE_RED_SSH_CLIENT_IMAGE:?Set an operator-reviewed SSH client image at an immutable digest}
+    # Loopback is inside the API container namespace, not the Oracle host or Pi.
+    network_mode: service:api
+    depends_on:
+      api: {condition: service_healthy}
+    user: ${NODE_RED_SSH_CLIENT_UID:?Set the non-root UID and GID allowed to read the private SSH config}
+    entrypoint: [ssh]
+    command:
+      - -F
+      - /run/node-red-ssh/config
+      - -N
+      - -T
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - IdentitiesOnly=yes
+      - -o
+      - ExitOnForwardFailure=yes
+      - -o
+      - ServerAliveInterval=30
+      - -o
+      - ServerAliveCountMax=3
+      - -L
+      - 127.0.0.1:18880:127.0.0.1:1880
+      - node-red-gateway
+    volumes:
+      - ${NODE_RED_SSH_CONFIG_DIR:?Set the existing authorized private SSH configuration directory}:/run/node-red-ssh:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    pids_limit: 32
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}

@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
 import {forumJourneys} from './browser-forum.mjs';
+import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,6 +19,9 @@ if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL must poin
 const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
+const nodeRedControl = resolve(artifacts, 'node-red-control.json');
+await writeFile(nodeRedControl, JSON.stringify({enabled: false}));
+env.SMART_FARMER_BROWSER_NODE_RED_CONTROL = nodeRedControl;
 const children = []; let browser; let page;
 const steps = []; const diagnostics = []; const errors = []; let stage = 'setup';
 // Accelerated multi-day journeys share one localhost IP. Respect the real API
@@ -76,7 +80,7 @@ try {
   await command('npm', ['run', 'build'], backend);
   await command('npm', ['run', 'migrate'], backend);
   await command('npm', ['run', 'build'], web, {VITE_API_URL: api});
-  server(['dist/server.js'], backend);
+  server(['--import', resolve(backend, 'node_modules/tsx/dist/loader.mjs'), resolve(web, 'test/browser-server.mjs')], backend);
   server(['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], web);
   await Promise.all([waitUrl(`${api}/ready`), waitUrl(ui)]);
   checkpoint('Launch Chromium');
@@ -159,6 +163,7 @@ try {
   assert.equal((await apiCall(`/v1/farms/${farm.id}/assets/${sim.id}/commands`, undefined, token)).items[0].status, 'confirmed');
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
 
+  await nodeRedJourneys({page, context, api, farm, username, password, sn, nd, more, navigate, checkpoint, pass, artifacts, controlPath: nodeRedControl});
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
 

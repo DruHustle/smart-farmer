@@ -1,9 +1,10 @@
 import {validationPhrases} from './validation-locales.ts';
 import type {Lang} from './types';
 import {completionPhrases} from './completion-locales.ts';
+import {nodeRedPhrases} from './node-red-locales.ts';
 /** Preliminary translations; agricultural terminology requires native-speaker review. */
 export const phrases = {
-  ...validationPhrases, ...completionPhrases,
+  ...validationPhrases, ...completionPhrases, ...nodeRedPhrases,
   language: ['Mutauro', 'Ulimi'],
   forum: ['Dare', 'Inkundla'],
   forum_already_reported: ['Watotumira chichemo chemashoko aya.', 'Usuthumele isikhalazo ngalo mbhalo.'],
