@@ -10,7 +10,13 @@ node -e 'async function run(){for(let i=0;i<60;i++){try{const r=await fetch("htt
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs seed
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/native-evidence/proxy.log" 2>&1 &
 cd smart-farmer-frontend/mobile
-npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
+if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  # Capture HTTP lifecycle metadata, never headers, query strings or payloads.
+  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require \"$PWD/acceptance/metro-request-observer.cjs\"" \
+    npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
+else
+  npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
+fi
 node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("http://127.0.0.1:8081/status");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("Metro not ready");}run();'
 # Warm the same development graph requested by Expo SDK 58's native client.
 # The router root and Hermes transform profile are part of that graph's identity.
