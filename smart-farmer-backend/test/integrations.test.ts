@@ -188,7 +188,16 @@ test('camera events stay private, preserve delayed event time, and expire throug
     const outsider=await f.register('outsider');assert.equal((await f.request('GET',`${f.prefix}/camera-events`,undefined,outsider)).statusCode,404);
     await f.db.query('INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,$3)',[outsider.userId,f.owner.farmId,'worker']);
     assert.deepEqual((await f.request('GET',`${f.prefix}/camera-events`,undefined,outsider)).json().items,[],'no events without an explicit camera grant');
-    await f.db.query("UPDATE camera_events SET expires_at=now()-interval '1 second' WHERE id=$1",[event.id]);await runMaintenance(f.db);
+    await f.db.query("UPDATE camera_events SET expires_at=now()-interval '1 second' WHERE id=$1",[event.id]);
+    // Other test files use independent schemas in this database, but the worker
+    // lock is database-wide. A skipped iteration has not maintained this fixture.
+    const maintenanceDeadline=Date.now()+5000;
+    let maintenance=await runMaintenance(f.db);
+    while('skipped' in maintenance && Date.now()<maintenanceDeadline){
+      await new Promise(resolve=>setTimeout(resolve,25));
+      maintenance=await runMaintenance(f.db);
+    }
+    assert.equal('skipped' in maintenance,false,'this fixture must complete a maintenance iteration');
     assert.equal((await f.request('GET',`${f.prefix}/camera-events`)).json().items.length,0);
     assert.equal((await f.db.query("SELECT count(*) AS n FROM worker_heartbeats WHERE name='maintenance'")).rows[0].n,'1');
   }finally{await f.close();}

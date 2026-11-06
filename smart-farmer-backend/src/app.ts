@@ -9,6 +9,7 @@ import { registerOperations } from "./operations.js";
 import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
 import { registerFarmEdgeRoutes } from "./edge.js";
+import { registerNodeRedPackages, type NodeRedOptions } from "./node-red/routes.js";
 import { registerLivestock } from "./livestock.js";
 import {
   registerIntegrations,
@@ -19,6 +20,7 @@ export function buildApp(
   db: pg.Pool,
   origin: string,
   integrations: IntegrationOptions = {},
+  nodeRed: NodeRedOptions = {},
 ) {
   const app = Fastify({
     logger: {
@@ -87,6 +89,7 @@ export function buildApp(
   const ctx = createContext(db);
   registerIdentity(app, ctx);
   registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
+  registerNodeRedPackages(app, ctx, nodeRed);
   registerCore(app, ctx);
   registerLivestock(app, ctx);
   registerIntegrations(app, ctx, integrations);
