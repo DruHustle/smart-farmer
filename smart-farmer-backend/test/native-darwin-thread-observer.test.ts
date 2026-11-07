@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, appendFileSync, renameSync, truncateSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync, truncateSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -242,6 +242,55 @@ test('watcher refuses arbitrary device paths and extra CLI arguments without exp
     assert.deepEqual(JSON.parse(result.stdout), { event: 'thread_observation', outcome: 'inconclusive', reason: 'unsupported_scope' });
     assert.equal(result.stdout.includes('private-sentinel'), false);
   }
+});
+
+test('real shell observation setup creates each native log before its watcher and refuses reuse', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-native-log-start-'));
+  try {
+    const evidence = join(root, 'native-evidence');
+    const acceptance = join(root, 'smart-farmer-frontend/mobile/acceptance');
+    mkdirSync(evidence, { mode: 0o700 });
+    mkdirSync(join(root, 'farmer-darwin-thread'), { mode: 0o700 });
+    mkdirSync(acceptance, { recursive: true });
+    // Only the observer/log setup functions run here, with an owned stream
+    // fixture. No simulator, app launch or native acceptance is simulated.
+    const source = readFileSync(join(directory, 'ios.sh'), 'utf8');
+    const boundary = source.indexOf('\nNATIVE_PHONE=');
+    assert.ok(boundary > 0);
+    const script = source.slice(0, boundary) + `
+      xcrun() { printf 'owned-stream-fixture\\n'; }
+      start_native_log fixture-phone ios-phone
+      wait "$NATIVE_THREAD_WATCH_PID"
+      wait "$NATIVE_LOG_PID"
+      stop_native_log
+      start_native_log fixture-tablet ios-tablet
+      wait "$NATIVE_THREAD_WATCH_PID"
+      wait "$NATIVE_LOG_PID"
+    `;
+    writeFileSync(join(acceptance, 'darwin-thread-watch.cjs'), `
+      const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+      const scope=process.argv[2];assert.ok(['ios-phone','ios-tablet'].includes(scope));
+      const info=fs.lstatSync(path.join(process.env.RUNNER_TEMP,'native-evidence',scope+'-startup.log'));
+      assert.ok(info.isFile());assert.equal(info.mode & 0o777,0o600);
+      console.log(JSON.stringify({scope,nativeLogReady:true}));
+    `);
+    const options = { cwd: root, encoding: 'utf8' as const, timeout: 5000,
+      env: { ...process.env, RUNNER_TEMP: root } };
+    const first = spawnSync('bash', ['-euc', script], options);
+    assert.ifError(first.error); assert.equal(first.status, 0, first.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(join(evidence, 'ios-thread-observation.json'), 'utf8')),
+      { scope: 'ios-phone', nativeLogReady: true });
+    const tablet = readFileSync(join(evidence, 'ios-tablet-thread-observation.json'), 'utf8');
+    assert.deepEqual(JSON.parse(tablet), { scope: 'ios-tablet', nativeLogReady: true });
+    for (const scope of ['ios-phone', 'ios-tablet']) {
+      assert.equal(readFileSync(join(evidence, scope + '-startup.log'), 'utf8'), 'owned-stream-fixture\n');
+      assert.equal(readFileSync(join(root, 'farmer-darwin-thread', 'stop-' + scope), 'utf8'), '');
+    }
+    const duplicate = spawnSync('bash', ['-euc', script], options);
+    assert.ifError(duplicate.error); assert.notEqual(duplicate.status, 0, 'an existing log must stop setup before either new child starts');
+    assert.equal(readFileSync(join(evidence, 'ios-phone-startup.log'), 'utf8'), 'owned-stream-fixture\n');
+    assert.equal(readFileSync(join(evidence, 'ios-tablet-thread-observation.json'), 'utf8'), tablet);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('public identity and reader protocol preserve uint64 strings and reject additional data', () => {

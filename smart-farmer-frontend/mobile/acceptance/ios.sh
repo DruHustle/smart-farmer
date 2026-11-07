@@ -21,15 +21,22 @@ stop_native_log() {
 }
 trap stop_native_log EXIT
 start_native_log() {
-  local native_device="$1" native_label="$2" native_thread_output
+  local native_device="$1" native_label="$2" native_thread_output native_log
   case "$native_label" in
     ios-phone) native_thread_output="$EVIDENCE/ios-thread-observation.json" ;;
     ios-tablet) native_thread_output="$EVIDENCE/ios-tablet-thread-observation.json" ;;
     *) return 2 ;;
   esac
+  native_log="$EVIDENCE/$native_label-startup.log"
+  # Create the fresh file before either background process can be scheduled.
+  (
+    umask 077
+    set -o noclobber
+    : > "$native_log"
+  )
   # Retain app logs before Maestro initializes its driver and launches the app.
   printf 'Native log capture requested at %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "$EVIDENCE/$native_label-log-capture.txt"
-  xcrun simctl spawn "$native_device" log stream --style syslog --level debug --predicate 'process == "SmartFarmer"' > "$EVIDENCE/$native_label-startup.log" 2>&1 &
+  xcrun simctl spawn "$native_device" log stream --style syslog --level debug --predicate 'process == "SmartFarmer"' >> "$native_log" 2>&1 &
   NATIVE_LOG_PID=$!
   NATIVE_THREAD_STOP_FILE="$RUNNER_TEMP/farmer-darwin-thread/stop-$native_label"
   node "$NATIVE_DIR/acceptance/darwin-thread-watch.cjs" "$native_label" > "$native_thread_output" 2>/dev/null &
