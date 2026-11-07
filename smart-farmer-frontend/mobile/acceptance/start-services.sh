@@ -5,7 +5,12 @@ case "$NATIVE_PLATFORM" in android|ios) ;; *) exit 2 ;; esac
 mkdir -p "$RUNNER_TEMP/native-evidence"
 npm run migrate --prefix smart-farmer-backend
 npm run build --prefix smart-farmer-backend
-(cd smart-farmer-backend && node dist/server.js) > "$RUNNER_TEMP/native-evidence/api.log" 2>&1 &
+if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  NATIVE_API_OBSERVER="$PWD/smart-farmer-frontend/mobile/acceptance/api-request-observer.cjs"
+  (cd smart-farmer-backend && node --require "$NATIVE_API_OBSERVER" dist/server.js) > "$RUNNER_TEMP/native-evidence/api.log" 2>&1 &
+else
+  (cd smart-farmer-backend && node dist/server.js) > "$RUNNER_TEMP/native-evidence/api.log" 2>&1 &
+fi
 node -e 'async function run(){for(let i=0;i<60;i++){try{const r=await fetch("http://127.0.0.1:3000/health");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("API not ready");}run();'
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs seed
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/native-evidence/proxy.log" 2>&1 &
