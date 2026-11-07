@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, renameSync, truncateSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, appendFileSync, renameSync, truncateSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -165,6 +165,83 @@ test('append-only tails refuse replacement, truncation, symlinks and excessive b
     writeFileSync(file, 'x'.repeat(512 * 1024 + 1)); tail = new Tail(file);
     assert.throws(() => tail.read(), /log_backlog/);
   } finally { tail?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a fresh tablet tail reads appended events without consuming earlier phone history', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-tablet-tail-'));
+  let tail;
+  try {
+    const file = join(root, 'metro.log');
+    writeFileSync(file, 'earlier-phone-history\n'.repeat(30000));
+    tail = new Tail(file, true);
+    assert.deepEqual(tail.read(), []);
+    appendFileSync(file, 'new-tablet-event\npartial');
+    assert.deepEqual(tail.read(), ['new-tablet-event']);
+    appendFileSync(file, '-line\n');
+    assert.deepEqual(tail.read(), ['partial-line']);
+    assert.equal(tail.total, Buffer.byteLength('new-tablet-event\npartial-line\n'));
+    truncateSync(file, 0);
+    assert.throws(() => tail.read(), /log_changed/, 'fresh cursor cannot relax append-only custody');
+  } finally { tail?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('tablet watcher uses its own launch log and stop marker after a completed phone observation', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-tablet-watch-'));
+  const fixture = `
+    const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+    const probe=require(${JSON.stringify(join(directory, 'darwin-thread-preflight.cjs'))});
+    const {watch}=require(${JSON.stringify(join(directory, 'darwin-thread-watch.cjs'))});
+    const root=${JSON.stringify(root)},evidence=path.join(root,'evidence');
+    fs.mkdirSync(evidence,{mode:0o700});
+    const ctx={root,evidence,target:path.join(root,'target.json'),stop:path.join(root,'stop')};
+    fs.writeFileSync(ctx.target,JSON.stringify({...${JSON.stringify(target)},uid:String(process.getuid())}),{mode:0o600});
+    for(const name of ['stop','stop-ios-phone'])fs.writeFileSync(path.join(root,name),'');
+    const native=path.join(evidence,'ios-tablet-startup.log'),metro=path.join(evidence,'metro.log');
+    fs.writeFileSync(path.join(evidence,'ios-phone-startup.log'),'earlier-phone-private-sentinel\\n');
+    fs.writeFileSync(native,'');
+    fs.writeFileSync(metro,'earlier-phone-history\\n'.repeat(30000));
+    probe.qualified=()=>ctx;
+    probe.reader=()=>{throw Error('no_reader_expected_after_manifest_entry');};
+    (async()=>{
+      const observed=watch('ios-tablet');
+      setTimeout(()=>{
+        const wall=Date.now(),stamp=new Date(wall).toISOString().replace('T',' ').replace('Z','000+0000');
+        fs.appendFileSync(native,stamp+'  localhost SmartFarmer[456]: (CoreFoundation) [com.apple.defaults:User Defaults] setting new value private-uri-sentinel for key -initialUrl in CFPrefsSource<private-address-sentinel>\\n');
+        fs.appendFileSync(metro,'[metro-http] '+JSON.stringify({event:'request.start',pid:123,time:new Date(wall+1).toISOString(),method:'HEAD',path:'/'})+'\\n');
+      },25);
+      const first=await observed;
+      assert.equal(first.deviceScope,'ios-tablet');assert.equal(first.reason,'not_triggered');
+      assert.equal(first.outcome,'inconclusive');assert.ok(first.launchEventWallMs);assert.ok(first.manifestEntryWallMs);
+      assert.deepEqual(first.samples,[]);
+      fs.writeFileSync(path.join(root,'stop-ios-tablet'),'');
+      const stopped=await watch('ios-tablet');
+      assert.equal(stopped.reason,'observer_stopped');assert.equal(stopped.deviceScope,'ios-tablet');
+      assert.equal(fs.readFileSync(path.join(evidence,'ios-phone-startup.log'),'utf8'),'earlier-phone-private-sentinel\\n');
+      console.log(JSON.stringify({first,stopped}));
+    })().catch(()=>{process.exitCode=99;});`;
+  try {
+    const result = spawnSync(process.execPath, ['-e', fixture], { encoding: 'utf8', timeout: 5000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    for (const value of ['private-uri-sentinel', 'private-address-sentinel', 'earlier-phone-private-sentinel']) {
+      assert.equal(result.stdout.includes(value), false);
+    }
+    assert.equal(JSON.parse(result.stdout).first.deviceScope, 'ios-tablet');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('watcher refuses arbitrary device paths and extra CLI arguments without exposing them', () => {
+  for (const args of [['../../private-scope-sentinel'], ['ios-tablet', 'extra-private-sentinel']]) {
+    const result = spawnSync(process.execPath, [join(directory, 'darwin-thread-watch.cjs'), ...args],
+      { encoding: 'utf8', timeout: 5000, env: { ...process.env, CI: 'false' } });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, 'unavailable diagnostics do not replace the native acceptance outcome');
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), { event: 'thread_observation', outcome: 'inconclusive', reason: 'unsupported_scope' });
+    assert.equal(result.stdout.includes('private-sentinel'), false);
+  }
 });
 
 test('public identity and reader protocol preserve uint64 strings and reject additional data', () => {

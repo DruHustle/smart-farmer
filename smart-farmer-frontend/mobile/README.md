@@ -127,6 +127,22 @@ mismatch, malformed input or any mismatch during the launch window still
 refuses observation. This diagnostic does not retry app startup, change request
 deadlines or turn a failed native journey into acceptance.
 
+Each device launch now has its own observer, native log and stop marker. The
+phone retains `ios-thread-observation.json`; the tablet writes
+`ios-tablet-thread-observation.json`. The later tablet observer starts at the
+current end of Metro's log, so earlier phone requests, heartbeats and stop state
+cannot become tablet evidence. It still requires a newly observed valid
+heartbeat before sampling, and retains the same clock, query, sample and cleanup
+bounds. The observer never launches the app or repeats a manifest request.
+
+The retained actual-main [native run 42394429408](https://github.com/DruHustle/smart-farmer/actions/runs/42394429408)
+at `32ffb11` passed Android and all four iPhone flows, but its iPad login failed
+before authentication after the local development manifest request timed out.
+The phone-only observer did not cover that tablet launch. The separate tablet
+observation closes this diagnostic gap; it does not establish the timeout's
+CPU, GC or scheduling cause or claim a successful iPad journey. Native acceptance
+must still run against the new source with the existing assertions and limits.
+
 To reproduce in CI, dispatch the Native acceptance workflow for the review branch. The matching APK and simulator app are cached by OS/architecture/native dependencies/configuration/source; Metro serves JavaScript from the current revision. Android creates a disposable local debug identity. iOS simulator uses ad-hoc signing. No production keystore, Apple team or release profile is invented. Documentation-only edits do not rebuild native apps.
 
 ## Physical release acceptance

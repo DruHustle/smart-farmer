@@ -5,6 +5,7 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const probe = require('./darwin-thread-preflight.cjs');
 const states = ['unknown', 'running_or_runnable', 'stopped', 'waiting', 'uninterruptible', 'halted'];
+const scopes = new Set(['ios-phone', 'ios-tablet']);
 
 function launchMilestone(line) {
   // Match the existing simulator event, not its URI, preference object or payload.
@@ -16,11 +17,11 @@ function launchMilestone(line) {
 }
 
 class Tail {
-  constructor(file) {
+  constructor(file, fromEnd = false) {
     this.file = file;
     this.fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     this.original = fs.fstatSync(this.fd);
-    this.offset = 0; this.total = 0; this.partial = '';
+    this.offset = fromEnd ? this.original.size : 0; this.total = 0; this.partial = '';
     if (!this.original.isFile() || this.original.uid !== process.getuid()) { this.close(); throw Error('log_unavailable'); }
   }
   read() {
@@ -148,19 +149,23 @@ class Window {
   }
 }
 
-async function watch() {
+async function watch(scope = 'ios-phone') {
   let native, metro, active, window, stopped = false;
   const stop = () => { stopped = true; if (window) window.reason = 'observer_stopped'; active?.stop(); };
   process.once('SIGTERM', stop);
   try {
+    if (!scopes.has(scope)) throw Error('unsupported_scope');
     const ctx = probe.qualified();
+    const stopFile = path.join(ctx.root, `stop-${scope}`);
     const target = probe.identity(JSON.parse(fs.readFileSync(probe.privateFile(ctx.target), 'utf8')));
     if (Number(target.uid) !== process.getuid()) throw Error('identity_unavailable');
     window = new Window(Number(target.pid), Date.now(), performance.now());
-    native = new Tail(path.join(ctx.evidence, 'ios-phone-startup.log'));
-    metro = new Tail(path.join(ctx.evidence, 'metro.log'));
+    native = new Tail(path.join(ctx.evidence, `${scope}-startup.log`));
+    // The tablet starts after all phone flows. Its observation must not reuse
+    // an earlier phone request or heartbeat, or consume that old log backlog.
+    metro = new Tail(path.join(ctx.evidence, 'metro.log'), scope === 'ios-tablet');
     while (!stopped) {
-      if (fs.existsSync(ctx.stop)) { stop(); break; }
+      if (fs.existsSync(stopFile)) { stop(); break; }
       const wall = Date.now(), mono = performance.now();
       window.clock(wall, mono);
       for (const line of native.read()) window.native(line, wall, mono);
@@ -178,15 +183,16 @@ async function watch() {
     for (const line of native.read()) window.native(line, Date.now(), performance.now());
     for (const line of metro.read()) window.metro(line);
     if (stopped && !active) window.reason = 'observer_stopped';
-    return { ...window.report(Date.now(), performance.now()), targetPid: Number(target.pid),
+    return { deviceScope: scope, ...window.report(Date.now(), performance.now()), targetPid: Number(target.pid),
       targetOwnerUid: Number(target.uid), targetStartSeconds: target.startSeconds,
       targetStartMicros: target.startMicros, targetThreadId: target.threadId };
   } catch (error) {
     active?.stop();
     if (active) await active.done;
     const reasons = new Set(['log_unavailable', 'log_changed', 'log_backlog', 'log_format_unavailable',
-      'identity_unavailable', 'milestone_unavailable', 'preflight_unavailable', 'unsupported_context']);
+      'identity_unavailable', 'milestone_unavailable', 'preflight_unavailable', 'unsupported_context', 'unsupported_scope']);
     return { event: 'thread_observation', outcome: 'inconclusive', reason: reasons.has(error.message) ? error.message : 'unavailable',
+      ...(scopes.has(scope) ? { deviceScope: scope } : {}),
       ...(window ? { prelaunchHeartbeatResets: window.prelaunchHeartbeatResets,
         prelaunchHeartbeatBaselineRecovered: window.prelaunchHeartbeatResets === 1 && !window.freshHeartbeatRequired } : {}) };
   } finally {
@@ -197,7 +203,8 @@ async function watch() {
 }
 
 module.exports = { launchMilestone, Tail, Window, watch };
-if (require.main === module) watch().then(result => {
+if (require.main === module) watch(process.argv.length === 2 ? 'ios-phone'
+  : process.argv.length === 3 ? process.argv[2] : '').then(result => {
   // fd2 is intentionally unused; never expose source logs or runtime errors.
   try { fs.writeSync(1, `${JSON.stringify(result)}\n`); } catch { /* Diagnostic output only. */ }
 }).catch(() => { /* Optional diagnostic cannot replace the acceptance outcome. */ });
