@@ -184,7 +184,7 @@ jobs:
       - name: Native iPhone and iPad journeys
         # Allow measured cold XCTest startup; application flow timeouts stay unchanged.
         env:
-          MAESTRO_DRIVER_STARTUP_TIMEOUT: '180000'
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
         run: bash smart-farmer-frontend/mobile/acceptance/ios.sh
       - name: Retain simulator app and native evidence
         if: always()
