@@ -5,6 +5,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-report-.*
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - assertNotVisible:
@@ -43,6 +44,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-back
+    centerElement: true
     direction: UP
     timeout: 30000
 - tapOn:
@@ -51,6 +53,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-mode
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:
@@ -60,6 +63,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-moderate-.*
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - assertVisible: Native moderation fixture
@@ -91,6 +95,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-mode
+    centerElement: true
     direction: UP
     timeout: 30000
 - tapOn:
@@ -100,6 +105,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-moderate-.*
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - assertVisible: Native moderation fixture
@@ -132,6 +138,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-mode
+    centerElement: true
     direction: UP
     timeout: 30000
 - tapOn:

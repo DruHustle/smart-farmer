@@ -4,6 +4,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-filter-topic
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:
@@ -19,15 +20,15 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: forum-search
-- assertVisible:
-    id: tab-forum
-    selected: true
 - eraseText
 - inputText: Native community discussion
 - assertVisible:
     id: forum-search
     text: '(?-i)^Native community discussion$'
 - runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: tab-forum
+    selected: true
 - scrollUntilVisible:
     element:
       id: forum-search-submit
@@ -41,6 +42,7 @@ appId: eu.onesa.smartfarmer
     element:
       id: forum-open-.*
       text: '^Native community discussion$'
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:

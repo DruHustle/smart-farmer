@@ -59,6 +59,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-edit-discussion-.*
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:
@@ -116,6 +117,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-reply
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:
@@ -159,6 +161,7 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-delete-reply-.*
+    centerElement: true
     direction: DOWN
     timeout: 30000
 - tapOn:

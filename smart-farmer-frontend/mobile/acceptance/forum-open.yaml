@@ -25,5 +25,6 @@ appId: eu.onesa.smartfarmer
     element:
       id: forum-new
       enabled: true
+    centerElement: true
     direction: DOWN
     timeout: 30000
