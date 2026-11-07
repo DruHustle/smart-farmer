@@ -117,6 +117,16 @@ Recorded fixes address keyboard safe-area/dismissal, persisted suppression of th
 
 Private-workspace screen-capture protection stays enabled in acceptance builds. Protected screenshots can therefore be black; the retained accessibility hierarchy, action results, encrypted-file inspection and server state establish the automated journey evidence. Screenshot capture is not treated as a visual review of protected native screens. Physical-device layout and screen-reader review remain release checks.
 
+The optional Darwin thread observer may discard one prelaunch heartbeat whose
+wall timestamp and monotonic sample disagree. It clears the old baseline and
+requires a strictly newer, valid heartbeat from the same process clock before
+arming. A later-delivered launch event must also timestamp strictly after the
+reset heartbeat; delivery order cannot hide an overlap with the launch window.
+The result records that reset and whether the baseline recovered. A second
+mismatch, malformed input or any mismatch during the launch window still
+refuses observation. This diagnostic does not retry app startup, change request
+deadlines or turn a failed native journey into acceptance.
+
 To reproduce in CI, dispatch the Native acceptance workflow for the review branch. The matching APK and simulator app are cached by OS/architecture/native dependencies/configuration/source; Metro serves JavaScript from the current revision. Android creates a disposable local debug identity. iOS simulator uses ad-hoc signing. No production keystore, Apple team or release profile is invented. Documentation-only edits do not rebuild native apps.
 
 ## Physical release acceptance

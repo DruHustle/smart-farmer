@@ -45,6 +45,9 @@ class Window {
     this.previousMono = mono; this.beat = undefined; this.launch = undefined;
     this.trigger = undefined; this.recovery = undefined; this.entry = undefined;
     this.reason = undefined; this.samples = [];
+    this.prelaunchHeartbeatResets = 0;
+    this.resetHeartbeat = undefined;
+    this.freshHeartbeatRequired = false;
   }
   clock(wall, mono) {
     if (Math.abs((wall - this.startedWall) - (mono - this.startedMono)) > 250) this.reason = 'clock_changed';
@@ -58,6 +61,9 @@ class Window {
     this.launch = { eventWallMs: event, readWallMs: wall, readMonoMs: mono,
       readDelayMs: wall - event };
     if (event < this.startedWall - 50 || wall - event < -50 || wall - event > 1000) this.reason = 'late_milestone';
+    // Native delivery may lag behind Metro delivery. A recovered baseline
+    // cannot make a reset within the actual launch window safe to observe.
+    if (this.resetHeartbeat && event <= this.resetHeartbeat.wall) this.reason = 'heartbeat_launch_overlap';
   }
   metro(line) {
     if (!line.startsWith('[metro-http] ')) return;
@@ -67,9 +73,26 @@ class Window {
     const wall = Date.parse(event.time);
     if (!Number.isFinite(wall)) throw Error('log_format_unavailable');
     if (event.event === 'heartbeat') {
-      if (!Number.isFinite(event.timeOriginMs) || !Number.isFinite(event.intervalEndMs)
-        || Math.abs(wall - event.timeOriginMs - event.intervalEndMs) > 1000) throw Error('log_format_unavailable');
+      if (!Number.isFinite(event.timeOriginMs) || !Number.isFinite(event.intervalEndMs)) throw Error('log_format_unavailable');
       if (this.beat !== undefined && wall < this.beat) throw Error('log_changed');
+      if (Math.abs(wall - event.timeOriginMs - event.intervalEndMs) > 1000) {
+        // One prelaunch emission may be delayed after its monotonic sample.
+        // Discard that baseline, never its uncertainty: a later valid heartbeat
+        // from the same process clock is required before observation can arm.
+        // The active launch window and a second mismatch remain fail-closed;
+        // native() also checks the event timestamp if its log arrives later.
+        if (this.launch || this.trigger || this.prelaunchHeartbeatResets !== 0) throw Error('log_format_unavailable');
+        this.prelaunchHeartbeatResets = 1;
+        this.resetHeartbeat = { wall, timeOriginMs: event.timeOriginMs, intervalEndMs: event.intervalEndMs };
+        this.freshHeartbeatRequired = true;
+        this.beat = undefined;
+        return;
+      }
+      if (this.freshHeartbeatRequired) {
+        if (wall <= this.resetHeartbeat.wall || event.timeOriginMs !== this.resetHeartbeat.timeOriginMs
+          || event.intervalEndMs <= this.resetHeartbeat.intervalEndMs) throw Error('log_changed');
+        this.freshHeartbeatRequired = false;
+      }
       this.beat = wall;
       if (this.trigger && wall > this.trigger.wallMs) this.recovery ??= wall;
     }
@@ -111,7 +134,10 @@ class Window {
     }
     const observed = !reason && samples.length >= 2;
     return { event: 'thread_observation', outcome: observed ? 'states_observed' : 'inconclusive',
-      reason: reason ?? (observed ? 'bounded_interval' : trigger ? 'no_samples' : launch ? 'not_triggered' : 'milestone_unavailable'),
+      reason: reason ?? (observed ? 'bounded_interval' : this.freshHeartbeatRequired ? 'prelaunch_baseline_unavailable'
+        : trigger ? 'no_samples' : launch ? 'not_triggered' : 'milestone_unavailable'),
+      prelaunchHeartbeatResets: this.prelaunchHeartbeatResets,
+      prelaunchHeartbeatBaselineRecovered: this.prelaunchHeartbeatResets === 1 && !this.freshHeartbeatRequired,
       startedWallMs: this.startedWall, finishedWallMs: wall, elapsedMs: mono - this.startedMono,
       ...(launch ? { launchEventWallMs: launch.eventWallMs, launchReadWallMs: launch.readWallMs,
         launchReadDelayMs: launch.readDelayMs, launchReadElapsedMs: launch.readMonoMs - this.startedMono } : {}),
@@ -160,7 +186,9 @@ async function watch() {
     if (active) await active.done;
     const reasons = new Set(['log_unavailable', 'log_changed', 'log_backlog', 'log_format_unavailable',
       'identity_unavailable', 'milestone_unavailable', 'preflight_unavailable', 'unsupported_context']);
-    return { event: 'thread_observation', outcome: 'inconclusive', reason: reasons.has(error.message) ? error.message : 'unavailable' };
+    return { event: 'thread_observation', outcome: 'inconclusive', reason: reasons.has(error.message) ? error.message : 'unavailable',
+      ...(window ? { prelaunchHeartbeatResets: window.prelaunchHeartbeatResets,
+        prelaunchHeartbeatBaselineRecovered: window.prelaunchHeartbeatResets === 1 && !window.freshHeartbeatRequired } : {}) };
   } finally {
     process.off('SIGTERM', stop);
     try { native?.close(); } catch {}
