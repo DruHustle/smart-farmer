@@ -18,7 +18,7 @@ export interface ApiClient {
 }
 
 export function createApi(origin: string, token?: string): ApiClient {
-  const headers = () => ({ 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+  const headers = (json = true) => ({ ...(json ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) });
   const checkPath = (path: string) => { if (!path.startsWith('/v1/') || path.includes('://')) throw new Error('invalid_request'); };
   return {
     async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -26,7 +26,7 @@ export function createApi(origin: string, token?: string): ApiClient {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20_000);
       try {
-        const response = await fetch(origin + path, { method, headers: headers(), body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal, redirect: 'error' });
+        const response = await fetch(origin + path, { method, headers: headers(body !== undefined), body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal, redirect: 'error' });
         if (response.status === 204) return undefined as T;
         let result: { error?: string };
         try { result = await response.json(); } catch { throw new ApiError(response.status, 'invalid_response'); }

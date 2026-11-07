@@ -24,10 +24,13 @@ appId: eu.onesa.smartfarmer
     id: forum-search-submit
 - scrollUntilVisible:
     element:
-      text: Native community discussion
+      id: forum-open-.*
+      text: '^Native community discussion$'
     direction: DOWN
     timeout: 30000
-- tapOn: Native community discussion
+- tapOn:
+    id: forum-open-.*
+    text: '^Native community discussion$'
 - scrollUntilVisible:
     element:
       id: forum-back
