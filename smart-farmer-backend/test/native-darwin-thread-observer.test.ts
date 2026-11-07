@@ -1,0 +1,192 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, renameSync, truncateSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const require = createRequire(import.meta.url);
+const directory = fileURLToPath(new URL('../../smart-farmer-frontend/mobile/acceptance/', import.meta.url));
+const preflight = require(join(directory, 'darwin-thread-preflight.cjs'));
+const { launchMilestone, Tail, Window } = require(join(directory, 'darwin-thread-watch.cjs'));
+const epoch = Date.parse('2026-11-07T05:52:26Z');
+const launch = '2026-11-07 05:52:26.029480+0000  localhost SmartFarmer[16030]: (CoreFoundation) [com.apple.defaults:User Defaults] setting new value private-uri-sentinel for key -initialUrl in CFPrefsSource<private-address-sentinel>';
+const target = { reason: 'ready', pid: '123', uid: '501', startSeconds: '1700000000', startMicros: '12', threadId: '9007199254740993' };
+const record = (index = 0, overrides = {}) => ({ reason: 'ready', index, state: 3,
+  wallMs: epoch + 200 + index * 100, wallEndMs: epoch + 201 + index * 100,
+  monotonicNs: String(1000000000 + index * 100000000), queryNs: '1000000',
+  userNs: String(100000000 + index * 1000), systemNs: '50000000', readerCpuNs: '100000', ...overrides });
+const heartbeat = (wall: number) => '[metro-http] ' + JSON.stringify({ event: 'heartbeat', pid: 123,
+  time: new Date(wall).toISOString(), timeOriginMs: epoch - 100000, intervalEndMs: wall - epoch + 100000 });
+const head = (wall: number) => '[metro-http] ' + JSON.stringify({ event: 'request.start', pid: 123,
+  time: new Date(wall).toISOString(), method: 'HEAD', path: '/' });
+
+function armed() {
+  const window = new Window(123, epoch - 1000, 0);
+  window.metro(heartbeat(epoch - 6500));
+  window.clock(epoch + 100, 1100);
+  window.native(launch, epoch + 100, 1100);
+  assert.equal(window.start(epoch + 100, 1100), true);
+  return window;
+}
+
+test('existing launch milestone is exact, measured and never returns private line contents', () => {
+  assert.equal(launchMilestone(launch), epoch + 29.48);
+  assert.equal(launchMilestone(launch.replace('SmartFarmer[', 'OtherApp[')), undefined);
+  assert.equal(launchMilestone(launch.replace('setting new value', 'read value')), undefined);
+  assert.equal(launchMilestone(launch.replace('-initialUrl', '-other')), undefined);
+  const window = armed();
+  window.samples.push(record(), record(1));
+  const result = window.report(epoch + 400, 1400);
+  assert.equal(result.outcome, 'states_observed');
+  assert.equal(result.launchReadDelayMs, 70.52001953125);
+  assert.equal(result.samples[0].state, 'waiting');
+  for (const secret of ['private-uri-sentinel', 'private-address-sentinel', '16030']) assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test('one interval only, with actual recovery/manifest boundaries and explicit late outcomes', () => {
+  const window = armed();
+  assert.equal(window.start(epoch + 200, 1200), false, 'the observer cannot start a second interval');
+  window.samples.push(record(0, { state: 1 }), record(1, { state: 1 }));
+  window.metro(heartbeat(epoch + 500));
+  assert.equal(window.finished(epoch + 500, 1500), true);
+  assert.equal(window.report(epoch + 500, 1500).samples[0].state, 'running_or_runnable');
+  assert.equal(JSON.stringify(window.report(epoch + 500, 1500)).includes('starvation'), false);
+  window.samples.push(record(2, { wallMs: epoch + 499, wallEndMs: epoch + 501 }));
+  assert.equal(window.report(epoch + 600, 1600).reason, 'late_inconclusive');
+  const entered = armed();
+  entered.samples.push(record(), record(1)); entered.metro(head(epoch + 250));
+  assert.equal(entered.report(epoch + 400, 1400).reason, 'late_inconclusive');
+  const slow = armed(); slow.samples.push(record(0, { queryNs: '11000000' }));
+  assert.equal(slow.report(epoch + 400, 1400).reason, 'reader_slow');
+});
+
+test('stale launch, delayed helper, clock movement and duplicate launch never arm', () => {
+  const stale = new Window(123, epoch - 1000, 0);
+  stale.metro(heartbeat(epoch - 6500)); stale.native(launch, epoch + 1100, 2100);
+  assert.equal(stale.start(epoch + 1100, 2100), false);
+  assert.equal(stale.report(epoch + 1100, 2100).reason, 'late_milestone');
+  const delayed = armed(); delayed.clock(epoch + 900, 1900);
+  assert.equal(delayed.report(epoch + 900, 1900).reason, 'helper_late');
+  const changed = armed(); changed.clock(epoch + 2000, 1200);
+  assert.equal(changed.report(epoch + 2000, 1200).reason, 'clock_changed');
+  const duplicate = armed(); duplicate.native(launch, epoch + 200, 1200);
+  assert.equal(duplicate.report(epoch + 200, 1200).reason, 'multiple_launches');
+  const expired = armed(); assert.equal(expired.finished(epoch + 10030, 11030), true);
+});
+
+test('append-only tails refuse replacement, truncation, symlinks and excessive backlog', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-thread-tail-'));
+  let tail;
+  try {
+    const file = join(root, 'log'); writeFileSync(file, 'one\npartial');
+    tail = new Tail(file); assert.deepEqual(tail.read(), ['one']);
+    writeFileSync(file, 'one\npartial-line\n'); assert.deepEqual(tail.read(), ['partial-line']);
+    truncateSync(file, 0); assert.throws(() => tail.read(), /log_changed/); tail.close();
+    tail = new Tail(file); renameSync(file, join(root, 'old')); writeFileSync(file, 'new\n');
+    assert.throws(() => tail.read(), /log_changed/); tail.close();
+    symlinkSync(file, join(root, 'link')); assert.throws(() => new Tail(join(root, 'link')));
+    writeFileSync(file, 'x'.repeat(512 * 1024 + 1)); tail = new Tail(file);
+    assert.throws(() => tail.read(), /log_backlog/);
+  } finally { tail?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('public identity and reader protocol preserve uint64 strings and reject additional data', () => {
+  assert.equal(preflight.identity(target).threadId, '9007199254740993');
+  for (const wrong of [{ ...target, threadId: 9007199254740992 }, { ...target, threadId: '0' },
+    { ...target, threadId: '18446744073709551616' }, { ...target, reason: 'not_main_thread' },
+    { ...target, name: 'private-thread-sentinel' }]) assert.throws(() => preflight.identity(wrong));
+  assert.equal(preflight.sample(JSON.stringify(record())).state, 3);
+  for (const wrong of [{ ...record(), name: 'private-thread-sentinel' }, { ...record(), state: 0 },
+    { ...record(), index: 20 }, { ...record(), userNs: 'not-a-counter' }, { reason: 'raw-error-sentinel' }]) {
+    assert.throws(() => preflight.sample(JSON.stringify(wrong)));
+  }
+});
+
+test('real child reader supervision bounds output and cancels only its own helper', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-thread-reader-'));
+  try {
+    const helper = join(root, 'reader');
+    writeFileSync(helper, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(JSON.stringify(record()) + '\n')}); process.stdin.resume(); process.stdin.on('end',()=>process.exit(0));\n`, { mode: 0o700 });
+    let instance;
+    instance = preflight.reader({ reader: helper }, target, 'observe', () => instance.stop());
+    assert.notEqual(instance.child.pid, process.pid);
+    const result = await instance.done;
+    assert.equal(result.issue, undefined); assert.equal(result.values.length, 1);
+    assert.equal(instance.child.exitCode, 0, 'closing the control pipe permits natural helper exit');
+    writeFileSync(helper, `#!${process.execPath}\nprocess.stdout.write('private-source-sentinel\\n'); process.stdin.resume(); process.stdin.on('end',()=>process.exit(0));\n`);
+    const malformed = await preflight.reader({ reader: helper }, target).done;
+    assert.equal(malformed.issue, 'reader_protocol');
+    assert.equal(JSON.stringify(malformed).includes('private-source-sentinel'), false);
+    writeFileSync(helper, `#!${process.execPath}\nprocess.stdin.resume(); process.stdin.on('end',()=>{}); setInterval(()=>{},1000);\n`);
+    const cancelled = preflight.reader({ reader: helper }, target, 'observe');
+    cancelled.stop(); const stopped = await cancelled.done;
+    assert.equal(stopped.issue, 'reader_unavailable');
+    assert.equal(cancelled.child.signalCode, 'SIGTERM');
+    assert.ok(process.pid > 1, 'the process named in this test remains unaffected by helper cleanup');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('unqualified instrumentation leaves real HTTP responses and natural process exit unchanged', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-thread-unavailable-'));
+  const fixture = `
+    const http=require('node:http'),crypto=require('node:crypto');
+    const server=http.createServer((req,res)=>{res.writeHead(201,{'x-test':'header-sentinel'});res.end('body-sentinel');});
+    server.listen(0,'127.0.0.1',()=>http.get({host:'127.0.0.1',port:server.address().port,path:'/?private=query-sentinel'},res=>{
+      const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>{console.log(JSON.stringify({status:res.statusCode,
+        body:crypto.createHash('sha256').update(Buffer.concat(chunks)).digest('hex'),header:res.headers['x-test']}));server.close();});
+    }));`;
+  try {
+    const options = { encoding: 'utf8' as const, timeout: 5000,
+      env: { ...process.env, CI: 'true', NODE_ENV: 'test', RUNNER_TEMP: root } };
+    const baseline = spawnSync(process.execPath, ['-e', fixture], options);
+    const observed = spawnSync(process.execPath, ['--require', join(directory, 'darwin-thread-preload.cjs'), '-e', fixture], options);
+    assert.ifError(baseline.error); assert.ifError(observed.error);
+    assert.equal(baseline.status, 0); assert.equal(observed.status, 0); assert.equal(observed.signal, null);
+    assert.equal(observed.stdout, baseline.stdout); assert.equal(observed.stderr, '');
+    const unavailable = spawnSync(process.execPath, [join(directory, 'darwin-thread-preflight.cjs'), 'prepare'],
+      { ...options, env: { ...options.env, CI: 'false' } });
+    assert.equal(unavailable.status, 1);
+    assert.equal(JSON.parse(unavailable.stdout).qualified, false);
+    assert.equal(JSON.parse(unavailable.stdout).reason, 'unsupported_context');
+    const watcher = spawnSync(process.execPath, [join(directory, 'darwin-thread-watch.cjs')],
+      { ...options, env: { ...options.env, CI: 'false' } });
+    assert.equal(watcher.status, 0); assert.equal(JSON.parse(watcher.stdout).outcome, 'inconclusive');
+    assert.equal(watcher.stderr, '');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('ignored TERM cannot hold the supervisor or control parent open or replace its acceptance result', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-thread-forced-cleanup-'));
+  try {
+    const helper = join(root, 'reader'), control = join(root, 'control.cjs');
+    writeFileSync(helper, `#!${process.execPath}\nprocess.on('SIGTERM',()=>{}); process.stdout.write(${JSON.stringify(JSON.stringify(record()) + '\n')}); process.stdin.resume(); process.stdin.on('end',()=>{}); setInterval(()=>{},1000);\n`, { mode: 0o700 });
+    writeFileSync(control, "process.on('SIGTERM',()=>{}); process.send('ready'); setInterval(()=>{},1000);\n");
+    const parent = `
+      const assert=require('node:assert/strict'),{fork}=require('node:child_process');
+      const probe=require(${JSON.stringify(join(directory, 'darwin-thread-preflight.cjs'))});
+      const originalAcceptanceStatus=23;
+      (async()=>{
+        let ready;const started=new Promise(resolve=>{ready=resolve;});
+        const reader=probe.reader({reader:${JSON.stringify(helper)}},${JSON.stringify(target)},'observe',ready);
+        await started;reader.stop();const result=await reader.done;
+        assert.equal(reader.child.signalCode,'SIGKILL');assert.equal(result.cleanupConfirmed,true);
+        const control=fork(${JSON.stringify(control)},[],{stdio:['ignore','ignore','ignore','ipc']});
+        await new Promise(resolve=>control.once('message',resolve));
+        const cleaned=await probe.terminateOwnedControl(control);
+        assert.equal(cleaned,true);assert.equal(control.signalCode,'SIGKILL');
+        console.log(JSON.stringify({readerSignal:reader.child.signalCode,readerCleanupConfirmed:result.cleanupConfirmed,
+          controlSignal:control.signalCode,controlCleanupConfirmed:cleaned}));
+        process.exitCode=originalAcceptanceStatus;
+      })().catch(()=>{process.exitCode=99;});`;
+    const result = spawnSync(process.execPath, ['-e', parent], { encoding: 'utf8', timeout: 5000 });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, 'the parent must finish naturally');
+    assert.equal(result.status, 23, 'owned diagnostic cleanup must retain the pre-existing acceptance result');
+    assert.deepEqual(JSON.parse(result.stdout), { readerSignal: 'SIGKILL', readerCleanupConfirmed: true,
+      controlSignal: 'SIGKILL', controlCleanupConfirmed: true });
+    assert.equal(result.stderr, '');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

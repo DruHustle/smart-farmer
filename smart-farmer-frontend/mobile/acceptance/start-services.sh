@@ -16,8 +16,12 @@ node smart-farmer-frontend/mobile/acceptance/fixture.mjs seed
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/native-evidence/proxy.log" 2>&1 &
 cd smart-farmer-frontend/mobile
 if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  NATIVE_THREAD_PRELOAD=''
+  if node "$PWD/acceptance/darwin-thread-preflight.cjs" prepare > "$RUNNER_TEMP/native-evidence/ios-thread-preflight.json" 2>/dev/null; then
+    NATIVE_THREAD_PRELOAD=" --require \"$PWD/acceptance/darwin-thread-preload.cjs\""
+  fi
   # Capture HTTP lifecycle metadata, never headers, query strings or payloads.
-  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require \"$PWD/acceptance/metro-request-observer.cjs\"" \
+  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require \"$PWD/acceptance/metro-request-observer.cjs\"$NATIVE_THREAD_PRELOAD" \
     npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
 else
   npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &

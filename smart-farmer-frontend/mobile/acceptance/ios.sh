@@ -4,7 +4,13 @@ NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
 NATIVE_LOG_PID=''
+NATIVE_THREAD_WATCH_PID=''
 stop_native_log() {
+  if [[ -n "$NATIVE_THREAD_WATCH_PID" ]]; then
+    : > "$RUNNER_TEMP/farmer-darwin-thread/stop" 2>/dev/null || true
+    wait "$NATIVE_THREAD_WATCH_PID" 2>/dev/null || true
+    NATIVE_THREAD_WATCH_PID=''
+  fi
   if [[ -n "$NATIVE_LOG_PID" ]]; then
     kill "$NATIVE_LOG_PID" 2>/dev/null || true
     wait "$NATIVE_LOG_PID" 2>/dev/null || true
@@ -24,6 +30,8 @@ xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
+node "$NATIVE_DIR/acceptance/darwin-thread-watch.cjs" > "$EVIDENCE/ios-thread-observation.json" 2>/dev/null &
+NATIVE_THREAD_WATCH_PID=$!
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
