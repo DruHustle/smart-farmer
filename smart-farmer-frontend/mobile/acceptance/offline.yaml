@@ -12,7 +12,7 @@ appId: eu.onesa.smartfarmer
     timeout: 20000
 - assertVisible:
     id: "record-note"
-    text: '^Native durable offline observation$'
+    text: '(?-i)^Native durable offline observation$'
 - scrollUntilVisible:
     centerElement: true
     element:
@@ -40,7 +40,7 @@ appId: eu.onesa.smartfarmer
     element:
       text: '^Native durable offline observation$'
     direction: DOWN
-- assertVisible: '^Native durable offline observation$'
+- assertVisible: '(?-i)^Native durable offline observation$'
 - takeScreenshot: durable-pending-record-before-restart
 - stopApp
 - runFlow:
