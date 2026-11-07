@@ -77,6 +77,80 @@ test('stale launch, delayed helper, clock movement and duplicate launch never ar
   const expired = armed(); assert.equal(expired.finished(epoch + 10030, 11030), true);
 });
 
+test('one invalid prelaunch heartbeat clears the baseline and cannot arm without a fresh valid sample', () => {
+  const invalid = (wall: number) => {
+    const event = JSON.parse(heartbeat(wall).slice(13));
+    event.intervalEndMs -= 5375;
+    return '[metro-http] ' + JSON.stringify(event);
+  };
+  const missing = new Window(123, epoch - 10000, 0);
+  missing.metro(heartbeat(epoch - 9500));
+  missing.metro(invalid(epoch - 9000));
+  missing.native(launch, epoch + 100, 10100);
+  assert.equal(missing.beat, undefined, 'the prior heartbeat cannot survive an invalid replacement');
+  assert.equal(missing.start(epoch + 100, 10100), false);
+  assert.equal(missing.report(epoch + 200, 10200).reason, 'prelaunch_baseline_unavailable');
+  assert.equal(missing.report(epoch + 200, 10200).prelaunchHeartbeatBaselineRecovered, false);
+
+  const recovered = new Window(123, epoch - 10000, 0);
+  recovered.metro(heartbeat(epoch - 9500)); recovered.metro(invalid(epoch - 9000));
+  recovered.metro(heartbeat(epoch - 6500));
+  recovered.clock(epoch + 100, 10100); recovered.native(launch, epoch + 100, 10100);
+  assert.equal(recovered.start(epoch + 100, 10100), true);
+  recovered.samples.push(record(), record(1));
+  const result = recovered.report(epoch + 400, 10400);
+  assert.equal(result.outcome, 'states_observed');
+  assert.equal(result.prelaunchHeartbeatResets, 1);
+  assert.equal(result.prelaunchHeartbeatBaselineRecovered, true);
+  assert.equal(recovered.start(epoch + 500, 10500), false, 'no second observation is permitted');
+});
+
+test('prelaunch reset cannot relax active-window, second-mismatch or clock-identity checks', () => {
+  const mismatch = (wall: number, changes = {}) => '[metro-http] ' + JSON.stringify({
+    ...JSON.parse(heartbeat(wall).slice(13)), intervalEndMs: wall - epoch + 94000, ...changes });
+  assert.throws(() => armed().metro(mismatch(epoch + 200)), /log_format_unavailable/);
+  const beforeLaunch = new Window(123, epoch - 10000, 0);
+  beforeLaunch.metro(mismatch(epoch - 9000)); beforeLaunch.native(launch, epoch + 100, 10100);
+  assert.throws(() => beforeLaunch.metro(mismatch(epoch + 200)), /log_format_unavailable/);
+  const twice = new Window(123, epoch - 10000, 0);
+  twice.metro(mismatch(epoch - 9000)); twice.metro(heartbeat(epoch - 8000));
+  assert.throws(() => twice.metro(mismatch(epoch - 7000)), /log_format_unavailable/);
+  for (const changed of [heartbeat(epoch - 9000), heartbeat(epoch - 9500),
+    '[metro-http] ' + JSON.stringify({ event: 'heartbeat', pid: 123, time: new Date(epoch - 8000).toISOString(),
+      timeOriginMs: epoch - 200000, intervalEndMs: 192000 })]) {
+    const window = new Window(123, epoch - 10000, 0); window.metro(mismatch(epoch - 9000));
+    assert.throws(() => window.metro(changed), /log_changed/);
+  }
+  const malformed = new Window(123, epoch - 10000, 0);
+  assert.throws(() => malformed.metro(mismatch(epoch - 9000, { intervalEndMs: null })), /log_format_unavailable/);
+  assert.equal(malformed.prelaunchHeartbeatResets, 0, 'malformed records are never treated as timing drift');
+  const backwards = new Window(123, epoch - 10000, 0); backwards.metro(heartbeat(epoch - 8000));
+  assert.throws(() => backwards.metro(mismatch(epoch - 9000)), /log_changed/);
+  assert.equal(backwards.prelaunchHeartbeatResets, 0, 'reset cannot erase a backwards event timestamp');
+});
+
+test('a delayed native milestone cannot reclassify an active-window reset as prelaunch', () => {
+  const delayedLaunch = launch.replace('.029480+0000', '.029000+0000');
+  for (const resetWall of [epoch + 29, epoch + 200]) {
+    const window = new Window(123, epoch - 10000, 0);
+    const mismatch = JSON.parse(heartbeat(resetWall).slice(13));
+    mismatch.intervalEndMs -= 6000;
+    window.metro('[metro-http] ' + JSON.stringify(mismatch));
+    window.metro(heartbeat(epoch + 300));
+    assert.equal(window.freshHeartbeatRequired, false);
+    // Native log delivery is delayed, but the milestone itself is within the
+    // existing one-second bound and precedes or equals the reset heartbeat.
+    window.native(delayedLaunch, epoch + 500, 10500);
+    assert.equal(window.launch.readDelayMs, 471);
+    assert.equal(window.start(epoch + 6500, 16500), false);
+    assert.equal(window.trigger, undefined);
+    const result = window.report(epoch + 6500, 16500);
+    assert.equal(result.outcome, 'inconclusive');
+    assert.equal(result.reason, 'heartbeat_launch_overlap');
+    assert.deepEqual(result.samples, []);
+  }
+});
+
 test('append-only tails refuse replacement, truncation, symlinks and excessive backlog', () => {
   const root = mkdtempSync(join(tmpdir(), 'farmer-thread-tail-'));
   let tail;
