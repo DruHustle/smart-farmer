@@ -117,7 +117,7 @@ export function Forum() {
         {thread.replies.nextCursor&&<button disabled={disabled} onClick={()=>void run(()=>openThread(thread.discussion.id,thread.replies.nextCursor!))}>{f.more}</button>}
       </Section>
     </>:<>
-      <div className="button-row forum-modes" aria-label={f.title}>
+      <div className="button-row forum-modes" role="group" aria-label={f.title}>
         {([['all',f.discussions],['mine',f.mine],...(farm.role==='owner'?[['reports',f.reports],['hidden',f.hiddenEntries]]:[])] as [Mode,string][]).map(([value,title])=><button key={value} aria-pressed={mode===value} className={mode===value?'primary':''} disabled={busy||loading} onClick={()=>changeMode(value)}>{title}</button>)}
       </div>
       {(mode==='all'||mode==='mine')?<form className="forum-filters" onSubmit={e=>{e.preventDefault();setSearch(searchDraft.trim());}}>

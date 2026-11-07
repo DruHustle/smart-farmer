@@ -1,6 +1,6 @@
 import { createServer, request } from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 // Only a test harness. This process and these credentials are never bundled into the app.
@@ -49,7 +49,39 @@ if (process.argv[2] === 'seed') {
   const session = await api('/v1/sessions', credentials);
   const { items: farms } = await api('/v1/farms', null, session.token);
   const { items } = await api(`/v1/farms/${farms[0].id}/activities`, null, session.token);
-  assert.equal(items.filter(item => item.note === 'Native durable offline observation').length, 1, 'Offline record must reach the server exactly once after restart');
+  try {
+    assert.equal(items.filter(item => item.note === 'Native durable offline observation').length, 1, 'Offline record must reach the server exactly once after restart');
+  } catch (error) {
+    // Observe the already-fetched failed receipt without another request or raw record data.
+    try {
+      const ids = fixture();
+      const expected = 'Native durable offline observation';
+      const records = items.slice(0, 100).map(item => {
+        const note = typeof item.note === 'string' ? item.note : null;
+        return {
+          projectMatchesSeed: item.project_id === ids.projectId,
+          actorMatchesSession: item.actor_id === session.userId,
+          noteType: item.note === null ? 'null' : Array.isArray(item.note) ? 'array' : typeof item.note,
+          noteLength: note === null ? null : note.length,
+          noteUtf8Bytes: note === null ? null : Buffer.byteLength(note, 'utf8'),
+          noteSha256: note === null ? null : createHash('sha256').update(note).digest('hex'),
+          exactNote: note === expected,
+          caseEquivalentNote: note !== null && note.toLowerCase() === expected.toLowerCase(),
+          lineEquivalentNote: note !== null && note.replace(/\n/g, ' ') === expected,
+          selectorTextEquivalentNote: note !== null && note.replace(/\n/g, ' ').toLowerCase() === expected.toLowerCase(),
+        };
+      });
+      console.error('[native-receipt-observation]', JSON.stringify({
+        timestamp: new Date().toISOString(),
+        returnedFarmCount: farms.length,
+        selectedFarmMatchesSeed: farms[0]?.id === ids.farmId,
+        returnedActivityCount: items.length,
+        observedActivityCount: records.length,
+        records,
+      }));
+    } catch { /* Diagnostic failures must not replace the original receipt assertion. */ }
+    throw error;
+  }
   console.log('Verified exactly one offline record after native restart and reconciliation.');
 } else if (process.argv[2] === 'ids') {
   const ids = fixture();
