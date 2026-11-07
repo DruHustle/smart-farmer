@@ -68,11 +68,32 @@ appId: eu.onesa.smartfarmer
       id: forum-compose-body
     direction: DOWN
     timeout: 30000
+    centerElement: true
+- longPressOn:
+    id: forum-compose-body
+- tapOn: '^Select All$'
+- eraseText: 1
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      text: '(?-i)^0 / 8 000$'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: '(?-i)^0 / 8 000$'
+- scrollUntilVisible:
+    element:
+      id: forum-compose-body
+    direction: UP
+    timeout: 30000
+    centerElement: true
 - tapOn:
     id: forum-compose-body
-- eraseText
 - inputText: Native reviewed forum note.
 - runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: forum-compose-body
+    text: '(?-i)^Native reviewed forum note[.]$'
 - scrollUntilVisible:
     element:
       id: forum-compose-consent
