@@ -34,3 +34,41 @@ appId: eu.onesa.smartfarmer
       text: '.*Mvumo haina kupiwa.*'
     direction: UP
 - takeScreenshot: camera-permission-denied-recording-remains-available
+# Cached Record UI can appear before the restored private outbox is acknowledged.
+# Observe completion without pressing Sync/Retry, then restore the Record workspace.
+- tapOn:
+    id: tab-more
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: tab-more
+      selected: true
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+    timeout: 20000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: more-sync
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: more-sync
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      text: '^Hapana chakamirira kutumirwa[.]$'
+    timeout: 20000
+- tapOn:
+    id: sheet-close
+- tapOn:
+    id: tab-record
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+      selected: true
+    timeout: 5000

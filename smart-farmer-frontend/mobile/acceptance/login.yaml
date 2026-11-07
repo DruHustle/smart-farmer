@@ -1,11 +1,25 @@
 appId: eu.onesa.smartfarmer
 ---
 # Keep Expo's debug-only floating touch target away from real app controls.
-# The launcher preference also persists across this disposable install's restarts.
-- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
-- tapOn:
-    text: Open
-    optional: true
+# The offline restart supplies this URI again before interacting with app controls.
+# On iOS, launch once after Maestro has initialized its driver.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions: {}
+          arguments:
+            "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
+      - tapOn:
+          text: Open
+          optional: true
 - extendedWaitUntil:
     visible: "^(Continue|System UI isn't responding)$"
     timeout: 120000

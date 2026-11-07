@@ -10,6 +10,7 @@ The repository has been reviewed against the complete [Codex build prompt](docs/
 - [Architecture and permission boundaries](docs/architecture.md)
 - [Core API and animal workflows](docs/core-api.md)
 - [Equipment, media and commerce API](docs/integrations-api.md)
+- [Farmer Forum sharing, ownership, moderation and API](docs/forum.md)
 - [Hardware compatibility and commissioning](docs/hardware-and-commissioning.md)
 - [Native application instructions](../smart-farmer-frontend/mobile/README.md)
 - [Web application instructions](../smart-farmer-frontend/web/README.md)

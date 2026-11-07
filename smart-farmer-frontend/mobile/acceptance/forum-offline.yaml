@@ -1,0 +1,76 @@
+appId: eu.onesa.smartfarmer
+---
+# The existing offline proxy is already down. This attempted publication must fail
+# visibly and must never join the private-record outbox or replay on reconnect.
+- runFlow: forum-open.yaml
+- tapOn:
+    id: forum-new
+- tapOn:
+    id: forum-compose-name
+- inputText: OfflineForumGrower
+- tapOn:
+    id: forum-compose-title
+- inputText: Native forum offline draft must stay unshared
+- assertVisible:
+    id: forum-compose-title
+    text: '^Native forum offline draft must stay unshared$'
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-compose-body
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-body
+- inputText: Synthetic unshared offline forum text.
+- runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: forum-compose-body
+    text: '^Synthetic unshared offline forum text[.]$'
+- scrollUntilVisible:
+    element:
+      id: forum-compose-consent
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-consent
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-compose-submit
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: forum-compose-error
+    direction: UP
+    timeout: 30000
+- assertVisible:
+    id: forum-compose-title
+- takeScreenshot: native-forum-offline-not-queued
+- tapOn:
+    id: sheet-close
+# Return to the existing encrypted private-record draft before the original flow.
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: tab-record
+        selected: true
+    commands:
+      - tapOn:
+          id: tab-record
+          enabled: true
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+      selected: true
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: record-note
+    direction: DOWN
+    timeout: 20000

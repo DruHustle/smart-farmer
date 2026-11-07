@@ -12,6 +12,10 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { WorkspaceScreen } from './src/screens/WorkspaceScreen';
 import { Button, Card, Choice, Notice, Sheet, colors, styles } from './src/ui';
 
+function observeSignOutPhase(phase: 'entry' | 'session-delete-completed' | 'notification-cleanup-completed' | 'notification-cleanup-failed' | 'local-auth-state-requested'): void {
+  try { if (__DEV__) console.info('[native-signout]', phase); } catch { /* Diagnostics must not alter sign-out behavior. */ }
+}
+
 function Root() {
   const [language, setLanguage] = useState<Language>('sn');
   const [session, setSession] = useState<Session | null>(null);
@@ -91,11 +95,14 @@ function Root() {
   }
 
   async function signOut() {
+    observeSignOutPhase('entry');
     const previous = session;
     setLocked(true);
     await forgetSession();
-    try { if (previous) await endDeviceNotifications(previous); else await clearReminders(); } catch { /* Notification service failure must not prevent local sign-out. */ }
+    observeSignOutPhase('session-delete-completed');
+    try { if (previous) await endDeviceNotifications(previous); else await clearReminders(); observeSignOutPhase('notification-cleanup-completed'); } catch { observeSignOutPhase('notification-cleanup-failed'); /* Notification service failure must not prevent local sign-out. */ }
     setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode('');
+    observeSignOutPhase('local-auth-state-requested');
     if (previous) {
       // Local access ends immediately; the server request is best-effort when a connection exists.
       void createApi(previous.origin, previous.token).request('/v1/sessions/current', 'DELETE').catch(() => undefined);
