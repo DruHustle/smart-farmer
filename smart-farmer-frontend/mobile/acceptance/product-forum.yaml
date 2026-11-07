@@ -37,6 +37,12 @@ appId: eu.onesa.smartfarmer
     enabled: false
 - tapOn:
     id: forum-compose-consent
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-compose-submit
     enabled: true
@@ -74,6 +80,12 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: forum-compose-consent
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-compose-submit
 - extendedWaitUntil:
@@ -104,6 +116,12 @@ appId: eu.onesa.smartfarmer
     enabled: false
 - tapOn:
     id: forum-compose-consent
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-compose-submit
 - extendedWaitUntil:
@@ -126,6 +144,12 @@ appId: eu.onesa.smartfarmer
     id: forum-delete-reply-.*
 - tapOn:
     id: forum-action-consent
+- scrollUntilVisible:
+    element:
+      id: forum-action-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-action-submit
 - extendedWaitUntil:

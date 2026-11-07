@@ -34,6 +34,12 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: forum-compose-consent
+- scrollUntilVisible:
+    element:
+      id: forum-compose-submit
+      enabled: true
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-compose-submit
     enabled: true
