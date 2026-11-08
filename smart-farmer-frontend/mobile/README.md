@@ -127,6 +127,45 @@ mismatch, malformed input or any mismatch during the launch window still
 refuses observation. This diagnostic does not retry app startup, change request
 deadlines or turn a failed native journey into acceptance.
 
+Metro heartbeat records also retain `sampleStartedMs`, `emissionStartedMs` and
+`collectionDurationMs` on the process monotonic clock. The sample start remains
+the existing `intervalEndMs`; emission start is measured after CPU, event-loop
+and GC collection, immediately before formatting the log. This separates late
+callback entry from elapsed time inside diagnostic collection, which can include
+process descheduling. It does not measure serialization or the synchronous log
+write, identify a stall cause, or change heartbeat admission. The retained PR9
+run at `1048696` failed heartbeat validation before native launch; these fields provide
+context for a future diagnostic run without reclassifying that original failure.
+
+Each device launch now has its own observer, native log and stop marker. The
+phone retains `ios-thread-observation.json`; the tablet writes
+`ios-tablet-thread-observation.json`. The later tablet observer starts at the
+current end of Metro's log, so earlier phone requests, heartbeats and stop state
+cannot become tablet evidence. It still requires a newly observed valid
+heartbeat before sampling, and retains the same clock, query, sample and cleanup
+bounds. The observer never launches the app or repeats a manifest request.
+
+After a timely native launch, the observer also retains at most 32 recent phase
+timings and the longest duration for each fixed phase, with its own process CPU
+deltas. Two numeric snapshots bracket the observed interval with aggregate
+runner CPU counters, load averages and free/total memory. Their wall timestamps
+show how that interval overlaps the existing ten-second launch window; they are
+not per-process or instantaneous scheduler measurements. CPU names, process
+lists, file contents and host identity are not recorded. Missing or reset
+counters remain unavailable. A late observer still reports `helper_late`; these
+details do not change the thread-reader trigger, sampling or cleanup limits.
+The retained PR9 native failure had no target-thread samples, so this context
+can explain where evidence was lost without assigning a CPU, I/O or scheduling
+cause or claiming that startup has been repaired.
+
+The retained actual-main [native run 42394429408](https://github.com/DruHustle/smart-farmer/actions/runs/42394429408)
+at `32ffb11` passed Android and all four iPhone flows, but its iPad login failed
+before authentication after the local development manifest request timed out.
+The phone-only observer did not cover that tablet launch. The separate tablet
+observation closes this diagnostic gap; it does not establish the timeout's
+CPU, GC or scheduling cause or claim a successful iPad journey. Native acceptance
+must still run against the new source with the existing assertions and limits.
+
 To reproduce in CI, dispatch the Native acceptance workflow for the review branch. The matching APK and simulator app are cached by OS/architecture/native dependencies/configuration/source; Metro serves JavaScript from the current revision. Android creates a disposable local debug identity. iOS simulator uses ad-hoc signing. No production keystore, Apple team or release profile is invented. Documentation-only edits do not rebuild native apps.
 
 ## Physical release acceptance

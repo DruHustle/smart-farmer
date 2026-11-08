@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const observer = fileURLToPath(new URL('../../smart-farmer-frontend/mobile/acceptance/metro-request-observer.cjs', import.meta.url));
@@ -126,7 +128,8 @@ function parse(log: string) {
   }
   const allowed = new Set(['event', 'pid', 'time', 'id', 'method', 'path', 'elapsedMs', 'status',
     'headersSent', 'ended', 'finished', 'destroyed', 'errored', 'pending', 'delayMs', 'timeOriginMs',
-    'intervalStartMs', 'intervalEndMs', 'cpuUserUs', 'cpuSystemUs', 'threadUserUs', 'threadSystemUs',
+    'intervalStartMs', 'intervalEndMs', 'sampleStartedMs', 'emissionStartedMs', 'collectionDurationMs',
+    'cpuUserUs', 'cpuSystemUs', 'threadUserUs', 'threadSystemUs',
     'loopActiveMs', 'loopIdleMs', 'loopUtilization', 'gcDeliveredCount', 'gcObservedDurationSumMs',
     'gcSamples', 'gcOmittedCount', 'gcFirstStartMs', 'gcLastEndMs', 'gcOmittedStartMs', 'gcOmittedEndMs']);
   assert.ok(events.every(event => Object.keys(event).every(key => allowed.has(key))));
@@ -162,10 +165,14 @@ test('Metro observes real CPU, synchronous waiting and GC without claiming a sta
   const events = parse(observed.log);
   const beats = events.filter(event => event.event === 'heartbeat');
   assert.ok(beats.length > 0);
-  const fields = ['timeOriginMs', 'intervalStartMs', 'intervalEndMs', 'delayMs', 'cpuUserUs', 'cpuSystemUs',
+  const fields = ['timeOriginMs', 'intervalStartMs', 'intervalEndMs', 'sampleStartedMs', 'emissionStartedMs',
+    'collectionDurationMs', 'delayMs', 'cpuUserUs', 'cpuSystemUs',
     'threadUserUs', 'threadSystemUs', 'loopActiveMs', 'loopIdleMs', 'loopUtilization'];
   assert.ok(beats.every(event => fields.every(key => Number.isFinite(event[key]) && event[key] >= 0)));
   assert.ok(beats.every(event => event.intervalEndMs > event.intervalStartMs && event.loopUtilization <= 1));
+  assert.ok(beats.every(event => event.sampleStartedMs === event.intervalEndMs
+    && event.emissionStartedMs >= event.sampleStartedMs
+    && event.collectionDurationMs === event.emissionStartedMs - event.sampleStartedMs));
   assert.ok(beats.reduce((sum, event) => sum + event.threadUserUs + event.threadSystemUs, 0) >= 40000,
     'the observed thread counters include the deliberately consumed CPU time');
   const workload = observed.result.workload;
@@ -191,4 +198,72 @@ test('Metro observes real CPU, synchronous waiting and GC without claiming a sta
   }
   assert.ok(beats.some(beat => beat.gcSamples.some((entry: { startMs: number }) =>
     entry.startMs >= workload.gcStart && entry.startMs <= workload.gcEnd)));
+});
+
+test('heartbeat timing distinguishes delayed collection from delayed callback entry without moving the sample', () => {
+  function heartbeatTiming(callbackDelayMs: number, collectionDelayMs: number) {
+    const timeOriginMs = Date.parse('2026-11-08T00:00:00.000Z');
+    let mono = 100, collect = false;
+    let tick: (() => void) | undefined;
+    const subscribers = new Map<string, (event: unknown) => void>();
+    const lines: string[] = [];
+    const diagnostics = {
+      subscribe: (name: string, handler: (event: unknown) => void) => subscribers.set(name, handler),
+      unsubscribe: (name: string) => subscribers.delete(name),
+    };
+    const cpuUsage = () => {
+      if (collect) { mono += collectionDelayMs; collect = false; }
+      return { user: 10, system: 5 };
+    };
+    const perf = {
+      performance: { now: () => mono, timeOrigin: timeOriginMs,
+        eventLoopUtilization: () => ({ active: 0, idle: 5000, utilization: 0 }) },
+      PerformanceObserver: class {
+        observe() {} disconnect() {} takeRecords() { return []; }
+      },
+    };
+    runInNewContext(readFileSync(observer, 'utf8'), {
+      require(name: string) {
+        if (name === 'node:diagnostics_channel') return diagnostics;
+        if (name === 'node:fs') return { writeSync: (_fd: number, line: string) => lines.push(line) };
+        if (name === 'node:perf_hooks') return perf;
+        throw Error('unexpected-observer-dependency');
+      },
+      process: { env: { CI: 'true', NODE_ENV: 'test' }, pid: 123, cpuUsage,
+        threadCpuUsage: () => ({ user: 5, system: 1 }) },
+      Date: class extends Date { constructor() { super(timeOriginMs + mono); } },
+      Buffer,
+      setInterval(callback: () => void, interval: number) {
+        assert.equal(interval, 5000);
+        tick = callback;
+        return { unref() { return this; } };
+      },
+      clearInterval() {},
+    });
+    subscribers.get('http.server.request.start')!({ request: { method: 'HEAD', url: '/' },
+      response: { once() {}, removeListener() {} }, server: { address: () => ({ port: 8081 }) } });
+    assert.ok(tick);
+    mono += 5000 + callbackDelayMs;
+    collect = true;
+    tick();
+    const beat = parse(lines.join('')).find(event => event.event === 'heartbeat');
+    assert.ok(beat);
+    return beat;
+  }
+
+  const collecting = heartbeatTiming(0, 1250);
+  assert.equal(collecting.intervalStartMs, 100);
+  assert.equal(collecting.intervalEndMs, 5100, 'collection must not rewrite the original interval sample');
+  assert.equal(collecting.delayMs, 0);
+  assert.equal(collecting.sampleStartedMs, 5100);
+  assert.equal(collecting.emissionStartedMs, 6350);
+  assert.equal(collecting.collectionDurationMs, 1250);
+  assert.equal(Date.parse(collecting.time) - collecting.timeOriginMs - collecting.intervalEndMs, 1250,
+    'the existing timestamp discrepancy remains visible to fail-closed heartbeat admission');
+
+  const callback = heartbeatTiming(1250, 0);
+  assert.equal(callback.intervalEndMs, 6350);
+  assert.equal(callback.delayMs, 1250);
+  assert.equal(callback.sampleStartedMs, callback.emissionStartedMs);
+  assert.equal(callback.collectionDurationMs, 0);
 });
