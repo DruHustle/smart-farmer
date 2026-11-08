@@ -135,6 +135,19 @@ cannot become tablet evidence. It still requires a newly observed valid
 heartbeat before sampling, and retains the same clock, query, sample and cleanup
 bounds. The observer never launches the app or repeats a manifest request.
 
+After a timely native launch, the observer also retains at most 32 recent phase
+timings and the longest duration for each fixed phase, with its own process CPU
+deltas. Two numeric snapshots bracket the observed interval with aggregate
+runner CPU counters, load averages and free/total memory. Their wall timestamps
+show how that interval overlaps the existing ten-second launch window; they are
+not per-process or instantaneous scheduler measurements. CPU names, process
+lists, file contents and host identity are not recorded. Missing or reset
+counters remain unavailable. A late observer still reports `helper_late`; these
+details do not change the thread-reader trigger, sampling or cleanup limits.
+The retained PR9 native failure had no target-thread samples, so this context
+can explain where evidence was lost without assigning a CPU, I/O or scheduling
+cause or claiming that startup has been repaired.
+
 The retained actual-main [native run 42394429408](https://github.com/DruHustle/smart-farmer/actions/runs/42394429408)
 at `32ffb11` passed Android and all four iPhone flows, but its iPad login failed
 before authentication after the local development manifest request timed out.

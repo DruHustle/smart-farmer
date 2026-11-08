@@ -2,10 +2,95 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { performance } = require('node:perf_hooks');
 const probe = require('./darwin-thread-preflight.cjs');
 const states = ['unknown', 'running_or_runnable', 'stopped', 'waiting', 'uninterruptible', 'halted'];
 const scopes = new Set(['ios-phone', 'ios-tablet']);
+const phases = new Set(['stop_check', 'native_read', 'native_events', 'metro_read', 'metro_events',
+  'reader_start', 'timer_wait', 'reader_cleanup', 'final_native_read', 'final_native_events',
+  'final_metro_read', 'final_metro_events', 'runner_start', 'runner_end']);
+const cpuKeys = ['user', 'nice', 'sys', 'idle', 'irq'];
+
+function observerSnapshot() {
+  const cpu = process.cpuUsage();
+  return { wallMs: Date.now(), monoMs: performance.now(), userUs: cpu.user, systemUs: cpu.system };
+}
+
+function runnerSnapshot(source = os) {
+  try {
+    const startedWallMs = Date.now(), startedMonoMs = performance.now();
+    const cpus = source.cpus(), load = source.loadavg(), freeBytes = source.freemem(), totalBytes = source.totalmem();
+    if (!Array.isArray(cpus) || cpus.length < 1 || cpus.length > 256
+      || !Array.isArray(load) || load.length !== 3 || !load.every(value => Number.isFinite(value) && value >= 0)
+      || !Number.isSafeInteger(freeBytes) || !Number.isSafeInteger(totalBytes)
+      || freeBytes < 0 || totalBytes <= 0 || freeBytes > totalBytes) return undefined;
+    const cpuMs = {};
+    for (const key of cpuKeys) {
+      if (!cpus.every(cpu => Number.isSafeInteger(cpu.times?.[key]) && cpu.times[key] >= 0)) return undefined;
+      cpuMs[key] = cpus.reduce((sum, cpu) => sum + cpu.times[key], 0);
+      if (!Number.isSafeInteger(cpuMs[key])) return undefined;
+    }
+    // Project only numeric counters. CPU names, process lists and host identity
+    // are neither retained nor returned by this diagnostic.
+    return { startedWallMs, finishedWallMs: Date.now(), elapsedMs: performance.now() - startedMonoMs,
+      cpuCount: cpus.length, cpuMs, load: [...load], freeBytes, totalBytes };
+  } catch { return undefined; }
+}
+
+class ObserverContext {
+  constructor(snapshot = observerSnapshot, runner = runnerSnapshot) {
+    this.snapshot = snapshot; this.runner = runner; this.armed = false;
+    this.records = []; this.longest = new Map(); this.unavailable = false;
+  }
+  begin() {
+    try { return this.snapshot(); } catch { this.unavailable = true; return undefined; }
+  }
+  end(phase, before) {
+    if (!this.armed) return;
+    const after = this.begin();
+    if (!phases.has(phase) || !before || !after
+      || ![before, after].every(value => ['wallMs', 'monoMs', 'userUs', 'systemUs']
+        .every(key => Number.isFinite(value[key]) && value[key] >= 0))
+      || after.monoMs < before.monoMs || after.userUs < before.userUs || after.systemUs < before.systemUs) {
+      this.unavailable = true; return;
+    }
+    const record = { phase, startedWallMs: before.wallMs, finishedWallMs: after.wallMs,
+      elapsedMs: after.monoMs - before.monoMs, userCpuUs: after.userUs - before.userUs,
+      systemCpuUs: after.systemUs - before.systemUs };
+    this.records.push(record);
+    if (this.records.length > 32) this.records.shift();
+    if (!this.longest.has(phase) || this.longest.get(phase).elapsedMs < record.elapsedMs) this.longest.set(phase, record);
+  }
+  run(phase, operation) {
+    const before = this.begin();
+    try { return operation(); } finally { this.end(phase, before); }
+  }
+  async wait(phase, operation) {
+    const before = this.begin();
+    try { return await operation(); } finally { this.end(phase, before); }
+  }
+  arm(window) {
+    if (this.armed || !window.launch || window.reason) return;
+    this.armed = true;
+    this.launchWallMs = window.launch.eventWallMs;
+    this.first = this.run('runner_start', this.runner);
+  }
+  report() {
+    if (!this.armed) return undefined;
+    const last = this.run('runner_end', this.runner), first = this.first;
+    const cpuMs = {};
+    const comparable = first && last && first.cpuCount === last.cpuCount
+      && cpuKeys.every(key => Number.isSafeInteger(last.cpuMs[key] - first.cpuMs[key]) && last.cpuMs[key] >= first.cpuMs[key]);
+    if (comparable) for (const key of cpuKeys) cpuMs[key] = last.cpuMs[key] - first.cpuMs[key];
+    return { scope: 'observer_process_and_aggregate_runner_only', launchEventWallMs: this.launchWallMs,
+      launchWindowEndWallMs: this.launchWallMs + 10000,
+      phaseTimingAvailable: !this.unavailable, recentPhases: this.records,
+      longestPhases: [...this.longest.values()],
+      runner: comparable ? { outcome: 'counters_observed', first, last, cpuMs }
+        : { outcome: 'unavailable', ...(first ? { first } : {}), ...(last ? { last } : {}) } };
+  }
+}
 
 function launchMilestone(line) {
   // Match the existing simulator event, not its URI, preference object or payload.
@@ -151,6 +236,7 @@ class Window {
 
 async function watch(scope = 'ios-phone') {
   let native, metro, active, window, stopped = false;
+  const context = new ObserverContext();
   const stop = () => { stopped = true; if (window) window.reason = 'observer_stopped'; active?.stop(); };
   process.once('SIGTERM', stop);
   try {
@@ -165,36 +251,50 @@ async function watch(scope = 'ios-phone') {
     // an earlier phone request or heartbeat, or consume that old log backlog.
     metro = new Tail(path.join(ctx.evidence, 'metro.log'), scope === 'ios-tablet');
     while (!stopped) {
-      if (fs.existsSync(stopFile)) { stop(); break; }
+      if (context.run('stop_check', () => fs.existsSync(stopFile))) { stop(); break; }
       const wall = Date.now(), mono = performance.now();
       window.clock(wall, mono);
-      for (const line of native.read()) window.native(line, wall, mono);
-      for (const line of metro.read()) window.metro(line);
+      const nativeLines = context.run('native_read', () => native.read());
+      context.run('native_events', () => {
+        for (const line of nativeLines) window.native(line, wall, mono);
+        context.arm(window);
+      });
+      const metroLines = context.run('metro_read', () => metro.read());
+      context.run('metro_events', () => { for (const line of metroLines) window.metro(line); });
       if (window.finished(wall, mono)) break;
       if (window.start(wall, mono)) {
-        active = probe.reader(ctx, target, 'observe', value => { window.samples.push(value); });
+        active = context.run('reader_start', () => probe.reader(ctx, target, 'observe', value => { window.samples.push(value); }));
         active.done.then(result => { if (result.issue) window.reason = result.issue; stopped = true; });
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await context.wait('timer_wait', () => new Promise(resolve => setTimeout(resolve, 100)));
     }
-    if (active) { active.stop(); const result = await active.done; if (result.issue) window.reason = result.issue; }
+    if (active) {
+      const result = await context.wait('reader_cleanup', async () => { active.stop(); return active.done; });
+      if (result.issue) window.reason = result.issue;
+    }
     // Re-read existing log events once to classify samples that arrived after recovery.
     window.clock(Date.now(), performance.now());
-    for (const line of native.read()) window.native(line, Date.now(), performance.now());
-    for (const line of metro.read()) window.metro(line);
+    const nativeLines = context.run('final_native_read', () => native.read());
+    context.run('final_native_events', () => { for (const line of nativeLines) window.native(line, Date.now(), performance.now()); });
+    const metroLines = context.run('final_metro_read', () => metro.read());
+    context.run('final_metro_events', () => { for (const line of metroLines) window.metro(line); });
     if (stopped && !active) window.reason = 'observer_stopped';
+    const observerContext = context.report();
     return { deviceScope: scope, ...window.report(Date.now(), performance.now()), targetPid: Number(target.pid),
       targetOwnerUid: Number(target.uid), targetStartSeconds: target.startSeconds,
-      targetStartMicros: target.startMicros, targetThreadId: target.threadId };
+      targetStartMicros: target.startMicros, targetThreadId: target.threadId,
+      ...(observerContext ? { observerContext } : {}) };
   } catch (error) {
     active?.stop();
     if (active) await active.done;
     const reasons = new Set(['log_unavailable', 'log_changed', 'log_backlog', 'log_format_unavailable',
       'identity_unavailable', 'milestone_unavailable', 'preflight_unavailable', 'unsupported_context', 'unsupported_scope']);
+    const observerContext = context.report();
     return { event: 'thread_observation', outcome: 'inconclusive', reason: reasons.has(error.message) ? error.message : 'unavailable',
       ...(scopes.has(scope) ? { deviceScope: scope } : {}),
       ...(window ? { prelaunchHeartbeatResets: window.prelaunchHeartbeatResets,
-        prelaunchHeartbeatBaselineRecovered: window.prelaunchHeartbeatResets === 1 && !window.freshHeartbeatRequired } : {}) };
+        prelaunchHeartbeatBaselineRecovered: window.prelaunchHeartbeatResets === 1 && !window.freshHeartbeatRequired } : {}),
+      ...(observerContext ? { observerContext } : {}) };
   } finally {
     process.off('SIGTERM', stop);
     try { native?.close(); } catch {}
@@ -202,7 +302,7 @@ async function watch(scope = 'ios-phone') {
   }
 }
 
-module.exports = { launchMilestone, Tail, Window, watch };
+module.exports = { launchMilestone, Tail, Window, watch, ObserverContext, runnerSnapshot };
 if (require.main === module) watch(process.argv.length === 2 ? 'ios-phone'
   : process.argv.length === 3 ? process.argv[2] : '').then(result => {
   // fd2 is intentionally unused; never expose source logs or runtime errors.

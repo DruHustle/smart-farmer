@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 const require = createRequire(import.meta.url);
 const directory = fileURLToPath(new URL('../../smart-farmer-frontend/mobile/acceptance/', import.meta.url));
 const preflight = require(join(directory, 'darwin-thread-preflight.cjs'));
-const { launchMilestone, Tail, Window } = require(join(directory, 'darwin-thread-watch.cjs'));
+const { launchMilestone, Tail, Window, ObserverContext, runnerSnapshot } = require(join(directory, 'darwin-thread-watch.cjs'));
 const epoch = Date.parse('2026-11-07T05:52:26Z');
 const launch = '2026-11-07 05:52:26.029480+0000  localhost SmartFarmer[16030]: (CoreFoundation) [com.apple.defaults:User Defaults] setting new value private-uri-sentinel for key -initialUrl in CFPrefsSource<private-address-sentinel>';
 const target = { reason: 'ready', pid: '123', uid: '501', startSeconds: '1700000000', startMicros: '12', threadId: '9007199254740993' };
@@ -75,6 +75,106 @@ test('stale launch, delayed helper, clock movement and duplicate launch never ar
   const duplicate = armed(); duplicate.native(launch, epoch + 200, 1200);
   assert.equal(duplicate.report(epoch + 200, 1200).reason, 'multiple_launches');
   const expired = armed(); assert.equal(expired.finished(epoch + 10030, 11030), true);
+});
+
+test('observer phase context is bounded and preserves a late interval without interpreting its cause', () => {
+  let wall = epoch, mono = 1000, userUs = 100, systemUs = 50;
+  const context = new ObserverContext(() => ({ wallMs: wall, monoMs: mono, userUs, systemUs }), () => undefined);
+  context.run('stop_check', () => {});
+  assert.equal(context.report(), undefined, 'no runner context is collected before a valid launch');
+  const window = armed(); context.arm(window);
+  const first = context.begin(); wall += 8900; mono += 8900; userUs += 7; systemUs += 3;
+  context.end('timer_wait', first);
+  for (let index = 0; index < 100; index++) context.run('metro_read', () => { wall++; mono++; });
+  window.clock(epoch + 9000, 10000);
+  assert.equal(window.report(epoch + 9000, 10000).reason, 'helper_late');
+  assert.deepEqual(window.samples, []);
+  const result = context.report();
+  assert.equal(result.recentPhases.length, 32);
+  assert.ok(result.longestPhases.length <= 14);
+  assert.deepEqual(result.longestPhases.find(value => value.phase === 'timer_wait'), {
+    phase: 'timer_wait', startedWallMs: epoch, finishedWallMs: epoch + 8900,
+    elapsedMs: 8900, userCpuUs: 7, systemCpuUs: 3 });
+  assert.equal(result.launchWindowEndWallMs, window.launch.eventWallMs + 10000);
+  assert.equal(result.runner.outcome, 'unavailable');
+  assert.equal(JSON.stringify(result).includes('starvation'), false);
+  assert.throws(() => context.run('native_read', () => { throw Error('private-error-sentinel'); }), /private-error-sentinel/,
+    'phase instrumentation must preserve the original operation failure');
+  assert.equal(JSON.stringify(context.report()).includes('private-error-sentinel'), false);
+  const invalid = context.begin(); userUs -= 100;
+  context.end('metro_read', invalid);
+  assert.equal(context.report().phaseTimingAvailable, false, 'counter reversal is unavailable, not a fabricated delta');
+});
+
+test('runner context projects only bounded numeric counters and refuses reset or unavailable data', () => {
+  let value = 100;
+  const source = {
+    cpus: () => [{ model: 'private-model-sentinel', times: { user: value, nice: 0, sys: 20, idle: value * 2, irq: 0 } }],
+    loadavg: () => [0.1, 0.2, 0.3], freemem: () => 1000, totalmem: () => 2000,
+  };
+  const context = new ObserverContext(undefined, () => runnerSnapshot(source));
+  context.arm(armed()); value += 10;
+  const result = context.report();
+  assert.equal(result.runner.outcome, 'counters_observed');
+  assert.deepEqual(result.runner.cpuMs, { user: 10, nice: 0, sys: 0, idle: 20, irq: 0 });
+  assert.equal(JSON.stringify(result).includes('private-model-sentinel'), false);
+  assert.deepEqual(Object.keys(result.runner.first).sort(),
+    ['cpuCount', 'cpuMs', 'elapsedMs', 'finishedWallMs', 'freeBytes', 'load', 'startedWallMs', 'totalBytes']);
+  value = 1;
+  assert.equal(context.report().runner.outcome, 'unavailable');
+  for (const invalid of [
+    { cpus: () => Array(257).fill(source.cpus()[0]) },
+    { cpus: () => [{ times: { user: -1, nice: 0, sys: 0, idle: 0, irq: 0 } }] },
+    { loadavg: () => [0, Infinity, 0] }, { freemem: () => 2001 },
+    { cpus: () => { throw Error('private-error-sentinel'); } },
+  ]) assert.equal(runnerSnapshot({ ...source, ...invalid }), undefined);
+});
+
+test('real watcher records the slow phase and runner interval while retaining helper_late and zero samples', () => {
+  const root = mkdtempSync(join(tmpdir(), 'farmer-phase-watch-'));
+  const fixture = `
+    const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+    const probe=require(${JSON.stringify(join(directory, 'darwin-thread-preflight.cjs'))});
+    const {watch,Tail}=require(${JSON.stringify(join(directory, 'darwin-thread-watch.cjs'))});
+    const root=${JSON.stringify(root)},evidence=path.join(root,'evidence');
+    fs.mkdirSync(evidence,{mode:0o700});
+    const ctx={root,evidence,target:path.join(root,'target.json')};
+    fs.writeFileSync(ctx.target,JSON.stringify({...${JSON.stringify(target)},uid:String(process.getuid())}),{mode:0o600});
+    const native=path.join(evidence,'ios-phone-startup.log'),metro=path.join(evidence,'metro.log');
+    fs.writeFileSync(native,'');fs.writeFileSync(metro,'');probe.qualified=()=>ctx;
+    let readerCalls=0,launched=false,delayed=false;const original=Tail.prototype.read;
+    probe.reader=()=>{readerCalls++;throw Error('no_reader_expected_with_fresh_heartbeat');};
+    Tail.prototype.read=function(){
+      const lines=original.call(this);
+      if(this.file===native&&lines.length)launched=true;
+      if(this.file===metro&&launched&&!delayed){delayed=true;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,650);}
+      return lines;
+    };
+    (async()=>{
+      const observed=watch('ios-phone');
+      setTimeout(()=>{
+        const wall=Date.now(),stamp=new Date(wall).toISOString().replace('T',' ').replace('Z','000+0000');
+        fs.appendFileSync(native,stamp+'  localhost SmartFarmer[456]: (CoreFoundation) [com.apple.defaults:User Defaults] setting new value private-uri-sentinel for key -initialUrl in CFPrefsSource<private-address-sentinel>\\n');
+        fs.appendFileSync(metro,'[metro-http] '+JSON.stringify({event:'heartbeat',pid:123,time:new Date(wall).toISOString(),timeOriginMs:wall-1000,intervalEndMs:1000})+'\\n');
+      },25);
+      const result=await observed;
+      assert.equal(result.reason,'helper_late');assert.equal(result.outcome,'inconclusive');
+      assert.equal(readerCalls,0);assert.deepEqual(result.samples,[]);assert.equal(result.triggerWallMs,undefined);
+      const context=result.observerContext;assert.equal(context.phaseTimingAvailable,true);
+      const slow=context.longestPhases.find(value=>value.phase==='metro_read');assert.ok(slow.elapsedMs>=600);
+      assert.ok(slow.userCpuUs>=0&&slow.systemCpuUs>=0);assert.ok(context.recentPhases.length<=32);
+      assert.equal(context.runner.outcome,'counters_observed');
+      assert.ok(context.runner.first.startedWallMs>=result.launchEventWallMs);
+      assert.ok(context.runner.last.startedWallMs>=slow.finishedWallMs);
+      console.log(JSON.stringify(result));
+    })().catch(()=>{process.exitCode=99;});`;
+  try {
+    const result = spawnSync(process.execPath, ['-e', fixture], { encoding: 'utf8', timeout: 5000 });
+    assert.ifError(result.error); assert.equal(result.status, 0, result.stderr); assert.equal(result.signal, null);
+    assert.equal(result.stderr, '');
+    for (const secret of ['private-uri-sentinel', 'private-address-sentinel', root]) assert.equal(result.stdout.includes(secret), false);
+    assert.ok(Buffer.byteLength(result.stdout) < 16000, 'numeric context remains a small bounded report');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('one invalid prelaunch heartbeat clears the baseline and cannot arm without a fresh valid sample', () => {
