@@ -127,6 +127,16 @@ mismatch, malformed input or any mismatch during the launch window still
 refuses observation. This diagnostic does not retry app startup, change request
 deadlines or turn a failed native journey into acceptance.
 
+Metro heartbeat records also retain `sampleStartedMs`, `emissionStartedMs` and
+`collectionDurationMs` on the process monotonic clock. The sample start remains
+the existing `intervalEndMs`; emission start is measured after CPU, event-loop
+and GC collection, immediately before formatting the log. This separates late
+callback entry from elapsed time inside diagnostic collection, which can include
+process descheduling. It does not measure serialization or the synchronous log
+write, identify a stall cause, or change heartbeat admission. The retained PR9
+run at `1048696` failed heartbeat validation before native launch; these fields provide
+context for a future diagnostic run without reclassifying that original failure.
+
 Each device launch now has its own observer, native log and stop marker. The
 phone retains `ios-thread-observation.json`; the tablet writes
 `ios-tablet-thread-observation.json`. The later tablet observer starts at the

@@ -61,6 +61,15 @@ function install() {
   function write(event, values) {
     try {
       if (!active) return false;
+      if (event === 'heartbeat') {
+        // intervalEndMs was sampled before the CPU/loop/GC reads. Keep that
+        // admission timestamp unchanged and expose time spent before emission.
+        // This interval excludes JSON serialization and the synchronous sink.
+        const sampleStartedMs = values.intervalEndMs;
+        const emissionStartedMs = performance.now();
+        values = { ...values, sampleStartedMs, emissionStartedMs,
+          collectionDurationMs: emissionStartedMs - sampleStartedMs };
+      }
       const line = `[metro-http] ${JSON.stringify({
         event, pid: process.pid, time: new Date().toISOString(), ...values,
       })}\n`;
