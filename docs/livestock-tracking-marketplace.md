@@ -43,10 +43,16 @@ Preserve working agricultural listings, images, stock-linked availability, selle
 
 Featured/sponsored ads, full seller profiles/badges, advanced ranking, AI photo-to-listing, external buyer/seller identity verification, shipping labels, provider-backed payments/escrow, and push notifications remain **integration work**, not implemented claims. Do not copy Kleinanzeigen graphics, assets, name or brand; only use its common marketplace workflows as a reference.
 
+### Shona and Northern Ndebele interface
+
+Tracking and marketplace discovery now use the existing web and native language catalogs. This includes registration/filter fields, saved/followed controls, empty states, provider and observation-quality labels, stale/recent status, alert acknowledgement, map-sharing disclosure, the one-animal coverage limit and manual-only AirTag guidance. API enum values, saved user content, coordinates, credentials and request payloads are unchanged. `Harare`, currency codes and product/protocol names remain literal identifiers where appropriate.
+
+The paired entries live in web `src/tracking-market-locales.ts` and native `src/tracking-market-i18n.ts`, composed into the normal catalogs. These translations are **machine authored**; fluent Shona and Zimbabwean Northern Ndebele agricultural review remains a release gate. That review is distinct from the implemented catalog coverage. Browser acceptance exercises both languages with actual isolated PostgreSQL data, including phone/desktop reflow, translated privacy/status/enum text and the existing accessibility thresholds. Native source/type/unit checks do not substitute for physical-device or fluent-language acceptance.
+
 ### Deployment and testing gates
 1. Apply all migrations sequentially to disposable PostgreSQL, test rollback in a separate restored database, and verify media accounting backups are unaffected.
 2. Run `npm test` in `smart-farmer-backend` with `TEST_DATABASE_URL` set to a disposable PostgreSQL 17 database; include `tracking-discovery.test.ts`.
-3. Run web build and browser acceptance. Check screen width, form input validation, authenticated farm isolation, stale/unknown device states and external-map opt-in.
+3. Run web build and browser acceptance in both Shona and Northern Ndebele. Check screen width, form input validation, authenticated farm isolation, stale/unknown device states and external-map opt-in.
 4. Run native unit/type checks plus actual iOS and Android simulator journeys; keep existing iOS sign-in/TLS/XCTest blockers visible.
 5. Commission one **read-only** GPS collar through a supported gateway. Verify real-coordinate accuracy, delayed-data ordering, 12-hour connectivity, battery thresholds, geofences, role separation, credential rotation and offline recovery.
 6. Only after real API/web and native release verification may the stacked PR be promoted. No unattended drone/hardware controls are enabled by this work.

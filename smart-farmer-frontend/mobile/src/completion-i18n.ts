@@ -1,9 +1,11 @@
 import type { Language } from './types';
 import { accountingMessages } from './accounting-i18n';
+import { trackingMarketMessages } from './tracking-market-i18n';
 
 // Draft Shona and Northern Ndebele strings. Language review is tracked separately from implementation.
 export const completionMessages: Record<string, readonly [string, string]> = {
   ...accountingMessages,
+  ...trackingMarketMessages,
   externalId: ['Kodhi yemudziyo wekutevera', 'Ikhodi yomshini wokulandela'],
   radiusMeters: ['Chinhambwe chakakomberedza (mamita)', 'Ibanga elizungelezileyo (amamitha)'],
   query: ['Mashoko ekutsvaga', 'Amabala okudinga'],
