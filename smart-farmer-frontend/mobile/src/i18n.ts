@@ -2,6 +2,8 @@ import type { Language } from './types';
 import { completionText } from './completion-i18n';
 
 const sn = {
+  forum: 'Dare', forum_already_reported: 'Watotumira chichemo chemashoko aya.', forum_content_removed: 'Mashoko aya akabviswa. Vandudza dare.',
+  forum_shared: 'Mashoko agoverwa munharaunda.', forum_reported: 'Chichemo chatumirwa kuti chiongororwe.', forum_removed: 'Mashoko abviswa munharaunda.', forum_moderation_saved: 'Chisarudzo chachengetwa.',
   language: 'Mutauro', today: 'Nhasi', farm: 'Purazi', record: 'Nyora', more: 'Zvimwe',
   welcome: 'Basa repapurazi, panzvimbo imwe', intro: 'Nyora basa. Tevera zvirimwa nemhuka. Ramba uchishanda pasina indaneti.',
   signIn: 'Pinda', register: 'Gadzira purazi', join: 'Gamuchira kukokwa', recover: 'Dzorera kupinda',
@@ -89,6 +91,8 @@ const sn = {
 } as const;
 
 const nd: Record<keyof typeof sn, string> = {
+  forum: 'Inkundla', forum_already_reported: 'Usuthumele isikhalazo ngalo mbhalo.', forum_content_removed: 'Lo mbhalo ususiwe. Vuselela inkundla.',
+  forum_shared: 'Umbhalo usuwabelwe umphakathi.', forum_reported: 'Isikhalazo sithunyelwe ukuze sihlolwe.', forum_removed: 'Umbhalo ususiwe emphakathini.', forum_moderation_saved: 'Isinqumo sigciniwe.',
   language: 'Ulimi', today: 'Lamuhla', farm: 'Ipulazi', record: 'Bhala', more: 'Okunye',
   welcome: 'Umsebenzi wepulazi endaweni eyodwa', intro: 'Bhala umsebenzi. Landela izilimo lezifuyo. Qhubeka usebenza ungela-inthanethi.',
   signIn: 'Ngena', register: 'Dala ipulazi', join: 'Yamukela isimemo', recover: 'Buyisela ukungena',

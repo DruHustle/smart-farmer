@@ -21,6 +21,7 @@ import {FinancialReports} from './pages/Finance';
 import {allPages} from './lib/resources';
 import {Security} from './pages/Security';
 import {People} from './pages/People';
+import {Forum} from './pages/Forum';
 
 const emptySubscribe = () => () => {};
 const Accounting = lazy(() => import('./pages/Accounting').then(module => ({default: module.Accounting})));
@@ -118,7 +119,7 @@ export function App() {
   }
   function lock() {setVault(null); setNotice(''); setPage('today'); setRecordProject(null);}
   if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(v.snapshot().language); setPage(new URLSearchParams(location.search).has('listing') ? 'market' : 'today'); setNotice('');}}/>;
-  const navigation = ['today', 'farm', 'market', 'services', 'more'] as const;
+  const navigation = ['today', 'farm', 'market', 'services', 'forum', 'more'] as const;
   const navPage = ['stock', 'tasks', 'equipment', 'people', 'reports', 'accounting', 'incidents', 'sync', 'security', 'notifications', 'weather', 'maintenance', 'locations', 'settings'].includes(page) ? 'more' : page;
   return <div className="app-shell"><header className="app-header"><div className="brand"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></div><div className="header-actions"><span className="current-user"><Icon name="people" size={16}/>{snapshot.identity.username}</span><select className="language-select" aria-label={t.language} value={lang} onChange={e => void changeLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select><button className="icon-button" title={t.lock} aria-label={t.lock} onClick={lock}><Icon name="lock" size={18}/></button></div></header>
     <aside className="desktop-nav"><div className="farm-identity"><span className="eyebrow">{t.farm}</span><strong>{farm?.name ?? t.loading}</strong><small>{farm ? label(t, farm.role) : ''}</small></div><nav aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} aria-current={navPage === item ? 'page' : undefined} onClick={() => setPage(item)}><Icon name={item}/>{t[item]}<Icon name="chevron" size={15}/></button>)}</nav><div className="sidebar-bottom"><Icon name="lock" size={16}/><small>{t.privacy}</small></div></aside>
@@ -130,8 +131,9 @@ export function App() {
       {busy && <div className="working-line" role="status">{t.working}</div>}
       {farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: (nextPage, options) => {setAccountingTarget(options?.invoiceId ? {farmId: farm.id, userId: snapshot.identity.userId, invoiceId: options.invoiceId} : null); setPage(nextPage);}, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
         {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'accounting' && <Suspense fallback={<p role="status">{t.loading}</p>}><Accounting initialInvoiceId={accountingTarget?.farmId === farm.id && accountingTarget.userId === snapshot.identity.userId ? accountingTarget.invoiceId : undefined}/></Suspense>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
+        {page === 'forum' && <Forum/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
-        {recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
+        {recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && page !== 'forum' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
       </Context.Provider> : <div className="loading-card"><Icon name="leaf" size={30}/><p>{online ? t.loading : t.no_saved_data}</p><button onClick={lock}>{t.signIn}</button></div>}
     </main><nav className="mobile-nav" aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} aria-current={navPage === item ? 'page' : undefined} onClick={() => setPage(item)}><Icon name={item}/><span>{t[item]}</span></button>)}</nav></div>;
 }

@@ -11,7 +11,7 @@ import time
 
 PREFIX = 'SF_SESSION_TRACE '
 LIMIT = 128
-STAGES = frozenset(('trace', 'unlock_press', 'sign_out_press', 'unlock', 'sign_out', 'session_delete', 'notifications_cleanup', 'notification_unregister', 'notification_cancel', 'notification_dismiss', 'channels_read', 'channels_write', 'local_session_clear', 'auth_screen', 'farm_touch', 'farm_press', 'tab_today', 'tab_farm', 'tab_record', 'tab_more'))
+STAGES = frozenset(('trace', 'unlock_press', 'sign_out_press', 'unlock', 'sign_out', 'session_delete', 'notifications_cleanup', 'notification_unregister', 'notification_cancel', 'notification_dismiss', 'channels_read', 'channels_write', 'local_session_clear', 'auth_screen', 'farm_touch', 'farm_press', 'tab_today', 'tab_farm', 'tab_record', 'tab_forum', 'tab_more'))
 PHASES = frozenset(('ready', 'received', 'start', 'complete', 'failed', 'blocked', 'fallback', 'queued', 'committed', 'cancelled', 'limit'))
 
 

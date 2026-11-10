@@ -2,7 +2,7 @@ import { createServer, request } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { join } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 // Only a test harness. This process and these credentials are never bundled into the app.
@@ -39,6 +39,11 @@ if (process.argv[2] === 'seed') {
   const sellerFarms = await api('/v1/farms', null, seller.token);
   ids.sellerFarmId = sellerFarms.items[0].id;
   const sellerBase = `/v1/farms/${ids.sellerFarmId}`;
+  ids.forumId = randomUUID();
+  await api(`${sellerBase}/forum/discussions`, { id: ids.forumId, displayName: 'CommunityGrower', title: 'Native community discussion', topic: 'crops', body: 'Synthetic community fixture; no agronomic advice.', shareWithCommunity: true }, seller.token);
+  ids.forumModerationId = randomUUID();
+  await api(`${base}/forum/discussions`, { id: ids.forumModerationId, displayName: 'NativeFixtureOwner', title: 'Native moderation fixture', topic: 'general', body: 'Synthetic owner moderation fixture; no farming advice.', shareWithCommunity: true }, session.token);
+  await api(`${sellerBase}/forum/entries/${ids.forumModerationId}/reports`, { id: randomUUID(), version: 1, reason: 'other', details: 'Synthetic report to exercise source-farm owner review.' }, seller.token);
   await api(`${sellerBase}/stock`, { id: ids.stockId, name: 'Native acceptance beans', quantity: 10, unit: 'kg' }, seller.token);
   await api(`${sellerBase}/listings`, { id: ids.listingId, stockItemId: ids.stockId, title: 'Native acceptance beans', quantity: 10, price: 6, priceBasis: 'bag', priceQuantity: 2, currency: 'USD', collectionArea: 'Synthetic acceptance collection area' }, seller.token);
   await api(`${sellerBase}/services`, { id: ids.serviceId, name: 'Native acceptance tractor', description: 'Synthetic acceptance service; no external provider', serviceArea: 'Synthetic acceptance area', rate: 25, currency: 'USD', rateBasis: 'hour', minimumCharge: 25, mobilisationCharge: 5, operatorIncluded: true, fuelIncluded: false }, seller.token);
@@ -48,7 +53,39 @@ if (process.argv[2] === 'seed') {
   const session = await api('/v1/sessions', credentials);
   const { items: farms } = await api('/v1/farms', null, session.token);
   const { items } = await api(`/v1/farms/${farms[0].id}/activities`, null, session.token);
-  assert.equal(items.filter(item => item.note === 'Native durable offline observation').length, 1, 'Offline record must reach the server exactly once after restart');
+  try {
+    assert.equal(items.filter(item => item.note === 'Native durable offline observation').length, 1, 'Offline record must reach the server exactly once after restart');
+  } catch (error) {
+    // Observe the already-fetched failed receipt without another request or raw record data.
+    try {
+      const ids = fixture();
+      const expected = 'Native durable offline observation';
+      const records = items.slice(0, 100).map(item => {
+        const note = typeof item.note === 'string' ? item.note : null;
+        return {
+          projectMatchesSeed: item.project_id === ids.projectId,
+          actorMatchesSession: item.actor_id === session.userId,
+          noteType: item.note === null ? 'null' : Array.isArray(item.note) ? 'array' : typeof item.note,
+          noteLength: note === null ? null : note.length,
+          noteUtf8Bytes: note === null ? null : Buffer.byteLength(note, 'utf8'),
+          noteSha256: note === null ? null : createHash('sha256').update(note).digest('hex'),
+          exactNote: note === expected,
+          caseEquivalentNote: note !== null && note.toLowerCase() === expected.toLowerCase(),
+          lineEquivalentNote: note !== null && note.replace(/\n/g, ' ') === expected,
+          selectorTextEquivalentNote: note !== null && note.replace(/\n/g, ' ').toLowerCase() === expected.toLowerCase(),
+        };
+      });
+      console.error('[native-receipt-observation]', JSON.stringify({
+        timestamp: new Date().toISOString(),
+        returnedFarmCount: farms.length,
+        selectedFarmMatchesSeed: farms[0]?.id === ids.farmId,
+        returnedActivityCount: items.length,
+        observedActivityCount: records.length,
+        records,
+      }));
+    } catch { /* Diagnostic failures must not replace the original receipt assertion. */ }
+    throw error;
+  }
   console.log('Verified exactly one offline record after native restart and reconciliation.');
 } else if (process.argv[2] === 'ids') {
   const ids = fixture();
@@ -60,6 +97,7 @@ if (process.argv[2] === 'seed') {
   const session = await api('/v1/sessions', credentials);
   const seller = await api('/v1/sessions', sellerCredentials);
   const base = `/v1/farms/${ids.farmId}`;
+  const sellerBase = `/v1/farms/${ids.sellerFarmId}`;
   const [plans, tasks, expenses, orders, bookings, commands, assets, events, stock, invoices, summary, journals] = await Promise.all([
     api(`${base}/projects/${ids.projectId}/plans`, null, session.token),
     api(`${base}/tasks`, null, session.token),
@@ -119,6 +157,36 @@ if (process.argv[2] === 'seed') {
   const pdf = await fetch(`${origin}${base}/accounting/invoices/${sale.id}/pdf`, { headers: { authorization: `Bearer ${session.token}` } });
   assert.equal(pdf.status, 200); assert.ok(pdf.headers.get('content-type').startsWith('application/pdf')); assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
   console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, private motion acknowledgement, supplier posting, issued sales invoice, exact partial payments, currency summary, balanced journals and authenticated PDF generation. Native camera/gallery/file-picker and OS sharing are not asserted by this journey.');
+  const discussions = await api(`${base}/forum/discussions?mine=true&search=Native%20shared%20farming%20notes`, null, session.token);
+  assert.equal(discussions.items.length, 1, 'Native sharing creates exactly one reviewed discussion');
+  const discussion = discussions.items[0];
+  assert.equal(discussion.title, 'Native shared farming notes');
+  assert.equal(discussion.body, 'Native reviewed forum note.');
+  assert.equal(discussion.displayName, 'NativeForumGrower');
+  assert.equal(discussion.version, 2, 'The native author edit is persisted once');
+  const thread = await api(`${base}/forum/discussions/${discussion.id}`, null, session.token);
+  assert.equal(thread.replies.items.length, 1, 'Native sharing creates exactly one reply');
+  assert.equal(thread.replies.items[0].status, 'deleted', 'The native author explicitly removes the one reply after displaying it');
+  assert.equal(thread.replies.items[0].body, '');
+  assert.equal(thread.replies.items[0].displayName, '');
+  const community = await api(`${base}/forum/discussions/${ids.forumId}`, null, session.token);
+  assert.equal(community.discussion.displayName, 'CommunityGrower');
+  const moderation = await api(`${base}/forum/discussions/${ids.forumModerationId}`, null, session.token);
+  assert.equal(moderation.discussion.status, 'visible');
+  assert.equal(moderation.discussion.version, 3, 'Native owner hides and restores reviewed content once each');
+  assert.equal((await api(`${base}/forum/reports`, null, session.token)).items.length, 0, 'Owner review resolves the seeded report');
+  const communityReports = (await api(`${sellerBase}/forum/reports`, null, seller.token)).items;
+  assert.equal(communityReports.length, 1, 'Cross-farm report is sent to the content farm owners');
+  assert.equal(communityReports[0].reason, 'privacy');
+  assert.equal(communityReports[0].details, 'Native synthetic privacy review.');
+  for (const field of ['reporter_id', 'reporterId', 'username', 'farm_id', 'farmId']) assert.equal(Object.hasOwn(communityReports[0], field), false, `Forum report must not disclose ${field}`);
+  const neverShared = await api(`${base}/forum/discussions?mine=true&search=Native%20forum%20offline%20draft%20must%20stay%20unshared`, null, session.token);
+  assert.equal(neverShared.items.length, 0, 'Failed offline forum publication must not replay after native restart and reconnect');
+  for (const entry of [discussion, ...thread.replies.items, community.discussion]) {
+    for (const field of ['farm_id', 'farmId', 'author_id', 'authorId', 'username', 'payload_hash']) assert.equal(Object.hasOwn(entry, field), false, `Forum must not disclose ${field}`);
+  }
+  console.log('Verified native reviewed plan, expense, bag-priced stock reservation, unconfirmed service request, explicit simulator command, and private motion acknowledgement.');
+  console.log('Verified native forum topic/search, cross-farm reading/report privacy, one explicitly shared discussion, author edit/reply/removal, owner hide/restore, and no offline publication replay after restart.');
 } else if (process.argv[2] === 'proxy') {
   // Test-only diagnostics: fixed categories, no URLs, headers, payloads or raw errors.
   // Cap the entire process log as well as the fields in each event.
@@ -147,6 +215,20 @@ if (process.argv[2] === 'seed') {
   };
   const handler = (incoming, outgoing) => {
     const started = performance.now();
+    // Observe only finite route templates and response metadata, never private
+    // request paths, query strings, headers, account IDs or record bodies.
+    const path = (incoming.url || '').split('?')[0];
+    const route = path === '/v1/sessions' || path === '/v1/farms' ? path
+      : /^\/v1\/farms\/[0-9a-f-]{36}\/activities$/.test(path) ? '/v1/farms/:farmId/activities'
+      : /^\/v1\/farms\/[0-9a-f-]{36}\/forum\/discussions$/.test(path) ? '/v1/farms/:farmId/forum/discussions'
+      : 'other';
+    const method = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(incoming.method) ? incoming.method : 'OTHER';
+    const observe = status => { if (logged++ < 4096) console.log('[native-proxy]', JSON.stringify({ timestamp: new Date().toISOString(), method, route, status, elapsedMs: Math.round(performance.now() - started) })); };
+    observe('pending');
+    let recorded = false;
+    const completed = () => { if (!recorded) { recorded = true; observe(outgoing.writableFinished ? outgoing.statusCode : 'closed'); } };
+    outgoing.once('finish', completed);
+    outgoing.once('close', completed);
     const id = ++sequence;
     const event = (name, fields = {}) => log(name, { sequence: id, duration_ms: Math.round(performance.now() - started), ...fields });
     event('native_proxy_request', {

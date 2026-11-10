@@ -1,0 +1,63 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: forum-open.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-filter-topic
+    centerElement: true
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-filter-topic
+- tapOn:
+    id: forum-filter-topic-option-crops
+- scrollUntilVisible:
+    element:
+      id: forum-search
+    # Keep the search field clear of the fixed bottom navigation before tapping.
+    centerElement: true
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-search
+- eraseText
+- inputText: Native community discussion
+- assertVisible:
+    id: forum-search
+    text: '(?-i)^Native community discussion$'
+- runFlow: dismiss-keyboard.yaml
+- assertVisible:
+    id: tab-forum
+    selected: true
+- scrollUntilVisible:
+    element:
+      id: forum-search-submit
+      enabled: true
+    centerElement: true
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-search-submit
+- scrollUntilVisible:
+    element:
+      id: forum-open-.*
+      text: '^Native community discussion$'
+    centerElement: true
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: forum-open-.*
+    text: '^Native community discussion$'
+- scrollUntilVisible:
+    element:
+      id: forum-back
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: Synthetic community fixture; no agronomic advice.
+    direction: DOWN
+    timeout: 30000
+- assertVisible: CommunityGrower
+- assertVisible: Synthetic community fixture; no agronomic advice.
+- takeScreenshot: native-forum-community-discussion

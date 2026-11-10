@@ -218,6 +218,9 @@ jobs:
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       - name: Native iPhone and iPad journeys
+        # Preserve the current cold XCTest allowance and every application deadline.
+        env:
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
         run: |
           set -euo pipefail
           bash smart-farmer-frontend/mobile/acceptance/ios.sh 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-journey.log"

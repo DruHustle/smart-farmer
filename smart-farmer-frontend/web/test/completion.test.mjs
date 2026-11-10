@@ -24,7 +24,7 @@ test('both supported languages use farm-zone numeric dates without English month
 
 test('sourced observations may queue; approval, stock transfer, financial valuation and camera sessions never queue',()=>{
  for(const path of ['/v1/farms/f/projects/p/records','/v1/farms/f/weather/observations','/v1/farms/f/assets/a/usage'])assert.equal(isQueueable(path,'POST'),true,path);
- for(const path of ['/v1/farms/f/projects/p/plans','/v1/farms/f/projects/p/plans/a/approve','/v1/farms/f/stock/s/transfers','/v1/farms/f/stock/s/valuations','/v1/farms/f/cameras/c/sessions','/v1/farms/f/bookings/b/payments'])assert.equal(isQueueable(path,'POST'),false,path);
+ for(const path of ['/v1/farms/f/projects/p/plans','/v1/farms/f/projects/p/plans/a/approve','/v1/farms/f/stock/s/transfers','/v1/farms/f/stock/s/valuations','/v1/farms/f/cameras/c/sessions','/v1/farms/f/bookings/b/payments','/v1/farms/f/node-red/gateways/g/packages/install','/v1/farms/f/node-red/gateways/g/packages/review','/v1/farms/f/node-red/gateways/g/packages/reconcile'])assert.equal(isQueueable(path,'POST'),false,path);
 });
 
 test('transient transaction retry stays queued while a version conflict preserves the server record for human review',async()=>{
