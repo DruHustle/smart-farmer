@@ -94,15 +94,20 @@ appId: eu.onesa.smartfarmer
     id: "invoice-reference"
 - inputText: "NATIVE-SALE-UI"
 - runFlow: dismiss-keyboard.yaml
+# Stop at full visibility: forced centering can overshoot this field behind
+# the fixed sheet header on iPhone, leaving the following input unfocused.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-line-0-description"
     direction: DOWN
     timeout: 30000
+    visibilityPercentage: 100
 - tapOn:
     id: "invoice-line-0-description"
 - inputText: "Native accepted crop produce"
+- assertVisible:
+    id: "invoice-line-0-description"
+    text: '(?-i)^Native accepted crop produce$'
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     centerElement: true
