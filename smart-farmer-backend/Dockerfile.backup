@@ -8,7 +8,7 @@ RUN npm run build && npm prune --omit=dev
 FROM postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
 # Match the API image's node UID/GID so owner-only media remains readable.
 # This image runs the backup directly and never invokes gosu.
-RUN apk add --no-cache 'python3=3.14.10-r1' 'ca-certificates=20261020-r0' 'musl=1.2.6-r3' 'musl-utils=1.2.6-r3' 'zlib=1.3.2-r1' && \
+RUN apk add --no-cache 'python3=3.14.10-r1' 'ca-certificates=20261020-r0' 'musl=1.2.6-r3' 'musl-utils=1.2.6-r3' 'zlib=1.4-r0' && \
     rm /usr/local/bin/gosu && addgroup -g 1000 farmer && adduser -D -H -u 1000 -G farmer farmer
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
