@@ -13,6 +13,10 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { WorkspaceScreen } from './src/screens/WorkspaceScreen';
 import { Button, Card, Choice, Notice, Sheet, colors, styles } from './src/ui';
 
+function observeSignOutPhase(phase: 'entry' | 'session-delete-completed' | 'notification-cleanup-completed' | 'notification-cleanup-failed' | 'local-auth-state-requested'): void {
+  try { if (__DEV__) console.info('[native-signout]', phase); } catch { /* Diagnostics must not alter sign-out behavior. */ }
+}
+
 function Root() {
   const [language, setLanguage] = useState<Language>('sn');
   const [session, setSession] = useState<Session | null>(null);
@@ -99,14 +103,18 @@ function Root() {
   }
 
   async function signOut() {
+    observeSignOutPhase('entry');
     traceSession('sign_out_press', 'received');
     await sessionGate.run('sign_out', async () => {
       const previous = session;
       setLocked(true);
       await clearLocalSession({
-        forgetSession,
-        clearNotifications: () => previous ? endDeviceNotifications(previous, traceSession) : clearReminders(traceSession),
-        clearState: () => { setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode(''); },
+        forgetSession: async () => { await forgetSession(); observeSignOutPhase('session-delete-completed'); },
+        clearNotifications: async () => {
+          try { if (previous) await endDeviceNotifications(previous, traceSession); else await clearReminders(traceSession); observeSignOutPhase('notification-cleanup-completed'); }
+          catch (error) { observeSignOutPhase('notification-cleanup-failed'); throw error; }
+        },
+        clearState: () => { setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode(''); observeSignOutPhase('local-auth-state-requested'); },
       }, traceSession);
       if (previous) {
         // Local access ends immediately; the server request is best-effort when a connection exists.

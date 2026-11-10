@@ -12,6 +12,7 @@ The repository has been reviewed against the complete [Codex build prompt](docs/
 - [Farmer accounting: supplier scans, sales invoices and books](docs/accounting.md)
 - [Accounting API and exact amount contracts](docs/accounting-api.md)
 - [Equipment, media and commerce API](docs/integrations-api.md)
+- [Farmer Forum sharing, ownership, moderation and API](docs/forum.md)
 - [Hardware compatibility and commissioning](docs/hardware-and-commissioning.md)
 - [Native application instructions](../smart-farmer-frontend/mobile/README.md)
 - [Web application instructions](../smart-farmer-frontend/web/README.md)

@@ -33,7 +33,7 @@ async function fixture(){
   }};
 }
 
-test('GPS tracker ingest is private, signed, replay-safe and geofenced with stale proof',async()=>{
+test('GPS tracker ingest is private, token-authenticated, replay-protected and geofenced with stale proof',async()=>{
  const f=await fixture();
  try{
    const farm='/v1/farms/'+f.owner.farmId;
@@ -84,6 +84,45 @@ test('GPS tracker ingest is private, signed, replay-safe and geofenced with stal
    assert.equal(manual.statusCode,201,manual.body);
    assert.equal(manual.json().manualOnly,true);
    assert.equal(manual.json().ingestToken,undefined);
+ }finally{await f.close();}
+});
+test('a geofence alert stays acknowledged while a newer position overlaps the boundary',async()=>{
+ const f=await fixture();
+ try{
+   const farm='/v1/farms/'+f.owner.farmId;
+   const project=await f.request('POST',farm+'/projects',{name:'Boundary review herd',enterpriseType:'rabbit_growout',asOfDate:'2026-11-01',openingCount:4,countBasis:'verified'});
+   assert.equal(project.statusCode,201,project.body);
+   const fence=await f.request('POST',farm+'/geofences',{id:randomUUID(),name:'Grazing boundary',projectId:project.json().id,latitude:0,longitude:0,radiusMeters:200});
+   assert.equal(fence.statusCode,201,fence.body);
+   const tracker=await f.request('POST',farm+'/trackers',{id:randomUUID(),projectId:project.json().id,animalId:null,provider:'demo',label:'Boundary test tag',externalId:'boundary-test-tag'});
+   assert.equal(tracker.statusCode,201,tracker.body);
+   const endpoint='/v1/trackers/'+tracker.json().id+'/observations',headers={'x-tracker-token':tracker.json().ingestToken};
+   const start=Date.now();
+   const observe=async(latitude:number,accuracyMeters:number,offset:number)=>{
+     const response=await f.request('POST',endpoint,{id:randomUUID(),observedAt:new Date(start+offset).toISOString(),latitude,longitude:0,accuracyMeters,batteryPercent:80,quality:'simulated'},headers);
+     assert.equal(response.statusCode,201,response.body);
+   };
+   const alerts=async()=>(await f.request('GET',farm+'/tracker-alerts')).json().items;
+   await observe(0.003,10,0); // About 334 metres away: conclusively outside.
+   const original=(await alerts()).find((a:any)=>a.kind==='outside_geofence');
+   assert.ok(original);
+   assert.equal((await f.request('POST',farm+'/tracker-alerts/'+original.id+'/acknowledge',{})).statusCode,200);
+   for(const [latitude,accuracy,offset] of [[0.0018,20,1000],[0.0017,20,2000],[0,500,3000]]){
+     // The first two uncertainty circles cross the boundary from either side.
+     // A broadly inaccurate centre fix likewise supplies no return evidence.
+     await observe(latitude,accuracy,offset);
+     const current=(await alerts()).find((a:any)=>a.id===original.id);
+     assert.ok(current,'Uncertain fixes must retain the existing alert');
+     assert.equal(current.status,'acknowledged');
+   }
+   await observe(0,10,-1000); // An old inside fix cannot supersede the newer uncertainty.
+   assert.ok((await alerts()).some((a:any)=>a.id===original.id));
+   await observe(0.001,20,4000); // About 111 metres away: uncertainty is wholly inside.
+   assert.equal((await alerts()).some((a:any)=>a.id===original.id),false);
+   const resolved=await f.db.query('SELECT status,resolved_at,acknowledged_at FROM livestock_tracker_alerts WHERE id=$1',[original.id]);
+   assert.equal(resolved.rows[0].status,'resolved');
+   assert.ok(resolved.rows[0].resolved_at);
+   assert.ok(resolved.rows[0].acknowledged_at,'Resolution retains the original acknowledgement');
  }finally{await f.close();}
 });
 test('market discovery supports scoped favourites, saved searches, follows and matching alerts',async()=>{

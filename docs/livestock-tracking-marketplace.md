@@ -8,7 +8,7 @@ Apple AirTag / Find My requires Apple's own location network. The product stores
 
 A tracker belongs to one farm and exactly one animal project, optionally to an individual identity. If no animal identity is selected, the tracker is a *herd representative*: it does **not** locate every animal in the herd. Only authenticated farm members see coordinates or trail history.
 
-Registration generates a 32-byte one-time random gateway credential. Save that token **outside** the app on a trusted gateway/device secret store; only its SHA-256 hash is retained. It can be rotated or permanently revoked. Never put it in a public URL, browser local storage, git, screenshots, or logs. A header **X-Tracker-Token** is required for read-only ingestion; this prototype is not an OEM device driver. Configure the real gateway to convert trusted vendor telemetry to:
+Registration generates a 32-byte one-time random gateway credential. Save that token **outside** the app on a trusted gateway/device secret store; only its SHA-256 hash is retained. It can be rotated or permanently revoked. Never put it in a public URL, browser local storage, git, screenshots, or logs. A header **X-Tracker-Token** authorizes telemetry ingestion only; it does not provide a per-observation vendor signature or authorize device commands. This prototype is not an OEM device driver. Configure the real gateway to convert trusted vendor telemetry to:
 
 ```http
 POST /v1/trackers/{trackerId}/observations
@@ -22,7 +22,7 @@ Replace the placeholders and coordinates with actual device observations. For a 
 
 User interface: web **Farm → Animals → Herd tracking** and native **Farm → Animals**. Both show tag identity, source, age, battery, coordinates, history and explicit external-map actions. A map link sends exact coordinates to OpenStreetMap *only when clicked*. No auto-sharing or publicly accessible location endpoint is provided.
 
-A location observed more than **30 minutes** ago is marked *stale*. A circle geofence is a farmer-entered radius of 30–50,000 m. A definite outside alert requires a sufficiently accurate fix and distance greater than radius **plus** reported accuracy; uncertain positions should not trigger definitive alarms. Battery readings at or below 15% open an alert. Acknowledgement is not the same as resolution. GPS positions, alerts and animal identities are private, sensitive operational information; use least privilege and data-retention policies.
+A location observed more than **30 minutes** ago is marked *stale*. A circle geofence is a farmer-entered radius of 30–50,000 m. A definite outside alert requires a sufficiently accurate fix and distance greater than radius **plus** reported accuracy. Resolution requires a newer fix whose distance **plus** reported accuracy fits wholly inside the radius. A position whose uncertainty overlaps the boundary preserves the previous alert and acknowledgement; it neither opens a definite outside alert nor proves a return. Battery readings at or below 15% open an alert. Acknowledgement is not the same as resolution. GPS positions, alerts and animal identities are private, sensitive operational information; use least privilege and data-retention policies.
 
 **Not yet commissioned:** GPS collars/ear tags, LoRaWAN network server or SIM APN configuration, vendor authentication and signing, data-use consent, real radio propagation, active animal health sensing, actual anti-poaching response procedures, continuous push/SMS alerts, and hardware acceptance tests.
 

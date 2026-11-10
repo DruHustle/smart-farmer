@@ -15,7 +15,16 @@ tar -xf "$RUNNER_TEMP/native-encryption/cache.tar" -C "$RUNNER_TEMP/native-encry
 python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$RUNNER_TEMP/native-encryption" > "$EVIDENCE/android-encryption.txt"
 rm "$NATIVE_OFFLINE_FLAG"
 maestro test --format junit --output "$EVIDENCE/android-reconcile.xml" --test-output-dir "$EVIDENCE/android-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
-node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/android-exactly-once.txt"
+if node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/android-exactly-once.txt"; then
+  :
+else
+  native_receipt_status=$?
+  # Observe only after the original receipt failed; never retry or delay it.
+  maestro hierarchy --no-reinstall-driver > "$EVIDENCE/android-receipt-failure-current.json" 2> "$EVIDENCE/android-receipt-failure-current.log" || true
+  maestro test --no-reinstall-driver --format junit --output "$EVIDENCE/android-receipt-diagnostic.xml" --test-output-dir "$EVIDENCE/android-receipt-diagnostic" "$NATIVE_DIR/acceptance/receipt-diagnostic.yaml" > "$EVIDENCE/android-receipt-diagnostic.log" 2>&1 || true
+  maestro hierarchy --no-reinstall-driver > "$EVIDENCE/android-receipt-failure-queue.json" 2> "$EVIDENCE/android-receipt-failure-queue.log" || true
+  exit "$native_receipt_status"
+fi
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" android
 bash "$NATIVE_DIR/acceptance/accounting-intake.sh" android
 # Never upload raw databases, session credentials, or key material as evidence.

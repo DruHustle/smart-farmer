@@ -93,6 +93,7 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
   const merged=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);
   assert.equal(merged.evidence,'Worker examined the inlet');
   assert.equal(merged.version,3);
+  await visible(worker.getByText(nd.emptyOutbox,{exact:true}));
   await worker.getByLabel(nd.language,{exact:true}).selectOption('sn');await nav(worker,'today');await worker.locator('.record-fab').click();let dialog=worker.locator('dialog');await fill(dialog,{projectId:project.id,kind:'irrigation',taskId:task.id,quantity:120,unit:'l',note:'Assigned irrigation completed',observedAt:observed});await submit(worker,dialog,`${base}/activities`);assert.equal((await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id).status,'completed');
   pass('Acceptance 1, 3, 4: worker invitation in Ndebele, restricted money access, explicit two-actor conflict review and task-linked irrigation');
 

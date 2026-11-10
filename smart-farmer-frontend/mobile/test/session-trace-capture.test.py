@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('session_trace_capture', Path(__file__).parent.parent / 'acceptance' / 'capture-session-trace.py')
 capture = importlib.util.module_from_spec(spec)
@@ -50,6 +51,73 @@ class CaptureTests(unittest.TestCase):
         self.assertFalse(values[-1]['traceReady'])
         self.assertEqual(values[-1]['records'], capture.LIMIT)
         self.assertLess(len(output.getvalue()), 32 * 1024)
+
+    def check_denied_operation(self, denied_signal, expected_calls):
+        canary = 'private-process-error-must-not-appear'
+        output = io.StringIO()
+        receipts = capture.Receipts(output)
+        receipts.accept(self.line(self.value))
+        child = mock.Mock(pid=43210)
+        calls = []
+
+        def signal_group(pid, value):
+            self.assertEqual(pid, child.pid)
+            calls.append(value)
+            if value == denied_signal:
+                raise PermissionError(1, canary)
+
+        with mock.patch.object(capture.os, 'killpg', side_effect=signal_group), mock.patch.object(capture.time, 'monotonic', side_effect=[0, 3]), mock.patch.object(capture.time, 'sleep') as sleep:
+            capture.finish_capture(child, receipts, 'stopped')
+        self.assertEqual(calls, expected_calls, 'A denied operation must stop further group signals/probes')
+        sleep.assert_not_called()
+        child.wait.assert_called_once_with(timeout=2)
+        child.stdout.close.assert_called_once_with()
+        values = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(values, [self.value, {'event': 'capture_status', 'reason': 'stop_denied', 'traceReady': True, 'records': 1, 'limited': False}])
+        self.assertNotIn(canary, output.getvalue())
+
+    def test_denied_term_stops_group_operations_but_retains_terminal_failure(self):
+        self.check_denied_operation(signal.SIGTERM, [signal.SIGTERM])
+
+    def test_denied_probe_stops_group_operations_but_retains_terminal_failure(self):
+        self.check_denied_operation(0, [signal.SIGTERM, 0])
+
+    def test_denied_kill_stops_group_operations_but_retains_terminal_failure(self):
+        self.check_denied_operation(signal.SIGKILL, [signal.SIGTERM, 0, signal.SIGKILL])
+
+    def check_terminal_receipt_survives(self, cleanup_error=None, close_error=None, cleanup_result=None, expected='stop_failed'):
+        output = io.StringIO()
+        receipts = capture.Receipts(output)
+        child = mock.Mock(pid=43210)
+        child.stdout.close.side_effect = close_error
+        with mock.patch.object(capture, 'stop_capture_group', side_effect=cleanup_error, return_value=cleanup_result):
+            capture.finish_capture(child, receipts, 'stream_ended')
+        child.stdout.close.assert_called_once_with()
+        self.assertEqual(json.loads(output.getvalue()), {'event': 'capture_status', 'reason': expected, 'traceReady': False, 'records': 0, 'limited': False})
+        self.assertNotIn('private-error', output.getvalue())
+
+    def test_unexpected_cleanup_exception_cannot_hide_terminal_failure(self):
+        self.check_terminal_receipt_survives(cleanup_error=RuntimeError('private-error'))
+
+    def test_stdout_close_exception_cannot_hide_terminal_failure(self):
+        self.check_terminal_receipt_survives(close_error=OSError('private-error'), expected='close_failed')
+
+    def test_cleanup_and_stdout_close_exceptions_still_emit_one_terminal_failure(self):
+        self.check_terminal_receipt_survives(cleanup_error=RuntimeError('private-error'), close_error=OSError('private-error'))
+
+    def test_stdout_close_failure_does_not_hide_denied_cleanup(self):
+        self.check_terminal_receipt_survives(cleanup_result='stop_denied', close_error=OSError('private-error'), expected='stop_denied')
+
+    def test_reap_remains_bounded_and_reports_timeout(self):
+        output = io.StringIO()
+        child = mock.Mock(pid=43210)
+        child.wait.side_effect = subprocess.TimeoutExpired('private-error', 2)
+        with mock.patch.object(capture.os, 'killpg', side_effect=ProcessLookupError) as signal_group:
+            capture.finish_capture(child, capture.Receipts(output), 'stopped')
+        signal_group.assert_called_once_with(child.pid, signal.SIGTERM)
+        child.wait.assert_called_once_with(timeout=2)
+        self.assertEqual(json.loads(output.getvalue())['reason'], 'stop_timeout')
+        self.assertNotIn('private-error', output.getvalue())
 
     def check_live_capture(self, ignores_term, orphan=False):
         with tempfile.TemporaryDirectory() as directory:

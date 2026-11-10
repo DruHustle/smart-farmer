@@ -1,5 +1,10 @@
 # Optional Smart Farmer Python / Node-RED edge
 
+Farm owners can use the optional [Node-RED package manager](../docs/node-red-packages.md)
+after its private maintenance route is enrolled. It adds exact reviewed node/plugin
+versions; package code can affect flows and devices, so approval and commissioning
+remain separate from this observation-only ingestion path.
+
 **Status: software candidate, not commissioned.** Smart Farmer has its *own* Node-RED,
 Python Edge Agent, databases, secrets and operating procedures. It does not rely on
 Smart Factory, IMSOP or a common Onesa runtime.

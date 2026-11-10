@@ -2,6 +2,12 @@
 
 An independent React Native application for Android, iPhone and iPad. The committed `ios/` Xcode project serves both iPhone and iPad; `android/` contains the Android Gradle project. The web application remains a separate client. This application calls the backend's `/v1` API and does not import backend or web implementation.
 
+The Forum bottom tab provides signed-in farming discussions, topics/search,
+explicit text sharing and replies, author edits/removal, private reporting and
+source-farm-owner moderation. It does not attach private farm data or media, and
+it does not queue or replay publication offline. Unsent composer text stays in
+memory only while the form is open. See the [sharing and authority model](../../smart-farmer-backend/docs/forum.md).
+
 ## Setup and builds
 
 Use Node 24.3 or newer on the Node 24 line. Dependencies are locked to Expo SDK 58 (`expo` 58.0.23), React Native 0.88.1 and React 19.3.0.
@@ -144,6 +150,61 @@ After consent, the ordinary backend worker processes the same private `MEDIA_ROO
 The generated PNG enters the actual library through [Maestro 2.12.0 `addMedia`](https://github.com/mobile-dev-inc/Maestro/tree/cli-2.12.0); its iOS driver uses `simctl addmedia`, and its Android driver writes to MediaStore. Native intake converts that image to JPEG, so retained-source validation compares the downloaded JPEG with the server's content hash, not the seeded PNG hash.
 
 The strict gallery selectors are source-supported candidates and still need a passing run on the pinned Android API 36/iOS runtime. If an OS selector differs, the journey fails and retains the real hierarchy for review. It uses no coordinate fallback or picker/OCR mock. A local real-PostgreSQL/API test verifies the generated raster after two JPEG passes, actual ordinary-worker extraction, financial phase assertions and source retention; that test does not establish OS-picker coverage. Positive camera capture, PDF-file-picker selection and OS sharing remain separate device acceptance requirements. No simulator gallery result establishes physical camera image quality or permission behavior.
+
+### Retained development-launch diagnostics
+
+The following observer coverage was added on the development-client path before accounting integration. The integrated iOS acceptance app embeds Release JavaScript and does not request a Metro manifest at startup. Native log capture remains useful, but a Metro-triggered thread observation can therefore be inconclusive; that diagnostic is not an acceptance requirement and cannot turn a failed journey into a pass. The bounded session trace also remains available for the Release app. The current workflow gives a cold XCTest driver 240 seconds to start; application request deadlines and journey assertions are unchanged.
+
+The optional Darwin thread observer may discard one prelaunch heartbeat whose
+wall timestamp and monotonic sample disagree. It clears the old baseline and
+requires a strictly newer, valid heartbeat from the same process clock before
+arming. A later-delivered launch event must also timestamp strictly after the
+reset heartbeat; delivery order cannot hide an overlap with the launch window.
+The result records that reset and whether the baseline recovered. A second
+mismatch, malformed input or any mismatch during the launch window still
+refuses observation. This diagnostic does not retry app startup, change request
+deadlines or turn a failed native journey into acceptance.
+
+Metro heartbeat records also retain `sampleStartedMs`, `emissionStartedMs` and
+`collectionDurationMs` on the process monotonic clock. The sample start remains
+the existing `intervalEndMs`; emission start is measured after CPU, event-loop
+and GC collection, immediately before formatting the log. This separates late
+callback entry from elapsed time inside diagnostic collection, which can include
+process descheduling. It does not measure serialization or the synchronous log
+write, identify a stall cause, or change heartbeat admission. The retained PR9
+run at `1048696` failed heartbeat validation before native launch; these fields provide
+context for a future diagnostic run without reclassifying that original failure.
+
+Each device launch now has its own observer, native log and stop marker. The
+phone retains `ios-thread-observation.json`; the tablet writes
+`ios-tablet-thread-observation.json`. The later tablet observer starts at the
+current end of Metro's log, so earlier phone requests, heartbeats and stop state
+cannot become tablet evidence. It still requires a newly observed valid
+heartbeat before sampling, and retains the same clock, query, sample and cleanup
+bounds. The observer never launches the app or repeats a manifest request.
+
+After a timely native launch, the observer also retains at most 32 recent phase
+timings and the longest duration for each fixed phase, with its own process CPU
+deltas. Two numeric snapshots bracket the observed interval with aggregate
+runner CPU counters, load averages and free/total memory. Their wall timestamps
+show how that interval overlaps the existing ten-second launch window; they are
+not per-process or instantaneous scheduler measurements. CPU names, process
+lists, file contents and host identity are not recorded. Missing or reset
+counters remain unavailable. A late observer still reports `helper_late`; these
+details do not change the thread-reader trigger, sampling or cleanup limits.
+The retained PR9 native failure had no target-thread samples, so this context
+can explain where evidence was lost without assigning a CPU, I/O or scheduling
+cause or claiming that startup has been repaired.
+
+The retained actual-main [native run 42394429408](https://github.com/DruHustle/smart-farmer/actions/runs/42394429408)
+at `32ffb11` passed Android and all four iPhone flows, but its iPad login failed
+before authentication after the local development manifest request timed out.
+The phone-only observer did not cover that tablet launch. The separate tablet
+observation closes this diagnostic gap; it does not establish the timeout's
+CPU, GC or scheduling cause or claim a successful iPad journey. Native acceptance
+must still run against the new source with the existing assertions and limits.
+
+The reproduction command and platform-specific cache boundaries are described above. These historical development-client observations do not establish native acceptance of the integrated accounting, forum and equipment-management source; dispatch the workflow for that exact revision and inspect its new evidence.
 
 ## Physical release acceptance
 

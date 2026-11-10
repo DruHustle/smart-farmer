@@ -1,5 +1,5 @@
 // Acceptance diagnostics carry fixed categories only. Never pass event/session data or errors to this API.
-const stages = ['trace', 'unlock_press', 'sign_out_press', 'unlock', 'sign_out', 'session_delete', 'notifications_cleanup', 'notification_unregister', 'notification_cancel', 'notification_dismiss', 'channels_read', 'channels_write', 'local_session_clear', 'auth_screen', 'farm_touch', 'farm_press', 'tab_today', 'tab_farm', 'tab_record', 'tab_more'] as const;
+const stages = ['trace', 'unlock_press', 'sign_out_press', 'unlock', 'sign_out', 'session_delete', 'notifications_cleanup', 'notification_unregister', 'notification_cancel', 'notification_dismiss', 'channels_read', 'channels_write', 'local_session_clear', 'auth_screen', 'farm_touch', 'farm_press', 'tab_today', 'tab_farm', 'tab_record', 'tab_forum', 'tab_more'] as const;
 const phases = ['ready', 'received', 'start', 'complete', 'failed', 'blocked', 'fallback', 'queued', 'committed', 'cancelled', 'limit'] as const;
 export type SessionStage = typeof stages[number];
 export type SessionPhase = typeof phases[number];

@@ -27,7 +27,8 @@ appId: eu.onesa.smartfarmer
     id: "action-confirm"
 - extendedWaitUntil:
     visible:
-      id: "camera-player-ready"
+      # A short clip can finish before the native tap is acknowledged.
+      id: "camera-player-(ready|completed)"
     timeout: 45000
 - assertNotVisible:
     id: camera-player-error

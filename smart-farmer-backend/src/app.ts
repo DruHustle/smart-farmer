@@ -10,11 +10,13 @@ import { registerOperations } from "./operations.js";
 import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
 import { registerFarmEdgeRoutes } from "./edge.js";
+import { registerNodeRedPackages, type NodeRedOptions } from "./node-red/routes.js";
 import { registerLivestock } from "./livestock.js";
 import { registerLivestockTracking } from "./tracking.js";
 import { registerAccounting } from "./accounting/routes.js";
 import { registerAccountingDocuments } from "./accounting/documents.js";
 import { registerAccountingPdf } from "./accounting/invoice-pdf.js";
+import { registerForum } from "./forum.js";
 import {
   registerIntegrations,
   type IntegrationOptions,
@@ -24,6 +26,7 @@ export function buildApp(
   db: pg.Pool,
   origin: string,
   integrations: IntegrationOptions = {},
+  nodeRed: NodeRedOptions = {},
 ) {
   // Forwarded client addresses are accepted only from explicitly named proxy
   // IPs; a deployment must also ensure its ingress replaces untrusted headers.
@@ -98,7 +101,7 @@ export function buildApp(
     app.get("/ready", async (_req, reply) => {
       try {
         const r = await db.query(
-          "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND to_regclass('accounting_invoices') IS NOT NULL AND to_regclass('accounting_documents') IS NOT NULL AND to_regclass('accounting_journals') IS NOT NULL AND to_regclass('livestock_trackers') IS NOT NULL AND to_regclass('market_saved_searches') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
+          "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND to_regclass('accounting_invoices') IS NOT NULL AND to_regclass('accounting_documents') IS NOT NULL AND to_regclass('accounting_journals') IS NOT NULL AND to_regclass('livestock_trackers') IS NOT NULL AND to_regclass('market_saved_searches') IS NOT NULL AND to_regclass('forum_entries') IS NOT NULL AND to_regclass('forum_reports') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AS ready",
         );
         if (!r.rows[0].ready) throw new Error("Schema not ready");
         return { status: "ok" };
@@ -109,9 +112,11 @@ export function buildApp(
     const ctx = createContext(db);
     registerIdentity(app, ctx);
     registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
+    registerNodeRedPackages(app, ctx, nodeRed);
     registerCore(app, ctx);
     registerLivestock(app, ctx);
     registerLivestockTracking(app, ctx);
+    registerForum(app, ctx);
     registerIntegrations(app, ctx, integrations);
     registerProduct(app, ctx);
     registerAccounting(app, ctx);

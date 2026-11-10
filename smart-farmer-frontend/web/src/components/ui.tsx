@@ -9,6 +9,7 @@ export function Icon({name, size = 20}: {name: string; size?: number}) {
     market: <><path d="M3 9h18l-2-6H5Zm1 0v12h16V9M9 21v-7h6v7M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/></>,
     services: <><path d="m14 6 4 4m-13 9 4-4 6-6a6 6 0 0 0 6-7l-4 4-3-3 4-4a6 6 0 0 0-7 6L2 14a3 3 0 0 0 3 5Z"/></>,
     more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+    forum: <><path d="M4 3h16v13H9l-5 5V3Z"/><path d="M8 7h8M8 11h6"/></>,
     plus: <path d="M12 5v14M5 12h14"/>, chevron: <path d="m9 5 7 7-7 7"/>, back: <path d="m15 5-7 7 7 7"/>, close: <path d="m6 6 12 12M6 18 18 6"/>,
     check: <path d="m4 12 5 5L20 6"/>, sync: <><path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/></>,
     stock: <><path d="m3 7 9-4 9 4-9 4Zm0 0v11l9 4 9-4V7M12 11v11M7 5l10 4"/></>,

@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ApiError, audit, type Context, manageRoles} from './context.js';
 import {hashPassword, verifyPassword, sha256, token} from './security.js';
+import {NODE_RED_CAPABILITY} from './node-red/types.js';
 
 const uuid=z.string().uuid();
 const username=z.string().trim().min(3).max(80).regex(/^[a-zA-Z0-9._-]+$/).transform(s=>s.toLowerCase());
@@ -77,7 +78,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     });
     return reply.code(204).send();
   });
-  app.get('/v1/farms',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const r=await db.query('SELECT f.id,f.name,f.timezone,m.role FROM farms f JOIN memberships m ON m.farm_id=f.id WHERE m.user_id=$1 ORDER BY f.name',[id]);return {items:r.rows};});
+  app.get('/v1/farms',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const r=await db.query('SELECT f.id,f.name,f.timezone,m.role FROM farms f JOIN memberships m ON m.farm_id=f.id WHERE m.user_id=$1 ORDER BY f.name',[id]);return {items:r.rows,capabilities:[NODE_RED_CAPABILITY]};});
   app.post('/v1/farms',async(req,reply)=>{
     const id=await user(req,reply);if(!id)return;const b=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(80).default('Africa/Harare')}).strict().parse(req.body);
     try{new Intl.DateTimeFormat('en',{timeZone:b.timezone});}catch{throw new ApiError('invalid_timezone');}

@@ -244,6 +244,12 @@ export async function accountingJourneys({page, context, browser, api, ui, apiCa
   for (const [width, height, name] of [[320, 740, 'small-phone'], [768, 1024, 'tablet'], [1280, 900, 'desktop']]) {
     await page.setViewportSize({width, height}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${name} invoice must not overflow the page`);
     await page.screenshot({path: resolve(artifacts, `accounting-${name}-sn.png`), fullPage: true});
+    if (width === 320) {
+      await page.evaluate(() => window.scrollTo({top: 0, behavior: 'instant'}));
+      await page.screenshot({path: resolve(artifacts, 'accounting-small-phone-top-viewport.png'), fullPage: false});
+      await page.locator('.invoice-balance-facts').scrollIntoViewIfNeeded();
+      await page.screenshot({path: resolve(artifacts, 'accounting-small-phone-actions-viewport.png'), fullPage: false});
+    }
     const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze(); await writeFile(resolve(artifacts, `axe-accounting-${name}-sn.json`), JSON.stringify(axe, null, 2)); assert.deepEqual(axe.violations.map(item => ({id: item.id, nodes: item.nodes.map(node => node.target)})), []);
   }
   await page.getByLabel(sn.language, {exact: true}).selectOption('nd'); await visible(page.getByRole('heading', {name: nd.accounting, exact: true}));

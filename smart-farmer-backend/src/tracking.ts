@@ -148,11 +148,14 @@ export function registerLivestockTracking(app:FastifyInstance,ctx:Context) {
         for(const fence of fences.rows) {
           const valid=b.accuracyMeters!==null&&b.accuracyMeters<=Math.min(150,Number(fence.radius_m)/2);
           if(!valid)continue; // uncertain fixes must not generate definite border alarms
-          const outside=distanceMeters(b.latitude,b.longitude,Number(fence.latitude),Number(fence.longitude))>Number(fence.radius_m)+b.accuracyMeters!;
+          const distance=distanceMeters(b.latitude,b.longitude,Number(fence.latitude),Number(fence.longitude));
+          const outside=distance>Number(fence.radius_m)+b.accuracyMeters!;
+          const inside=distance+b.accuracyMeters!<=Number(fence.radius_m);
           if(outside) {
             await c.query("INSERT INTO livestock_tracker_alerts(id,farm_id,tracker_id,geofence_id,reading_id,kind) VALUES($1,$2,$3,$4,$5,'outside_geofence') ON CONFLICT DO NOTHING",
               [randomUUID(),t.farm_id,trackerId,fence.id,b.id]);
-          } else {
+          } else if(inside) {
+            // Overlapping the boundary is not evidence that an animal returned.
             await c.query("UPDATE livestock_tracker_alerts SET status='resolved',resolved_at=now() WHERE tracker_id=$1 AND geofence_id=$2 AND status<>'resolved'",[trackerId,fence.id]);
           }
         }
