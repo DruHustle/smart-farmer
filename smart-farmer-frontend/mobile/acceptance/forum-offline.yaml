@@ -8,6 +8,15 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: forum-compose-name
 - inputText: OfflineForumGrower
+- assertVisible:
+    id: forum-compose-name
+    text: '^OfflineForumGrower$'
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: forum-compose-title
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: forum-compose-title
 - inputText: Native forum offline draft must stay unshared
