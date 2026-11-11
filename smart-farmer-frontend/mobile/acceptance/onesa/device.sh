@@ -11,7 +11,10 @@ case "$platform" in
     ;;
   android)
     for port in 8081 46501 46502 46504; do adb reverse tcp:"$port" tcp:"$port"; done
-    bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt"
+    if ! bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt"; then
+      echo 'FAIL Android user CA installation in Settings. Portal sign-in scenarios UNTESTED.' > "$evidence/android-results.txt"
+      exit 1
+    fi
     adb install -r smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
     device=$(adb get-serialno)
     ;;
@@ -21,7 +24,7 @@ esac
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
 status=0
-for role in member admin; do
+for role in cancel member admin; do
   if [[ "$platform" == ios ]]; then
     xcrun simctl erase "$device"
     xcrun simctl boot "$device"
@@ -33,16 +36,23 @@ for role in member admin; do
     adb shell pm clear eu.onesa.smartfarmer
     adb shell am start -n eu.onesa.smartfarmer/.MainActivity
   fi
-  prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
-  email=$(read_fixture "${prefix}_EMAIL")
-  opts=(-e ROLE="$role" -e EMAIL="$email" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+  states=(cancel)
+  opts=()
+  if [[ "$role" != cancel ]]; then
+    states=(cold active)
+    prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
+    opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+  fi
   reference=''
-  for state in cold active; do
+  for state in "${states[@]}"; do
     private="$RUNNER_TEMP/onesa-device/$role-$state"
     mkdir -p "$private"
-    if maestro --device "$device" test "${opts[@]}" --test-output-dir "$private" --debug-output "$private" "$dir/$state.yaml" > "$private/run.log" 2>&1 &&
-       mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; then
-      reference="$mapped"
+    # Add arguments through positional parameters, including the empty cancel set
+    # on the older Bash shipped by macOS runners.
+    set -- ${opts[@]+"${opts[@]}"}
+    if maestro --device "$device" test "$@" --test-output-dir "$private" --debug-output "$private" "$dir/$state.yaml" > "$private/run.log" 2>&1 &&
+       { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; }; then
+      reference="${mapped:-}"
       echo "$role $state PASS" | tee -a "$evidence/$platform-results.txt"
     else
       status=1
@@ -54,6 +64,9 @@ for role in member admin; do
       break
     fi
   done
+  # Only the intentionally named, confirmed signed-out frame is shareable.
+  signed_out=$(find "$RUNNER_TEMP/onesa-device/$role-${states[0]}" -type f -iname '*signed-out-smart-farmer*.png' -print -quit)
+  if [[ -n "$signed_out" ]]; then cp "$signed_out" "$evidence/$platform-$role-signed-out.png"; fi
   if [[ "$platform" == ios ]]; then xcrun simctl shutdown "$device"; fi
 done
 exit "$status"

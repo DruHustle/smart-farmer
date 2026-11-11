@@ -1,14 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
-- runFlow: launch.yaml
-- extendedWaitUntil:
-    visible: '^Continue$'
-    timeout: 120000
-- tapOn: '^Continue$'
-- tapOn: '^Close$'
-- extendedWaitUntil:
-    visible: {id: auth-onesa}
-    timeout: 120000
+- runFlow: entry.yaml
 - runFlow: open.yaml
 - extendedWaitUntil:
     visible: '^Email address$'

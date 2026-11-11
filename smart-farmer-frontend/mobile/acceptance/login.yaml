@@ -43,6 +43,7 @@ appId: eu.onesa.smartfarmer
     visible:
       id: auth-username
     timeout: 120000
+- takeScreenshot: signed-out-smart-farmer
 - runFlow: credentials.yaml
 - extendedWaitUntil:
     visible:

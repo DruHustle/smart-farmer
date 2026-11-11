@@ -101,3 +101,9 @@ export type Words = Record<Key, string>;
 export const catalog = Object.fromEntries((['sn', 'nd'] as const).map((lang, index) => [lang, Object.fromEntries(Object.entries(phrases).map(([key, values]) => [key, values[index]]))])) as Record<Lang, Words>;
 export function label(words: Words, key: string): string {return words[key as Key] ?? (/^(kg|g|l|ml|mm|cm|m|m2|m3|ha|h|s|bar|kPa|V|A|kW|kWh|rpm|pH|°C|C|%|l\/min|m3\/h|km\/h)$/.test(key) ? key : words.unknown);}
 export function errorLabel(words: Words, error: unknown): string {const code = error instanceof Error ? error.message : String(error); if (code === 'Failed to fetch' || code === 'Load failed' || code === 'TimeoutError' || code.includes('aborted')) return words.network_error; return words[code as Key] ?? words.error;}
+
+export function translatedNotice(message: string, from: Lang, to: Lang): string {
+  if (!message || from === to) return message;
+  const key = (Object.keys(catalog[from]) as Key[]).find(key => catalog[from][key] === message);
+  return key ? catalog[to][key] : message;
+}

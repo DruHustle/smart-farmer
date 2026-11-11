@@ -2,7 +2,7 @@ import {lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExterna
 import {Auth} from './Auth';
 import {destination, pagePath} from './lib/destination';
 import {AccountDeletion} from './pages/AccountDeletion';
-import {catalog, errorLabel, label} from './locales';
+import {catalog, errorLabel, label, translatedNotice} from './locales';
 import {ApiError, request, jsonBody, uploadRecord} from './lib/api';
 import {displayTime} from './lib/time';
 import {accountingDataAfterRoleChange} from './lib/accounting-intent';
@@ -124,6 +124,7 @@ export function App() {
     if (navigator.onLine) void sync(vault.snapshot().preferences?.automaticMedia ?? false);
   }
   async function changeLanguage(value: Lang) {
+    setNotice(current => translatedNotice(current, lang, value));
     setLanguage(value);
     if (!vault) return;
     await vault.mutate(next => {next.language = value;});
