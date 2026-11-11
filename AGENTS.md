@@ -20,6 +20,14 @@ native `npm test && npm run typecheck`, and the affected real browser journeys.
 `smart-farmer-frontend/web/test/browser.mjs` exercises actual API/database flows.
 Native JavaScript export does not prove an APK/AAB, signed iPhone archive,
 physical device, Apple Pay/Google Pay, or store acceptance.
+Local qualification on 11 November 2026 also compiled ARM64 Android release
+APK/AAB and debug builds with Java 21, an unsigned iPhoneOS archive, and an
+ad-hoc iOS Simulator build with Xcode 27.2. The installed Android app passed
+startup, language persistence, real API login, SQLCipher, offline restart and
+exactly-once reconciliation checks. Exact artifact hashes and scope are in
+`local-tools/deployment-evidence/2026-11-11` and the matching verification folder.
+Keep generated CocoaPods and Metro configuration changes separate from intended
+source changes; restore only generated files after preserving build evidence.
 
 Onesa Portal is the identity authority. Bind identities by issuer and subject,
 never email alone. Approved ordinary accounts receive farm access only through

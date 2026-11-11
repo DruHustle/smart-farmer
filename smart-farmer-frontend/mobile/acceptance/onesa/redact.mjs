@@ -7,7 +7,10 @@ const text = existsSync(file) ? readFileSync(file,'utf8') : '';
 const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation','tab-forum','forum-new',
   'Email address','Authenticator or recovery code','Remember this browser','Continue as','Cancel sign-in',
   'Dzokera muSmart Farmer','Buyela ku-Smart Farmer','Use without an account','Your connection is not private',
-  'Development servers','Continue','Close','Open','No thanks','Chrome','Save password','Sign in to Onesa'];
+  'Development servers','Continue','Close','Open','No thanks','Chrome','Save password','Sign in to Onesa',
+  'Encryption & credentials','Install a certificate','CA certificate','Install anyway',
+  'Show roots','Open navigation drawer','Open from','Onesa test issuer','farmer-device-ca.crt',
+  'Onesa temporary device fixture','com.google.android.documentsui','com.android.documentsui'];
 console.log('Visible screen landmarks: '+landmarks.filter(s=>text.includes(s)).join(', '));
 const runFile = join(process.argv[2],'run.log');
 if (existsSync(runFile)) {

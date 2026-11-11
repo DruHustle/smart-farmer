@@ -35,8 +35,12 @@ case "$platform" in
     else
       node "$dir/redact.mjs" "$private" | tee "$evidence/android-entry.txt"
     fi
-    if ! bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt"; then
+    ca_private="$RUNNER_TEMP/onesa-device/ca-install"
+    mkdir -p "$ca_private"
+    if ! bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt" > "$ca_private/run.log" 2>&1; then
       echo 'FAIL Android user CA installation in Settings. Portal sign-in scenarios UNTESTED.' > "$evidence/android-results.txt"
+      maestro --device "$device" hierarchy > "$ca_private/hierarchy.json" 2>/dev/null || true
+      node "$dir/redact.mjs" "$ca_private" > "$evidence/android-ca-landmarks.txt"
       exit 1
     fi
     ;;

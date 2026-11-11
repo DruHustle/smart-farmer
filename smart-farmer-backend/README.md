@@ -31,7 +31,7 @@ Membership changes and removals recheck the acting owner's role inside the farm-
 
 No real farm measurements, animal counts, balances, hardware credentials, payment-provider settlement or native signing identities are supplied as seed data. Unknown facts stay unknown. Demonstration/test fixtures are isolated and must not be published as real listings or farm data.
 
-Shared sign-in accepts a current Portal assertion scoped to the Farmer client.
+Shared sign-in accepts a current Portal assertion scoped to the Farmer client. Explicitly rejected or substituted central authority permanently retires that local session and its encrypted grant. Restoring central access requires a fresh sign-in; temporary issuer outages remain retryable. Local expiry and logout are rechecked after the issuer response.
 An approved user has the Farmer product role `user`. Platform administrators
 require the `admin` Farmer role and MFA. Both enter with their existing farm
 memberships, and a first sign-in creates an empty farm list. The API checks the
