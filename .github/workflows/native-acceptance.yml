@@ -137,7 +137,8 @@ jobs:
     # Use the standard ARM simulator runner. The Intel XCTest process exceeded
     # the startup deadline before it served its first request; retain that deadline.
     runs-on: macos-26
-    timeout-minutes: 75
+    # The phone and tablet run sequentially. Leave time for the tablet product flow after invoice intake.
+    timeout-minutes: 100
     concurrency:
       group: native-ios-${{ github.ref }}
       cancel-in-progress: false
