@@ -7,6 +7,7 @@ import type pg from "pg";
 import { ApiError, createContext } from "./context.js";
 import { registerProduct } from "./product.js";
 import { registerOperations } from "./operations.js";
+import { identityConfig, registerOnesa } from "./onesa-identity.js";
 import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
 import { registerFarmEdgeRoutes } from "./edge.js";
@@ -100,7 +101,7 @@ export function buildApp(
     app.get("/ready", async (_req, reply) => {
       try {
         const r = await db.query(
-          "SELECT to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND to_regclass('accounting_invoices') IS NOT NULL AND to_regclass('accounting_documents') IS NOT NULL AND to_regclass('accounting_journals') IS NOT NULL AND to_regclass('forum_entries') IS NOT NULL AND to_regclass('forum_reports') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='camera_access' AND column_name='farm_id') AS ready",
+          "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='sessions' AND column_name='onesa_grant') AND to_regclass('worker_heartbeats') IS NOT NULL AND to_regclass('service_amendments') IS NOT NULL AND to_regclass('storage_scan_cursors') IS NOT NULL AND to_regclass('financial_corrections') IS NOT NULL AND to_regclass('farm_edge_observations') IS NOT NULL AND to_regclass('accounting_invoices') IS NOT NULL AND to_regclass('accounting_documents') IS NOT NULL AND to_regclass('accounting_journals') IS NOT NULL AND to_regclass('forum_entries') IS NOT NULL AND to_regclass('forum_reports') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='private_media' AND column_name='asset_id') AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='camera_access' AND column_name='farm_id') AS ready",
         );
         if (!r.rows[0].ready) throw new Error("Schema not ready");
         return { status: "ok" };
@@ -108,7 +109,9 @@ export function buildApp(
         return reply.code(503).send({ status: "unavailable" });
       }
     });
-    const ctx = createContext(db);
+    const central = identityConfig(origin);
+    const ctx = createContext(db, central);
+    registerOnesa(app, ctx, central);
     registerIdentity(app, ctx);
     registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
     registerNodeRedPackages(app, ctx, nodeRed);

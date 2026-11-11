@@ -63,6 +63,29 @@ jobs:
           docker compose -f smart-farmer-backend/deploy/onesa/compose.yml --profile local-db --profile ops config --quiet
       - name: Validate Node-RED demonstration flow format
         run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
+      - name: Recover Ubuntu mirrors when the hosted runner cannot resolve them
+        if: runner.environment == 'github-hosted'
+        shell: bash
+        run: |
+          mirrors=/etc/apt/apt-mirrors.txt
+          [[ -f "$mirrors" ]] || exit 0
+          . /etc/os-release
+          [[ "$ID" == ubuntu && "$VERSION_CODENAME" == resolute ]] || exit 0
+          for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+            if timeout 4 getent ahostsv4 "$host" >/dev/null; then exit 0; fi
+          done
+          mirror=https://mirrors.edge.kernel.org/ubuntu
+          inrelease=$(mktemp "$RUNNER_TEMP/ubuntu-inrelease.XXXXXX")
+          trap 'rm -f "$inrelease"' EXIT
+          for suite in "$VERSION_CODENAME" "$VERSION_CODENAME-updates" "$VERSION_CODENAME-backports" "$VERSION_CODENAME-security"; do
+            curl --fail --silent --show-error --proto '=https' --retry 2 --retry-all-errors --connect-timeout 10 --max-time 25 \
+              "$mirror/dists/$suite/InRelease" -o "$inrelease"
+            gpgv --keyring /usr/share/keyrings/ubuntu-archive-keyring.gpg "$inrelease"
+            grep -Fxq 'Origin: Ubuntu' "$inrelease"
+            grep -Fxq "Suite: $suite" "$inrelease"
+          done
+          # Preserve source suites, signing options and the mirror priority fields.
+          sudo sed -E -i "s#^([[:space:]]*)https?://(azure\.archive|archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)#\1$mirror/\3#" "$mirrors"
       - name: Install browser
         working-directory: smart-farmer-frontend/web
         run: npx playwright install --with-deps chromium

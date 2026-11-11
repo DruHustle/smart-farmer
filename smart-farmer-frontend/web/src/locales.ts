@@ -25,6 +25,8 @@ export const phrases = {
 
   today: ['Nhasi', 'Lamuhla'], farm: ['Purazi rangu', 'Ipulazi lami'], market: ['Musika', 'Imakethe'], services: ['Mabasa nemichina', 'Imisebenzi lemishini'], more: ['Zvimwe', 'Okunye'],
   welcome: ['Basa repapurazi, pamwe chete.', 'Umsebenzi wepulazi, sindawonye.'], intro: ['Ronga basa. Nyora zvinoitika. Chengeta zvawakaita.', 'Hlela umsebenzi. Bhala okwenzakalayo. Gcina okwenzileyo.'],
+  returnToApp: ['Dzokera muSmart Farmer', 'Buyela ku-Smart Farmer'],
+  onesaSignIn: ['Pinda neOnesa', 'Ngena nge-Onesa'], onesa_unavailable: ['Onesa haisi kuwanikwa pari zvino.', 'I-Onesa ayitholakali okwamanje.'],
   signIn: ['Pinda', 'Ngena'], register: ['Gadzira purazi', 'Dala ipulazi'], username: ['Zita rekupinda', 'Ibizo lokungena'], password: ['Pasiwedhi', 'Igama lokudlula'], farmName: ['Zita repurazi', 'Ibizo lepulazi'],
   noFarmMembership: ['Hausati uri nhengo yepurazi. Isa kodhi yekukokwa kuti ubatane nepurazi.', 'Awukabi lilunga lepulazi. Faka ikhodi yesimemo ukuze ujoyine ipulazi.'],
   passwordHint: ['Mavara 12 kana kupfuura.', 'Izinhlamvu ezingu-12 kumbe ngaphezulu.'], continue: ['Enderera', 'Qhubeka'], logout: ['Buda muakaundi', 'Phuma ku-akhawunti'], lock: ['Kiya', 'Khiya'],
