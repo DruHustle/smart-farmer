@@ -54,28 +54,10 @@ appId: eu.onesa.smartfarmer
       platform: iOS
     commands:
       - tapOn:
-          text: '^Not Now
-    element:
-      id: record-note
-    direction: DOWN
-    timeout: 20000
-- takeScreenshot: signed-in-sqlcipher-workspace
-
-          below: '^Securely store your password so it’s filled automatically the next time you need it\.
-    element:
-      id: record-note
-    direction: DOWN
-    timeout: 20000
-- takeScreenshot: signed-in-sqlcipher-workspace
-
+          text: '^Not Now$'
+          below: '^Securely store your password so it’s filled automatically the next time you need it\.$'
           optional: true
-      - assertNotVisible: '^Save Password\?
-    element:
-      id: record-note
-    direction: DOWN
-    timeout: 20000
-- takeScreenshot: signed-in-sqlcipher-workspace
-
+      - assertNotVisible: '^Save Password\?$'
 - tapOn:
     id: tab-record
 - scrollUntilVisible:
