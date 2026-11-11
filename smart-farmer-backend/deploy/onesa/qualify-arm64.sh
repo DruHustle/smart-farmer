@@ -58,22 +58,33 @@ start() {
   containers+=("$container")
 }
 wait_ok() {
-  local try
-  for try in {1..60}; do if "$@" >/dev/null 2>&1; then return; fi; sleep 1; done
-  echo "Timed out waiting for ${1} ${2:-}" >&2; return 1
+  local service=$1 id=$2 try state
+  shift 2
+  echo "Checking $service"
+  for try in {1..60}; do
+    if docker exec "$id" "$@" >"$temp/probe.log" 2>&1; then return; fi
+    state=$(docker inspect --format '{{.State.Status}}' "$id")
+    [[ "$state" == running ]] || break
+    sleep 1
+  done
+  echo "$service readiness failed" >&2
+  docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$id" >&2
+  tail -n 12 "$temp/probe.log" >&2
+  docker logs --tail 25 "$id" >&2
+  return 1
 }
 start --network-alias db --memory 448m --tmpfs /var/lib/postgresql/data:rw,size=192m -e POSTGRES_PASSWORD "${images[db]}"
 db=$container
-wait_ok docker exec "$db" pg_isready -h 127.0.0.1 -U postgres
+wait_ok postgres "$db" pg_isready -h 127.0.0.1 -U postgres
 docker run --rm --network "$network" "${db_env[@]}" "${images[api]}" node dist/migrate.js
 start --memory 384m --read-only --tmpfs /tmp "${app_env[@]}" "${mount[@]}" "${images[api]}"
 api=$container
-wait_ok docker exec "$api" node -e "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1))"
+wait_ok api "$api" node -e "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1))"
 start --memory 256m --read-only --tmpfs /tmp "${app_env[@]}" "${mount[@]}" "${images[api]}" node dist/worker.js
-wait_ok docker exec "$container" node dist/worker-health.js
+wait_ok worker "$container" node dist/worker-health.js
 start --memory 96m --read-only --tmpfs /tmp:mode=1777 --cap-drop ALL --security-opt no-new-privileges "${images[web]}"
 web_id=$container
-wait_ok docker exec "$web_id" wget -qO /dev/null http://127.0.0.1:8080/healthz
+wait_ok web "$web_id" wget -qO /dev/null http://127.0.0.1:8080/healthz
 docker exec "$web_id" wget -qO - http://127.0.0.1:8080/release.json | python3 -c 'import json,sys; assert json.load(sys.stdin)["revision"] == sys.argv[1]' "$revision"
 
 docker exec -i "$api" node --input-type=module - "$revision" <<'JS'
