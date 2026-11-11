@@ -7,8 +7,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 work="$RUNNER_TEMP/onesa-device/ca-install"
 mkdir -p "$work"
 openssl x509 -in "${1:?Public fixture CA required}" -outform DER -out "$work/farmer-device-ca.crt"
-adb push "$work/farmer-device-ca.crt" /sdcard/Download/farmer-device-ca.crt
-adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/farmer-device-ca.crt >/dev/null
+# Ask the display user to choose the public CA through the normal DocumentsUI
+# picker. Play's modern scoped storage disallows shell writes to Downloads.
+bash "$here/provider/install.sh" "$work/farmer-device-ca.crt"
 # Credential storage can ask for the secure lock in either side of the picker.
 pin=314159
 adb shell locksettings set-pin "$pin"

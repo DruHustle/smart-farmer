@@ -16,12 +16,29 @@ case "$platform" in
     adb shell wm density 320
     { adb shell wm size; adb shell wm density; } | tee "$evidence/android-display.txt"
     for port in 8081 46501 46502 46504; do adb reverse tcp:"$port" tcp:"$port"; done
+    user_id=$(adb shell am get-current-user | tr -d '\r')
+    for attempt in {1..45}; do
+      if adb shell am get-started-user-state "$user_id" | grep -q RUNNING_UNLOCKED; then break; fi
+      sleep 1
+    done
+    adb install -r smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+    device=$(adb get-serialno)
+    # Reading the actual app's sign-in config needs only the local debug API;
+    # its signed-out screenshot can survive a separate OS trust failure.
+    private="$RUNNER_TEMP/onesa-device/before-trust"
+    mkdir -p "$private"
+    adb shell am start -n eu.onesa.smartfarmer/.MainActivity
+    if maestro --device "$device" test --test-output-dir "$private" --debug-output "$private" "$dir/entry.yaml" > "$private/run.log" 2>&1; then
+      screenshot=$(find "$private" -type f -iname '*signed-out-smart-farmer*.png' -print -quit)
+      if [[ -n "$screenshot" ]]; then cp "$screenshot" "$evidence/android-signed-out.png"; fi
+      echo 'Native sign-in entry shown before credential input' | tee "$evidence/android-entry.txt"
+    else
+      node "$dir/redact.mjs" "$private" | tee "$evidence/android-entry.txt"
+    fi
     if ! bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt"; then
       echo 'FAIL Android user CA installation in Settings. Portal sign-in scenarios UNTESTED.' > "$evidence/android-results.txt"
       exit 1
     fi
-    adb install -r smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
-    device=$(adb get-serialno)
     ;;
   *) exit 2;;
 esac
