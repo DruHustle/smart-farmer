@@ -1,0 +1,21 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: auth-onesa
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          text: "^Continue$"
+          optional: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          text: '^(Use without an account|Accept & continue|Continue without an account)$'
+          optional: true
+      - tapOn:
+          text: '^(No thanks|Got it)$'
+          optional: true

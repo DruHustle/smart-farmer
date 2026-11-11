@@ -1,0 +1,9 @@
+appId: eu.onesa.smartfarmer
+---
+- extendedWaitUntil:
+    visible: '^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+    timeout: 45000
+- tapOn: '^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+- tapOn:
+    text: '^Open$'
+    optional: true

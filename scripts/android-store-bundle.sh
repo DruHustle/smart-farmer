@@ -47,6 +47,13 @@ if manifest.get('package') != version['android']['package'] or manifest.get(key+
     sys.exit('Bundle identity or version differs from the app configuration.')
 if sdk is None or int(sdk.get(key+'targetSdkVersion','0')) < 36 or app is None or app.get(key+'debuggable') == 'true':
     sys.exit('Incorrect Play target SDK or debuggable application.')
+permissions = {node.get(key+'name') for node in manifest.findall('uses-permission')}
+if not set(version['android']['permissions']).issubset(permissions) or set(version['android']['blockedPermissions']) & permissions:
+    sys.exit('Packaged permissions differ from the mobile configuration.')
+if app.get(key+'allowBackup') != 'false' or app.get(key+'usesCleartextTraffic') == 'true':
+    sys.exit('Release must disable backup and cleartext traffic.')
+if not any(node.get(key+'scheme') == version['scheme'] for node in app.findall('.//intent-filter/data')):
+    sys.exit('The bundle is missing the Onesa return URL scheme.')
 with zipfile.ZipFile(work/'upload.aab') as archive:
     if 'base/assets/index.android.bundle' not in archive.namelist():
         sys.exit('The standalone bundle is missing its JavaScript.')

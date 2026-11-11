@@ -9,8 +9,27 @@ case "$archive" in /*.xcarchive) ;; *) echo 'Use an absolute .xcarchive path.' >
 
 inspect_app() {
   local app="$1" binary
-  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = "$bundle"
-  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
+  python3 - "$app/Info.plist" "$bundle" <<'PY'
+import json, plistlib, re, sys
+from pathlib import Path
+info = plistlib.loads(Path(sys.argv[1]).read_bytes())
+config = json.loads(Path('app.json').read_text())['expo']
+expected = {'CFBundleIdentifier': sys.argv[2], 'CFBundleShortVersionString': config['version'],
+            'CFBundleVersion': config['ios']['buildNumber']}
+for key, value in expected.items():
+    if info.get(key) != value:
+        sys.exit(f'{key} differs from the release configuration')
+sdk = re.fullmatch(r'iphoneos(\d+)(?:\.\d+)*', info.get('DTSDKName', ''))
+if not sdk or int(sdk[1]) < 26 or int(info.get('DTXcode', '0')) < 2600 or 'iPhoneOS' not in info.get('CFBundleSupportedPlatforms', []):
+    sys.exit('Expected an iPhoneOS archive built with Xcode 26 and iOS SDK 26 or later')
+schemes = {s for item in info.get('CFBundleURLTypes', []) for s in item.get('CFBundleURLSchemes', [])}
+if config['scheme'] not in schemes:
+    sys.exit('The device app is missing the Onesa return URL scheme')
+for key in ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription', 'NSPhotoLibraryUsageDescription', 'NSFaceIDUsageDescription'):
+    if not info.get(key, '').strip():
+        sys.exit(f'The device app is missing {key}')
+print(f"Verified {expected['CFBundleIdentifier']} {config['version']} build {expected['CFBundleVersion']} with SDK {info['DTSDKName']} and Xcode {info['DTXcode']}")
+PY
   binary="$app/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
   xcrun lipo "$binary" -verify_arch arm64
   xcrun vtool -show-build "$binary" | grep -Eq 'platform[[:space:]]+(IOS|2)$'

@@ -1,0 +1,19 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions: {}
+          arguments:
+            "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
+      - tapOn:
+          text: Open
+          optional: true

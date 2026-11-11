@@ -10,9 +10,11 @@ type Mode='all'|'mine'|'reports'|'hidden'|'blocked';
 type Action={kind:'delete'|'report'|'block'|'hide'|'restore'|'dismiss';entry:ForumEntry;id:string;reportId?:string};
 function communityRules(): string | null {
   const value = import.meta.env.VITE_COMMUNITY_RULES_URL;
-  if (!value || !URL.canParse(value)) return null;
-  const url = new URL(value);
-  return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+  } catch {return null;}
 }
 const rules = communityRules();
 export function Forum() {
@@ -136,7 +138,7 @@ export function Forum() {
       {(mode==='all'||mode==='mine')?<form className="forum-filters" onSubmit={e=>{e.preventDefault();setSearch(searchDraft.trim());}}>
         <Field label={f.topic}><select data-testid="forum-filter-topic" value={topic} onChange={e=>setTopic(e.target.value as ForumTopic|'')} disabled={disabled}><option value="">{f.all}</option>{forumTopics.map(value=><option key={value} value={value}>{f[value]}</option>)}</select></Field>
         <Field label={f.search}><input type="search" maxLength={100} value={searchDraft} onChange={e=>setSearchDraft(e.target.value)} disabled={!available}/></Field><button type="submit" disabled={disabled}>{f.searchButton}</button>
-      </form>:<p className="muted">{f.moderationHint}</p>}
+      </form>:mode!=='blocked'?<p className="muted">{f.moderationHint}</p>:null}
       {loading&&<p role="status">{t.loading}</p>}
       {available&&<Section title={mode==='blocked'?f.blockedAuthors:mode==='reports'?f.reports:mode==='hidden'?f.hiddenEntries:f.discussions}>
         {mode==='blocked'?blocked.map(author=><article className="forum-entry" key={author.id}><strong>{author.displayName}</strong> <button type="button" disabled={disabled} onClick={()=>void run(async()=>{

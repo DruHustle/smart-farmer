@@ -221,7 +221,7 @@ export const accountingPhrases = {
   scan_timeout: ['Kuverenga faira kwapfuura nguva yakatarwa. Edza zvakare kana kunyora nemaoko.', 'Ukubala ifayela kudlule isikhathi esimisiweyo. Zama futhi kumbe ubhale ngesandla.'],
   document_unreadable: ['Faira harina kuverengwa. Tarisa rekutanga kana kutora mufananidzo wakajeka.', 'Ifayela alibalwanga. Khangela elokuqala kumbe uthathe isithombe esicacileyo.'],
   document_too_many_pages: ['PDF inogona kuva nemapeji anosvika6 chete.', 'I-PDF ingaba lamakhasi afinyelela ku-6 kuphela.'],
-  document_encrypted: ['PDF ine pasiwwedhi haigoni kuverengwa. Isa kopi yaunobvumirwa kuverenga.', 'I-PDF elegama lokudlula ayibaleki. Faka ikhophi ovunyelwe ukuyibala.'],
+  document_encrypted: ['PDF ine pasiwedhi haigoni kuverengwa. Isa kopi yaunobvumirwa kuverenga.', 'I-PDF elegama lokudlula ayibaleki. Faka ikhophi ovunyelwe ukuyibala.'],
   no_text_detected: ['Hapana mashoko akaverengwa. Nyora nemaoko uchitarisa faira rekutanga.', 'Akulalwazi olubaliweyo. Bhala ngesandla ukhangela ifayela lokuqala.'],
   image_unreadable_or_too_large: ['Mufananidzo hauna kuverengwa kana wakanyanya kukura. Isa mufananidzo wakajeka wakaderera.', 'Isithombe asibalekanga kumbe sikhulu kakhulu. Faka isithombe esicacileyo esincinyane.'],
   accounting_unconfigured: ['Tanga waronga mabhuku emari.', 'Qala uhlele amabhuku emali.'],

@@ -115,6 +115,11 @@ jobs:
             grep -F 'Status: ok' "$RUNNER_TEMP/bundle-launch.txt"
             sleep 8
             adb shell pidof "$APP_ID"
+            adb shell am force-stop "$APP_ID"
+            adb shell am start -W -n "$APP_ID/.MainActivity" | tee "$RUNNER_TEMP/bundle-relaunch.txt"
+            grep -F 'Status: ok' "$RUNNER_TEMP/bundle-relaunch.txt"
+            sleep 8
+            adb shell pidof "$APP_ID"
       - name: Remove the disposable signed package
         if: always()
         run: rm -f "$RUNNER_TEMP/disposable-qualification.apk" "$RUNNER_TEMP/from-play-bundle.apk"
