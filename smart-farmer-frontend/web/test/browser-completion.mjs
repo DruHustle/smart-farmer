@@ -198,5 +198,17 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
   await visible(emptyDeliveryCard.getByText(nd.noData,{exact:true}));assert.equal(await emptyDeliveryCard.locator('table').count(),0,'empty notification deliveries must use localized text instead of a header-only table');
   const axeNd=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();await writeFile(resolve(artifacts,'axe-notifications-nd.json'),JSON.stringify(axeNd,null,2));assert.deepEqual(axeNd.violations.map(v=>v.id),[]);await page.keyboard.press('Tab');assert.ok(await page.evaluate(()=>document.activeElement instanceof HTMLElement&&document.activeElement!==document.body));await page.getByLabel(nd.language,{exact:true}).selectOption('sn');await page.setViewportSize({width:390,height:844});
   pass('Acceptance 20, 21 browser scope: Shona/Ndebele labels, small phone/tablet/desktop overflow checks, keyboard focus and WCAG A/AA axe scans; native evidence remains separate');
+  checkpoint('Rejoin after the last farm membership is removed');
+  await apiCall(`${base}/members/${workerIdentity.userId}`, undefined, token, 'DELETE');
+  await worker.getByRole('button', {name: sn.refresh, exact: true}).first().click();
+  const joinForm = worker.getByRole('form', {name: sn.join, exact: true});
+  await visible(joinForm);
+  await visible(worker.getByText(sn.noFarmMembership, {exact: true}));
+  const invitation = await apiCall(`${base}/invitations`, {role: 'worker'}, token);
+  await joinForm.getByLabel(sn.invitationToken).fill(invitation.token);
+  await joinForm.getByRole('button', {name: sn.join, exact: true}).click();
+  await worker.waitForFunction(id => document.querySelector('.farm-switch select')?.value === id, farm.id);
+  assert.equal((await apiCall('/v1/farms', undefined, workerIdentity.token)).items.find(f => f.id === farm.id)?.role, 'worker');
+  pass('An existing account with no memberships can redeem a new invitation and return to work');
   await workerContext.close();await buyerContext.close();
 }

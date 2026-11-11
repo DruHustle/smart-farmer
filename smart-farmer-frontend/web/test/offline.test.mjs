@@ -32,6 +32,7 @@ test('a lost server response retries the same ID; metadata completes before inde
   const send = async (item, payload) => {
     if (!item.mediaId) {records.add(payload.id); if (lostResponse) {lostResponse = false; throw new TypeError('Failed to fetch');}}
     else {assert.equal(records.size, 1); uploads.push(payload.dataBase64);}
+    return {id: payload.id};
   };
   await drainOutbox(vault, send, true, () => 1000);
   assert.equal(vault.snapshot().outbox.length, 2);
@@ -86,4 +87,72 @@ test('one activity and its media queue commit together, or remain wholly unsaved
   assert.equal((await Vault.unlock(origin, 'worker-one', password, undefined, store)).snapshot().outbox.length, 2);
   await assert.rejects(queueRecords(vault, [{...entry('unsafe'), path: '/v1/farms/farm-one/assets/pump/commands'}]), /unsafe_outbox_route/);
   assert.equal(vault.snapshot().outbox.length, 2);
+});
+
+test('expired sessions pause a field record until sign-in, preserving its ID and remaining attempts', async () => {
+  const store = storage();
+  const vault = await Vault.unlock(origin, 'worker-one', password, fixture(), store);
+  const record = {...entry(), attempts: 4};
+  await vault.mutate(next => {next.outbox.push(record);});
+  let sends = 0;
+  const expire = async () => {sends++; throw Object.assign(new Error('unauthorized'), {status: 401});};
+  await drainOutbox(vault, expire, false);
+  await drainOutbox(vault, expire, false);
+  assert.equal(sends, 1);
+  const paused = vault.snapshot().outbox[0];
+  assert.equal(paused.status, 'pending');
+  assert.equal(paused.attempts, 4);
+
+  const nextSession = fixture();
+  nextSession.identity.token = 'renewed-session';
+  const resumed = await Vault.unlock(origin, 'worker-one', password, nextSession, store);
+  const sent = [];
+  await drainOutbox(resumed, async (_, payload) => {sent.push(payload.id); return {id: payload.id};}, false);
+  assert.deepEqual(sent, [record.id]);
+  assert.equal(resumed.snapshot().outbox.length, 0);
+});
+
+test('online sign-in restores legacy auth failures and preserves denied or conflicting drafts', async () => {
+  const store = storage();
+  const vault = await Vault.unlock(origin, 'worker-one', password, fixture(), store);
+  await vault.mutate(next => {
+    next.requiresAuth = true;
+    next.outbox.push(
+      {...entry('expired'), status: 'failed', attempts: 5, error: 'unauthorized', nextAttemptAt: '2099-01-01T00:00:00Z'},
+      {...entry('denied'), status: 'failed', error: 'forbidden'},
+      {...entry('conflict'), status: 'conflict', error: 'version_conflict'}
+    );
+  });
+  const resumed = await Vault.unlock(origin, 'worker-one', password, fixture(), store);
+  const sent = [];
+  await drainOutbox(resumed, async (_, payload) => {sent.push(payload.id); return {id: payload.id};}, false);
+  assert.deepEqual(sent, ['expired']);
+  assert.deepEqual(resumed.snapshot().outbox.map(e => e.status), ['failed', 'conflict']);
+});
+
+test('field changes stay queued until the API acknowledges the record or target task ID', async () => {
+  const store = storage();
+  const vault = await Vault.unlock(origin, 'worker-one', password, fixture(), store);
+  const base = '/v1/farms/farm-one/';
+  const routes = ['activities', 'incidents', 'projects/project-one/events', 'projects/project-one/records',
+    'weather/observations', 'assets/pump-one/usage', 'tasks/task-one'];
+  for (const route of routes) {
+    const task = route.startsWith('tasks/');
+    const expectedId = task ? 'task-one' : 'record-one';
+    const payload = task ? {version: 3, status: 'started'} : {id: expectedId};
+    const draft = {...entry('local-queue-id'), path: base + route, method: task ? 'PATCH' : 'POST', payload};
+    await queueRecords(vault, [draft]);
+    let clock = 0;
+    for (const receipt of [undefined, null, {id: draft.id}, {success: true}]) {
+      await drainOutbox(vault, async () => receipt, false, () => clock);
+      const [pending] = vault.snapshot().outbox;
+      assert.equal(pending.id, draft.id, route);
+      assert.equal(pending.status, 'pending', route);
+      assert.equal(pending.error, 'invalid_response', route);
+      assert.deepEqual(pending.payload, payload, route);
+      clock += 300_000;
+    }
+    await drainOutbox(vault, async () => ({id: expectedId}), false, () => clock);
+    assert.equal(vault.snapshot().outbox.length, 0, route);
+  }
 });

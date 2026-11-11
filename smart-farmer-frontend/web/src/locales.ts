@@ -7,6 +7,8 @@ import {accountingPhrases} from './accounting-locales.ts';
 export const phrases = {
   ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases,
   language: ['Mutauro', 'Ulimi'],
+  farmerApps: ['Maapp eSmart Farmer', 'Ama-app eSmart Farmer'],
+  notPublished: ['Haisati yaburitswa', 'Ayikakhitshwa'],
   forum: ['Dare', 'Inkundla'],
   forum_already_reported: ['Watotumira chichemo chemashoko aya.', 'Usuthumele isikhalazo ngalo mbhalo.'],
   forum_content_removed: ['Mashoko aya akabviswa. Vandudza dare.', 'Lo mbhalo ususiwe. Vuselela inkundla.'],
@@ -24,6 +26,7 @@ export const phrases = {
   today: ['Nhasi', 'Lamuhla'], farm: ['Purazi rangu', 'Ipulazi lami'], market: ['Musika', 'Imakethe'], services: ['Mabasa nemichina', 'Imisebenzi lemishini'], more: ['Zvimwe', 'Okunye'],
   welcome: ['Basa repapurazi, pamwe chete.', 'Umsebenzi wepulazi, sindawonye.'], intro: ['Ronga basa. Nyora zvinoitika. Chengeta zvawakaita.', 'Hlela umsebenzi. Bhala okwenzakalayo. Gcina okwenzileyo.'],
   signIn: ['Pinda', 'Ngena'], register: ['Gadzira purazi', 'Dala ipulazi'], username: ['Zita rekupinda', 'Ibizo lokungena'], password: ['Pasiwedhi', 'Igama lokudlula'], farmName: ['Zita repurazi', 'Ibizo lepulazi'],
+  noFarmMembership: ['Hausati uri nhengo yepurazi. Isa kodhi yekukokwa kuti ubatane nepurazi.', 'Awukabi lilunga lepulazi. Faka ikhodi yesimemo ukuze ujoyine ipulazi.'],
   passwordHint: ['Mavara 12 kana kupfuura.', 'Izinhlamvu ezingu-12 kumbe ngaphezulu.'], continue: ['Enderera', 'Qhubeka'], logout: ['Buda muakaundi', 'Phuma ku-akhawunti'], lock: ['Kiya', 'Khiya'],
   offlineUnlock: ['Vhura zvakachengetwa', 'Vula okugciniweyo'], offlineUnlockHint: ['Shandisa zita nepasiwedhi zvawakapedzisira kupinda nazvo pachishandiso chino. Zvinyorwa zvinoramba zvakavharirwa.', 'Sebenzisa ibizo legama lokudlula owacina ukungena ngalo kule divayisi. Imibhalo ihlala ivikelwe.'],
   join: ['Gamuchira kukokwa', 'Yamukela isimemo'], recover: ['Dzosa kupinda', 'Buyisela ukungena'], invitationToken: ['Kodhi yekukokwa', 'Ikhodi yesimemo'], recoveryCode: ['Kodhi yekudzosa kupinda', 'Ikhodi yokubuyisela ukungena'], newPassword: ['Pasiwedhi itsva', 'Igama elitsha lokudlula'], recovered: ['Pasiwedhi yashandurwa. Pinda zvakare.', 'Igama lokudlula selitshintshiwe. Ngena futhi.'],

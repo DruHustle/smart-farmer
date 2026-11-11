@@ -69,9 +69,11 @@ export function FarmScreen({ work, language, onNativePrompt }: { work: Workspace
 
   async function loadDetails(project: Project) {
     const epoch = ++detailEpoch.current;
+    const revision = work.repository.farmRevision(work.farmId);
+    const current = () => epoch === detailEpoch.current && revision === work.repository.farmRevision(work.farmId);
     const key = `farm:${work.farmId}:project:${project.id}`;
     const previous = await work.repository.preference<Details>(key);
-    if (epoch !== detailEpoch.current) return;
+    if (!current()) return;
     setDetails(previous || emptyDetails);
     if (!work.online) return;
     const base = `/v1/farms/${work.farmId}/projects/${project.id}`;
@@ -86,10 +88,10 @@ export function FarmScreen({ work, language, onNativePrompt }: { work: Workspace
         ]);
         value = { ...value, events, animals, restrictions };
       }
-      if (epoch !== detailEpoch.current) return;
+      if (!current()) return;
       await work.repository.setPreference(key, value);
-      if (epoch === detailEpoch.current) setDetails(value);
-    } catch (error) { if (epoch === detailEpoch.current) work.setError(error); }
+      if (current()) setDetails(value);
+    } catch (error) { if (current()) work.setError(error); }
   }
   useEffect(() => { if (selected) void loadDetails(selected).catch(work.setError); return () => { detailEpoch.current++; }; }, [selectedId, snapshot?.syncedAt]);
   useEffect(() => { detailEpoch.current++; setSelectedId(''); setStockId(''); setCreate(false); setStockCreate(false); setDetails(emptyDetails); }, [work.farmId]);

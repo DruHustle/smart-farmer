@@ -81,9 +81,12 @@ the same event ID and retries with a *new* five-minute HMAC timestamp. The API
 verifies HMAC-SHA256 over \`<timestamp>.<raw request body>\`, maps the gateway
 to exactly one authorized farm, rejects uncommissioned sources, and accepts
 identical retries without duplicating records. Conflicting IDs are rejected.
-Permanent 4xx failures remain quarantined in SQLite; they are **not deleted**.
-An accepted HTTP response proves the server stored an event, not physical device
-operation or healthy calibration.
+The API returns a JSON receipt with `accepted`, `duplicate` and the submitted
+`eventId`. The gateway also accepts the earlier two-field Farmer receipt. It
+keeps readings in SQLite through maintenance pages, redirects, temporary
+authentication failures and mismatched receipts, then retries with the same
+event ID. Rejected payloads, uncommissioned sources and conflicting event IDs
+remain quarantined for operator review.
 
 GET \`/v1/farms/:farmId/equipment/observations\` requires a normal farm membership
 and returns at most 100 recent records. Users from other farms receive 404.

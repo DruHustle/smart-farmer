@@ -50,7 +50,7 @@ test('an asset PDF survives restart, waits for explicit save and media consent, 
     const document: Attachment = { ...attachment(source), activityId: undefined, assetId, financial: true, mimeType: 'application/pdf', filename: 'private-invoice.pdf', dataBase64: raw.toString('base64'), sizeBytes: raw.length };
     await repository.attach(document); await repository.close(); repository = new LocalRepository(new TestDatabase(file)); await repository.initialize();
     let uploads = 0; let payload: unknown;
-    const api = transport(async <T>() => { throw new Error('Asset upload must not fabricate an activity'); }, async <T>(_path: string, body: unknown) => { uploads++; if (!payload) { payload = body; throw new ApiError(503, 'network_error'); } assert.deepEqual(body, payload); return {} as T; });
+    const api = transport(async <T>() => { throw new Error('Asset upload must not fabricate an activity'); }, async <T>(_path: string, body: unknown) => { uploads++; if (!payload) { payload = body; throw new ApiError(503, 'network_error'); } assert.deepEqual(body, payload); return { id: document.id, status: 'stored' } as T; });
     const sync = new Synchronizer(repository, api);
     await sync.flush(source.farmId, { media: true }); assert.equal(uploads, 0, 'Unsaved attachment must remain a draft');
     await repository.queueAssetAttachments(source.farmId, assetId);
