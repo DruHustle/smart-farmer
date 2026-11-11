@@ -46,7 +46,9 @@ esac
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
 status=0
-for role in cancel member admin; do
+roles=(cancel member admin)
+if [[ "$platform" == ios && ${ONESA_IOS_CANCEL_ONLY:-0} == 1 ]]; then roles=(cancel); fi
+for role in "${roles[@]}"; do
   if [[ "$platform" == ios ]]; then
     xcrun simctl erase "$device"
     xcrun simctl boot "$device"
@@ -86,6 +88,15 @@ for role in cancel member admin; do
       break
     fi
   done
+  if [[ "$platform" == ios && ${ONESA_IOS_CANCEL_ONLY:-0} == 1 ]]; then
+    # Only the existence of known milestone frames leaves the disposable runner.
+    # A frame is generated only after the corresponding real UI step completes.
+    for checkpoint in cancel-choice-tapped return-link-tapped native-denial-visible signed-out-confirmed; do
+      seen=false
+      if [[ -n "$(find "$private" -type f -name "*only-${checkpoint}.png" -print -quit)" ]]; then seen=true; fi
+      printf 'iOS cancellation %s=%s\n' "$checkpoint" "$seen" | tee -a "$evidence/$platform-results.txt"
+    done
+  fi
   # Only the intentionally named, confirmed signed-out frame is shareable.
   signed_out=$(find "$RUNNER_TEMP/onesa-device/$role-${states[0]}" -type f -iname '*signed-out-smart-farmer*.png' -print -quit)
   if [[ -n "$signed_out" ]]; then cp "$signed_out" "$evidence/$platform-$role-signed-out.png"; fi

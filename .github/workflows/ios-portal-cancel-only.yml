@@ -1,0 +1,99 @@
+name: Focused iPhone Portal cancellation
+on:
+  push:
+    branches: ['qualify/ios-portal-cancel-only-20261111']
+permissions:
+  contents: read
+env:
+  CI: 'true'
+  EXPO_NO_TELEMETRY: '1'
+  EXPO_PUBLIC_API_URL: http://127.0.0.1:3001
+  WEB_ORIGIN: http://127.0.0.1:3001
+  LOG_LEVEL: silent
+  NODE_ENV: test
+  NATIVE_FIXTURE_PATH: /tmp/smart-farmer-native-fixture.json
+  NATIVE_OFFLINE_FLAG: /tmp/smart-farmer-native-offline
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 75
+    concurrency:
+      group: focused-iosa-cancel-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - name: Start isolated PostgreSQL
+        run: |
+          brew install postgresql@17
+          NATIVE_PG_BIN="$(brew --prefix postgresql@17)/bin"
+          "$NATIVE_PG_BIN/initdb" -D "$RUNNER_TEMP/native-pg" -U native_ci -A trust
+          "$NATIVE_PG_BIN/pg_ctl" -D "$RUNNER_TEMP/native-pg" -l "$RUNNER_TEMP/native-pg.log" -o "-p 5432 -h 127.0.0.1 -k $RUNNER_TEMP" start
+          "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
+      - run: npm ci --prefix smart-farmer-frontend/mobile
+      - run: npm ci --prefix smart-farmer-backend
+      - name: Restore matching native iOS simulator binary
+        id: ios-binary
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          key: native-ios-simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
+      - name: Compile native SQLCipher iOS simulator application
+        if: steps.ios-binary.outputs.cache-hit != 'true'
+        working-directory: smart-farmer-frontend/mobile
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          npx expo prebuild --no-install --platform ios
+          cd ios
+          pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
+          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
+      - name: Save successful iOS compilation before UI journeys
+        if: steps.ios-binary.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          key: ${{ steps.ios-binary.outputs.cache-primary-key }}
+      - name: Restore simulator app and inspect native signing
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
+          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
+          codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
+      - name: Check out the tested Portal issuer
+        uses: actions/checkout@v4
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: e8c4544b50648425c0948914505fab1617e3b3f9
+          path: qualification-portal
+          persist-credentials: false
+      - name: Install real Portal and browser callback dependencies
+        run: |
+          npm ci --prefix qualification-portal/onesa-company-portal-backend
+          npm ci --prefix qualification-portal/onesa-company-portal-frontend
+          npm ci --prefix smart-farmer-frontend/web
+      - name: Start real Portal, Farmer, native callback and Metro
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh ios
+      - name: Install pinned Maestro CLI
+        run: |
+          curl --fail --location --retry 3 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+      - name: Exercise Portal cancellation on the iPhone simulator
+        env:
+          ONESA_IOS_CANCEL_ONLY: '1'
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '360000'
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/device.sh ios
+      - name: Retain fixed cancellation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-portal-cancellation-results
+          retention-days: 3
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/onesa-evidence/ios-results.txt
