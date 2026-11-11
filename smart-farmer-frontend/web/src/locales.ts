@@ -3,9 +3,10 @@ import type {Lang} from './types';
 import {completionPhrases} from './completion-locales.ts';
 import {nodeRedPhrases} from './node-red-locales.ts';
 import {accountingPhrases} from './accounting-locales.ts';
+import {trackingMarketPhrases} from './tracking-market-locales.ts';
 /** Preliminary translations; agricultural terminology requires native-speaker review. */
 export const phrases = {
-  ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases,
+  ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases, ...trackingMarketPhrases,
   language: ['Mutauro', 'Ulimi'],
   forum: ['Dare', 'Inkundla'],
   forum_already_reported: ['Watotumira chichemo chemashoko aya.', 'Usuthumele isikhalazo ngalo mbhalo.'],

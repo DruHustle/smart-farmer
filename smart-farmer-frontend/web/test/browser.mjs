@@ -10,6 +10,7 @@ import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
 import {accountingJourneys} from './browser-accounting.mjs';
 import {forumJourneys} from './browser-forum.mjs';
+import {trackingJourneys} from './browser-tracking.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
 
@@ -176,6 +177,7 @@ try {
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
   await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
+  await trackingJourneys({page,context,api,apiCall,farm,token,sn,nd,unique,navigate,more,checkpoint,pass,artifacts});
 
   checkpoint('Phone and desktop notifications evidence');
   await more('notifications');
