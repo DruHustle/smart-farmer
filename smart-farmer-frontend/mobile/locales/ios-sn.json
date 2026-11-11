@@ -1,6 +1,8 @@
 {
-  "NSCameraUsageDescription": "Tora mufananidzo webasa kana zvakaonekwa papurazi.",
-  "NSPhotoLibraryUsageDescription": "Sarudza mufananidzo unobatana nebasa repapurazi.",
-  "NSMicrophoneUsageDescription": "Rekodha shoko rezwi rinobatana nebasa repapurazi.",
-  "NSFaceIDUsageDescription": "Vhura zvinyorwa zvepapurazi zvako zvakakiyiwa."
+  "ios": {
+    "NSCameraUsageDescription": "Tora mufananidzo webasa kana zvakaonekwa papurazi.",
+    "NSPhotoLibraryUsageDescription": "Sarudza mufananidzo unobatana nebasa repapurazi.",
+    "NSMicrophoneUsageDescription": "Rekodha shoko rezwi rinobatana nebasa repapurazi.",
+    "NSFaceIDUsageDescription": "Vhura zvinyorwa zvepapurazi zvako zvakakiyiwa."
+  }
 }
