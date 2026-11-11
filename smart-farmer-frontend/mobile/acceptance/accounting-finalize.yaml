@@ -1,0 +1,47 @@
+appId: eu.onesa.smartfarmer
+---
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-finalize"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-finalize"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-confirm-finalize"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "invoice-confirm-finalize"
+    enabled: false
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-reviewed"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "invoice-reviewed"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-confirm-finalize"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-confirm-finalize"
+- extendedWaitUntil:
+    notVisible:
+      id: "invoice-confirm-finalize"
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: "invoice-status"
+    direction: UP
+    timeout: 30000
+- assertVisible:
+    id: "invoice-status"
+    text: "${FINAL_STATUS}"

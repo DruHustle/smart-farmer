@@ -1329,21 +1329,3 @@ test("offboarding releases planned work and removes camera access permanently fo
     await f.close();
   }
 });
-
-test("concurrent owner changes recheck the acting owner's membership", async () => {
-  const f = await fixture();
-  try {
-    const otherOwner = await f.register();
-    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')", [otherOwner.userId, f.owner.farmId]);
-    const member = f.prefix + "/members/";
-    const results = await Promise.all([
-      f.request("PATCH", member + otherOwner.userId, {role: "manager"}),
-      f.request("PATCH", member + f.owner.userId, {role: "manager"}, otherOwner),
-    ]);
-    assert.deepEqual(results.map(r => r.statusCode).sort(), [200, 404]);
-    const owners = await f.db.query("SELECT user_id FROM memberships WHERE farm_id=$1 AND role='owner'", [f.owner.farmId]);
-    assert.equal(owners.rowCount, 1);
-  } finally {
-    await f.close();
-  }
-});

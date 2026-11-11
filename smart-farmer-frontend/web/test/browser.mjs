@@ -8,6 +8,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
+import {accountingJourneys} from './browser-accounting.mjs';
 import {forumJourneys} from './browser-forum.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
@@ -20,6 +21,7 @@ if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL must poin
 const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
+env.MEDIA_ROOT = resolve(artifacts, 'private-media');
 const nodeRedControl = resolve(artifacts, 'node-red-control.json');
 await writeFile(nodeRedControl, JSON.stringify({enabled: false}));
 env.SMART_FARMER_BROWSER_NODE_RED_CONTROL = nodeRedControl;
@@ -72,7 +74,14 @@ async function expectText(locator, text) {
   await expectVisible(locator.filter({hasText: text}));
   assert.ok((await locator.textContent()).includes(text));
 }
-async function navigate(target, text = sn[target]) {await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();}
+async function navigate(target, text = sn[target]) {
+  await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();
+  for (const selector of ['.mobile-nav', '.desktop-nav nav']) {
+    const current = page.locator(selector).locator('[aria-current="page"]');
+    assert.equal(await current.count(), 1, 'navigation exposes exactly one current page');
+    assert.equal(await current.textContent(), text);
+  }
+}
 async function more(target, text = sn[target]) {await navigate('more'); await page.locator('.menu-panel').getByRole('button', {name: text, exact: true}).click();}
 async function waitProject(name) {await expectVisible(page.getByRole('button', {name: new RegExp(name)}));}
 function pass(text) {steps.push(text); console.log(`PASS: ${text}`);}
@@ -183,6 +192,7 @@ try {
 
   await nodeRedJourneys({page, context, api, farm, username, password, sn, nd, more, navigate, checkpoint, pass, artifacts, controlPath: nodeRedControl});
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
+  await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
 
   checkpoint('Phone and desktop notifications evidence');

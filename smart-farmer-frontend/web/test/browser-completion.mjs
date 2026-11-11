@@ -65,10 +65,35 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
   const workerIdentity=await apiCall('/v1/sessions',{username:workerName,password:workerPassword});await denied(`${base}/reports/summary`,workerIdentity.token);await more(worker,'reports',nd);await visible(worker.getByText(nd.financialAccess,{exact:true}));
   await refresh();await more(page,'tasks');detail=await expand(page,sn.newTask);await fill(detail,{title:'Check irrigation conflict',projectId:project.id,assigneeId:workerIdentity.userId,instructions:'Record measured irrigation and leave evidence',dueAt:future});const task=await submit(page,detail.locator('form'),`${base}/tasks`);await refresh(worker,nd);await more(worker,'tasks',nd);let taskRow=worker.locator('.task-row').filter({hasText:'Check irrigation conflict'});await visible(taskRow);await workerContext.setOffline(true);await worker.waitForFunction(()=>!navigator.onLine);await taskRow.getByRole('button',{name:nd.edit,exact:true}).click();await fill(taskRow,{status:'started',evidence:'Worker examined the inlet',reason:'Field start'});await taskRow.getByRole('button',{name:nd.save,exact:true}).click();await taskRow.locator('form').waitFor({state:'hidden'});await more(worker,'sync',nd);await visible(worker.locator('.outbox-row'));assert.equal(await worker.locator('.outbox-row').count(),1);
   await apiCall(`${base}/tasks/${task.id}`,{version:1,status:'started',evidence:'Manager measured inlet',reason:'Concurrent review'},token,'PATCH');const conflictResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===`${base}/tasks/${task.id}`&&r.request().method()==='PATCH',{timeout:20000});await workerContext.setOffline(false);await worker.waitForFunction(()=>navigator.onLine);await worker.getByRole('button',{name:nd.sync,exact:true}).click();const actualConflict=await conflictResponse;assert.equal(actualConflict.status(),409,await actualConflict.text());let conflict=worker.locator('.outbox-row').filter({hasText:nd.conflict});await visible(conflict);await conflict.getByRole('button',{name:nd.currentRecord,exact:true}).click();await visible(conflict.getByText('Manager measured inlet',{exact:true}));await fill(conflict,{reason:'Both checked same inlet; retain current status and worker evidence'});await conflict.locator('input[type=checkbox]').check();
-  // Reapply first changes the conflict to pending; wait for the write and its local acknowledgement.
-  const reapplyResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===`${base}/tasks/${task.id}`&&r.request().method()==='PATCH',{timeout:20000});
-  await conflict.getByRole('button',{name:nd.reapply,exact:true}).click();const reapplied=await reapplyResponse;assert.equal(await reapplied.finished(),null);const reappliedTask=await reapplied.json();assert.equal(reapplied.status(),200,JSON.stringify(reappliedTask));assert.equal(reappliedTask.id,task.id);assert.equal(reappliedTask.evidence,'Worker examined the inlet');assert.ok(reappliedTask.version>=3);
-  await worker.locator('.outbox-row').waitFor({state:'hidden'});await visible(worker.getByText(nd.emptyOutbox,{exact:true}));const merged=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);assert.equal(merged.evidence,'Worker examined the inlet');assert.ok(merged.version>=3);
+  // Changing conflict -> pending hides this locator before its PATCH commits.
+  // Hold the real request to prove that local queue state is not a server receipt.
+  let releaseReapply;
+  const reapplyGate=new Promise(resolve=>{releaseReapply=resolve;});
+  const reapplyPath=`${base}/tasks/${task.id}`;
+  const reapplyRequest=worker.waitForRequest(r=>new URL(r.url()).pathname===reapplyPath&&r.method()==='PATCH',{timeout:20000});
+  const reapplyResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===reapplyPath&&r.request().method()==='PATCH',{timeout:20000});
+  await worker.route(api+reapplyPath,async route=>{await reapplyGate;await route.continue();},{times:1});
+  try {
+    await conflict.getByRole('button',{name:nd.reapply,exact:true}).click();
+    const queued=await reapplyRequest;
+    assert.equal(queued.postDataJSON().version,2);
+    assert.equal(queued.postDataJSON().evidence,'Worker examined the inlet');
+    await conflict.waitFor({state:'hidden'});
+    assert.equal(await worker.locator('.outbox-row').count(),1,'Pending draft remains until the real server accepts it');
+    const beforeCommit=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);
+    assert.equal(beforeCommit.evidence,'Manager measured inlet');
+    assert.equal(beforeCommit.version,2);
+  } finally {releaseReapply();}
+  const accepted=await reapplyResponse;
+  assert.equal(accepted.status(),200,await accepted.text());
+  const reapplyReceipt=await accepted.json();
+  assert.equal(reapplyReceipt.evidence,'Worker examined the inlet');
+  assert.equal(reapplyReceipt.version,3);
+  await worker.locator('.outbox-row').waitFor({state:'hidden'});
+  const merged=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);
+  assert.equal(merged.evidence,'Worker examined the inlet');
+  assert.equal(merged.version,3);
+  await visible(worker.getByText(nd.emptyOutbox,{exact:true}));
   await worker.getByLabel(nd.language,{exact:true}).selectOption('sn');await nav(worker,'today');await worker.locator('.record-fab').click();let dialog=worker.locator('dialog');await fill(dialog,{projectId:project.id,kind:'irrigation',taskId:task.id,quantity:120,unit:'l',note:'Assigned irrigation completed',observedAt:observed});await submit(worker,dialog,`${base}/activities`);assert.equal((await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id).status,'completed');
   pass('Acceptance 1, 3, 4: worker invitation in Ndebele, restricted money access, explicit two-actor conflict review and task-linked irrigation');
 

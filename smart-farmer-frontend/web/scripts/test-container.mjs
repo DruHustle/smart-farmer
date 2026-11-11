@@ -8,6 +8,7 @@ import {setTimeout} from 'node:timers/promises';
 
 const cwd = fileURLToPath(new URL('..', import.meta.url));
 const apiOrigin = 'https://api.example.invalid'; // Embedded only; the check never contacts it.
+const revision = 'a'.repeat(40); // Synthetic commit used only for image qualification.
 const env = {...process.env, VITE_API_URL:apiOrigin};
 function docker(args, stdio = 'pipe') {
   return execFileSync('docker', args, {cwd, env, encoding:'utf8', stdio, timeout:600_000});
@@ -31,9 +32,10 @@ const temp = await mkdtemp(join(tmpdir(), 'smart-farmer-web-image-'));
 let containerId;
 try {
   const iid = join(temp, 'image-id');
-  docker(['build', '--iidfile', iid, '--build-arg', `VITE_API_URL=${apiOrigin}`, '.'], 'inherit');
+  docker(['build', '--iidfile', iid, '--build-arg', `VITE_API_URL=${apiOrigin}`, '--build-arg', `APP_REVISION=${revision}`, '.'], 'inherit');
   const imageId = (await readFile(iid, 'utf8')).trim();
   assert.match(imageId, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(JSON.parse(docker(['image', 'inspect', imageId]))[0].Config.Labels['org.opencontainers.image.revision'], revision);
 
   const missingOrigin = spawnSync('docker', ['build', '--target', 'build', '--build-arg', 'VITE_API_URL=', '.'],
     {cwd, env, encoding:'utf8', timeout:120_000, maxBuffer:2_000_000});
@@ -78,6 +80,7 @@ try {
     await setTimeout(250);
   }
   assert.deepEqual(await (await request('/healthz')).json(), {status:'ok', service:'smart-farmer-web'});
+  assert.deepEqual(await (await request('/release.json')).json(), {revision});
   const page = await request('/');
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-type'), /text\/html/);

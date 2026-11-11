@@ -53,7 +53,7 @@ function RestrictionForm({ work, language, project, onSaved }: { work: Workspace
     <Button title={t.save} busy={work.busy} onPress={() => { void submit(); }} /></>;
 }
 
-export function FarmScreen({ work, language }: { work: Workspace; language: Language }) {
+export function FarmScreen({ work, language, onNativePrompt }: { work: Workspace; language: Language; onNativePrompt: (active: boolean) => void }) {
   const t = textFor(language);
   const { width } = useWindowDimensions();
   const [filter, setFilter] = useState<'crops' | 'animals' | 'stock'>('crops');
@@ -110,14 +110,14 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
       </Card>)}
     </View>
     {!(filter === 'stock' ? snapshot.stock.length : projects.length) ? <Card><Text style={styles.muted}>{t.empty}</Text><Text style={styles.caption}>{t.unknownHint}</Text></Card> : null}
-    <Sheet title={t.newProject} visible={create} onClose={() => setCreate(false)} closeLabel={t.close}>
+    <Sheet title={t.newProject} visible={create} onClose={() => setCreate(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}{create ? <ProjectForm work={work} language={language} onSaved={() => setCreate(false)} /> : null}
     </Sheet>
-    <Sheet title={t.newStock} visible={stockCreate} onClose={() => setStockCreate(false)} closeLabel={t.close}>
+    <Sheet title={t.newStock} visible={stockCreate} onClose={() => setStockCreate(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}{stockCreate ? <StockForm work={work} language={language} onSaved={() => setStockCreate(false)} /> : null}
     </Sheet>
-    <Sheet title={snapshot.stock.find(item => item.id === stockId)?.name || t.stock} visible={Boolean(stockId)} onClose={() => setStockId('')} closeLabel={t.close}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{snapshot.stock.find(item => item.id === stockId) ? <StockMovements key={stockId} work={work} language={language} item={snapshot.stock.find(item => item.id === stockId)!} /> : null}</Sheet>
-    <Sheet title={selected?.name || t.project} visible={Boolean(selected)} onClose={() => setSelectedId('')} closeLabel={t.close}>
+    <Sheet title={snapshot.stock.find(item => item.id === stockId)?.name || t.stock} visible={Boolean(stockId)} onClose={() => setStockId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{work.error ? <Notice error text={errorText(language, work.error)} /> : null}{snapshot.stock.find(item => item.id === stockId) ? <StockMovements key={stockId} work={work} language={language} item={snapshot.stock.find(item => item.id === stockId)!} /> : null}</Sheet>
+    <Sheet title={selected?.name || t.project} visible={Boolean(selected)} onClose={() => setSelectedId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {selected && mode !== 'detail' ? <Button secondary title={t.back} onPress={() => { work.setError(null); setMode('detail'); }} /> : null}
       {selected && mode === 'edit' ? <ProjectForm work={work} language={language} project={selected} onSaved={() => setMode('detail')} /> : null}
@@ -128,7 +128,7 @@ export function FarmScreen({ work, language }: { work: Workspace; language: Lang
         <Text style={styles.muted}>{label(language, selected.enterprise_type)} · {label(language, selected.status || 'active')}</Text>
         {selected.enterprise_type === 'crop' ? <Text style={styles.text}>{t.plantingDate}: {selected.planting_date?.slice(0, 10) || t.unknown}{'\n'}{t.variety}: {selected.variety || t.unknown}{'\n'}{t.area}: {selected.area_ha || t.unknown}{'\n'}{t.objective}: {selected.objective || t.unknown}</Text> : <Text style={styles.heading}>{t.currentCount}: {selected.current_count ?? t.unknown} · {label(language, selected.count_basis || 'unknown')}</Text>}
         <View style={styles.row}>{work.canManage ? <Button secondary title={t.edit} onPress={() => setMode('edit')} /> : null}{selected.enterprise_type !== 'crop' && selected.status !== 'closed' ? <Button title={t.animalEvent} onPress={() => setMode('event')} /> : null}</View>
-        <ProjectWorkspace key={selected.id} work={work} language={language} project={selected} animals={details.animals} />
+        <ProjectWorkspace key={selected.id} work={work} language={language} project={selected} animals={details.animals} onNativePrompt={onNativePrompt} />
         {selected.enterprise_type !== 'crop' ? <>
           <Card title={t.identities}>{details.animals.map(animal => <Text key={animal.id} style={styles.text}>{animal.identifier} · {label(language, animal.sex)}{animal.dam_id ? ` · ${t.dam}: ${details.animals.find(item => item.id === animal.dam_id)?.identifier || animal.dam_id.slice(0, 8)}` : ''}</Text>)}{!details.animals.length ? <Text style={styles.muted}>{t.empty}</Text> : null}{work.canManage ? <Button secondary title={t.record} onPress={() => setMode('identity')} /> : null}</Card>
           <Card title={t.restrictions}>{details.restrictions.map(restriction => <View key={restriction.id} style={styles.item}><Text style={styles.text}>{restriction.reason}</Text><Text style={styles.caption}>{label(language, restriction.scope)} · {formatFarmTime(restriction.starts_at, snapshot.farm.timezone, language)} → {formatFarmTime(restriction.ends_at, snapshot.farm.timezone, language)}</Text></View>)}{!details.restrictions.length ? <Text style={styles.muted}>{t.empty}</Text> : null}{work.canManage ? <Button secondary title={t.record} onPress={() => setMode('restriction')} /> : null}</Card>

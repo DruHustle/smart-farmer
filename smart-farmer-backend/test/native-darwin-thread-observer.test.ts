@@ -355,7 +355,7 @@ test('real shell observation setup creates each native log before its watcher an
     // Only the observer/log setup functions run here, with an owned stream
     // fixture. No simulator, app launch or native acceptance is simulated.
     const source = readFileSync(join(directory, 'ios.sh'), 'utf8');
-    const boundary = source.indexOf('\nNATIVE_PHONE=');
+    const boundary = source.indexOf('\n# Simulator and application setup starts here.');
     assert.ok(boundary > 0);
     const script = source.slice(0, boundary) + `
       xcrun() { printf 'owned-stream-fixture\\n'; }

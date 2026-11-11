@@ -68,6 +68,54 @@ test('worker invitation, multi-farm membership, preference, recovery, one-use to
   }finally{await f.close();}
 });
 
+for (const method of ['PATCH','DELETE'] as const) {
+  test(`queued membership ${method} rechecks owner authority after concurrent demotion`,{timeout:30_000},async()=>{
+    const f=await fixture();let locker:pg.PoolClient|undefined;let pending:Promise<Awaited<ReturnType<typeof f.send>>>|undefined;
+    try{
+      const invite=await f.post('/invitations',{role:'worker'});
+      const joined=await f.app.inject({method:'POST',url:'/v1/invitations/accept',payload:{token:invite.token,username:'second_owner',password,language:'sn'}});
+      assert.equal(joined.statusCode,201,joined.body);const secondId=joined.json().userId;
+      assert.equal((await f.send('PATCH',`/members/${secondId}`,{role:'owner'})).statusCode,200);
+      const login=await f.app.inject({method:'POST',url:'/v1/sessions',payload:{username:'second_owner',password}});
+      assert.equal(login.statusCode,200,login.body);const secondHeaders={authorization:`Bearer ${login.json().token}`};
+      const thirdInvite=await f.post('/invitations',{role:'worker'});
+      const third=await f.app.inject({method:'POST',url:'/v1/invitations/accept',payload:{token:thirdInvite.token,username:'retained_worker',password,language:'sn'}});
+      assert.equal(third.statusCode,201,third.body);const thirdId=third.json().userId;
+      const targetId=method==='PATCH'?secondId:thirdId;
+      const auditBefore=Number((await f.db.query('SELECT count(*) FROM audit_events WHERE farm_id=$1',[f.farmId])).rows[0].count);
+      locker=await f.db.connect();await locker.query('BEGIN');
+      const lockerPid=(await locker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+      await locker.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[f.farmId]);
+      pending=f.send(method,`/members/${targetId}`,method==='PATCH'?{role:'owner'}:undefined,secondHeaders).then(r=>r);
+      // Observe the actual database wait: the request has passed the old pool-level
+      // authorization check and cannot proceed until this transaction commits.
+      const deadline=Date.now()+5000;let waiting=false;
+      while(Date.now()<deadline){
+        const result=await f.db.query('SELECT 1 FROM pg_stat_activity WHERE $1::int=ANY(pg_blocking_pids(pid))',[lockerPid]);
+        if(result.rowCount){waiting=true;break;}
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      assert.ok(waiting,'membership request must be waiting on the held farm lock');
+      await locker.query("UPDATE memberships SET role='worker' WHERE farm_id=$1 AND user_id=$2",[f.farmId,secondId]);
+      await locker.query('COMMIT');
+      const response=await pending;assert.equal(response.statusCode,404,response.body);assert.equal(response.json().error,'not_found');
+      const roles=await f.db.query('SELECT user_id,role FROM memberships WHERE farm_id=$1',[f.farmId]);
+      assert.equal(roles.rows.find(row=>row.user_id===secondId)?.role,'worker');
+      assert.equal(roles.rows.find(row=>row.user_id===f.registration.userId)?.role,'owner');
+      assert.equal(roles.rows.find(row=>row.user_id===thirdId)?.role,'worker');
+      assert.equal(Number((await f.db.query('SELECT count(*) FROM audit_events WHERE farm_id=$1',[f.farmId])).rows[0].count),auditBefore,'denied mutation creates no audit event');
+      // The surviving owner still has authority, and the last-owner guard remains.
+      assert.equal((await f.send('PATCH',`/members/${secondId}`,{role:'manager'})).statusCode,200);
+      const lastOwner=await f.send('DELETE',`/members/${f.registration.userId}`);
+      assert.equal(lastOwner.statusCode,409);assert.equal(lastOwner.json().error,'last_owner');
+    }finally{
+      if(locker){await locker.query('ROLLBACK');locker.release();}
+      if(pending)await pending;
+      await f.close();
+    }
+  });
+}
+
 test('maize facts, version conflict, offline-ID retry, transactional stock/cost/task and competing input use',async()=>{
   const f=await fixture();try{
     const projectId=randomUUID(),p=await f.project('crop',0,{id:projectId});const retry=await f.post('/projects',{id:projectId,name:'Existing maize',crop:'maize',irrigation:true},200);assert.equal(retry.id,p.id);const first=(await f.get('/projects')).items[0];assert.equal(first.planting_date,null);assert.equal(first.area_ha,null);
@@ -87,7 +135,7 @@ test('maize facts, version conflict, offline-ID retry, transactional stock/cost/
     await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:100,currency:'ZAR'});
     for(const amount of [0.1,0.3])await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount,currency:'USD'});
     const fractionalMoney=await f.send('POST','/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:0.000000001,currency:'USD'});assert.equal(fractionalMoney.statusCode,400);
-    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.40');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.00');
+    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.400');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.000');
     const stock=await f.stock('Harvested maize','kg',0,{projectId:p.id});await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'harvest',observedAt,stockItemId:stock.id,quantity:12,unit:'kg'});
     await f.post(`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'consumption',quantity:2,unit:'kg',observedAt,reason:'Household consumption'});assert.equal(await f.balance(stock.id),10);
     const tiny=await f.send('POST',`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'adjustment',quantity:0.000000001,unit:'kg',observedAt,reason:'Must not round a recorded operation to zero'});assert.equal(tiny.statusCode,400);assert.equal(await f.balance(stock.id),10);
@@ -129,7 +177,7 @@ test('broilers: placement, feeding, sampled growth, losses, partial sales, payme
     const over=await f.send('POST',`/projects/${p.id}/payments`,{...pay,id:randomUUID(),amount:1});assert.equal(over.statusCode,409);
     await f.event(p.id,'close',{note:'All birds reconciled'});assert.equal((await f.get('/projects')).items[0].status,'closed');
     const after=await f.send('POST',`/projects/${p.id}/events`,{id:randomUUID(),type:'observation',observedAt,note:'Should not mutate closed cycle'});assert.equal(after.statusCode,409);
-    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.00');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.50');
+    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.000');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.500');
   }finally{await f.close();}
 });
 

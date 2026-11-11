@@ -18,7 +18,7 @@ export interface ApiClient {
 }
 
 export function createApi(origin: string, token?: string): ApiClient {
-  const headers = (json = true) => ({ ...(json ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+  const headers = (hasBody: boolean) => ({ ...(hasBody ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) });
   const checkPath = (path: string) => { if (!path.startsWith('/v1/') || path.includes('://')) throw new Error('invalid_request'); };
   return {
     async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -39,7 +39,7 @@ export function createApi(origin: string, token?: string): ApiClient {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', origin + path);
-        for (const [name, value] of Object.entries(headers())) xhr.setRequestHeader(name, value);
+        for (const [name, value] of Object.entries(headers(true))) xhr.setRequestHeader(name, value);
         xhr.timeout = 60_000;
         xhr.upload.onprogress = event => { if (event.lengthComputable) onProgress?.(Math.min(99, Math.floor(event.loaded * 100 / event.total))); };
         xhr.onerror = () => reject(new ApiError(0, 'network_error'));

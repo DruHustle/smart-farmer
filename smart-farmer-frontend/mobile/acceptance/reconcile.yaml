@@ -1,5 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
+- runFlow: activate-ios.yaml
 - tapOn:
     id: device-reauthenticate
 - extendedWaitUntil:
@@ -29,6 +30,14 @@ appId: eu.onesa.smartfarmer
       - tapOn:
           id: '^(com[.]android|com[.]google[.]android)[.]permissioncontroller:id/permission_deny(_and_dont_ask_again)?_button$'
           optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # Foreground activation leaves this permission unset on the simulator.
+      # Deny the real OS prompt before asserting the application's error.
+      - tapOn:
+          text: "^Don['’]t Allow$"
 - scrollUntilVisible:
     element:
       text: '.*Mvumo haina kupiwa.*'

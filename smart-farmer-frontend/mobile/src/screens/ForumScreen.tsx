@@ -129,10 +129,10 @@ export function ForumScreen({work,language,nativeBusy}:{work:Workspace;language:
       {available&&loaded&&!loading&&!(mode==='reports'?reports:items).length?<Card><Text style={styles.muted}>{mode==='reports'?f.noReports:mode==='hidden'?f.noHidden:f.empty}</Text></Card>:null}
       {available&&next?<Button title={f.more} secondary disabled={disabled} onPress={()=>{void work.onlineAction(()=>loadFeed(next));}}/>:null}
     </>}
-    <Sheet title={composer?.kind==='discussion'?f.newDiscussion:composer?.kind==='reply'?f.reply:f.edit} visible={Boolean(composer)} closeLabel={t.close} onClose={()=>{if(!work.busy)setComposer(null);}}>
+    <Sheet title={composer?.kind==='discussion'?f.newDiscussion:composer?.kind==='reply'?f.reply:f.edit} visible={Boolean(composer)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard} onClose={()=>{if(!work.busy)setComposer(null);}}>
       {composer?<Composer key={composer.id} composer={composer} language={language} disabled={disabled} offline={!available} error={work.error} onSubmit={publish}/>:null}
     </Sheet>
-    <Sheet title={action?{delete:f.remove,report:f.reportTitle,hide:f.hide,restore:f.restore,dismiss:f.dismiss}[action.kind]:f.reportTitle} visible={Boolean(action)} closeLabel={t.close} onClose={()=>{if(!work.busy)setAction(null);}}>
+    <Sheet title={action?{delete:f.remove,report:f.reportTitle,hide:f.hide,restore:f.restore,dismiss:f.dismiss}[action.kind]:f.reportTitle} visible={Boolean(action)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard} onClose={()=>{if(!work.busy)setAction(null);}}>
       {action?<Decision key={action.id} action={action} language={language} disabled={disabled} error={work.error} onSubmit={decide}/>:null}
     </Sheet>
   </>;

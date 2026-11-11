@@ -1,0 +1,77 @@
+appId: eu.onesa.smartfarmer
+---
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "invoice-add-payment"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "invoice-add-payment"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-amount"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-amount"
+- eraseText
+- inputText: "${PAYMENT_AMOUNT}"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-method"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-method"
+- tapOn:
+    id: "form-method-option-cash"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "form-reference"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "form-reference"
+- inputText: "${PAYMENT_REFERENCE}"
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-review"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-review"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "product-confirm"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "product-confirm"
+- extendedWaitUntil:
+    notVisible:
+      id: "product-confirm"
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: "invoice-payment-status"
+    direction: UP
+    timeout: 30000
+- assertVisible:
+    id: "invoice-payment-status"
+    text: "Yabhadharwa chikamu"
+- scrollUntilVisible:
+    element:
+      id: "invoice-balance"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "invoice-balance"
+    text: "${OUTSTANDING_AMOUNT}"
