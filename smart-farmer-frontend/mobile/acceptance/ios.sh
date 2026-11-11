@@ -74,6 +74,21 @@ xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
 start_native_log "$NATIVE_TABLET" ios-tablet
-maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --flatten-debug-output --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
+if ! maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --flatten-debug-output --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"; then
+  # The iPad AutoFill sheet is rendered outside the app's accessibility tree.
+  # Only recover the matching failed assertion when the live system image agrees.
+  prompt_image="$RUNNER_TEMP/ipad-current-password-sheet.png"
+  xcrun simctl io "$NATIVE_TABLET" screenshot "$prompt_image"
+  if ! prompt_point=$(python3 "$NATIVE_DIR/acceptance/ipad-password-sheet.py" \
+      "$EVIDENCE/ipad-large-font.xml" "$prompt_image"); then
+    rm -f "$prompt_image"
+    exit 1
+  fi
+  mv "$prompt_image" "$EVIDENCE/ipad-confirmed-system-password-sheet.png"
+  mv "$EVIDENCE/ipad-large-font.xml" "$EVIDENCE/ipad-large-font-before-password-sheet.xml"
+  maestro --device "$NATIVE_TABLET" test --no-reinstall-driver -e NOT_NOW_POINT="$prompt_point" \
+    --format junit --output "$EVIDENCE/ipad-large-font.xml" --test-output-dir "$EVIDENCE/ipad-after-password-sheet" \
+    "$NATIVE_DIR/acceptance/ipad-resume-after-password-sheet.yaml"
+fi
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
