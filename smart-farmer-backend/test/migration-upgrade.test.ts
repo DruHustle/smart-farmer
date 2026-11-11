@@ -129,6 +129,30 @@ test("published 001–006 records upgrade through the real migration runner with
       "INSERT INTO treatment_restrictions(id,farm_id,project_id,starts_at,ends_at,scope,reason,authorized_by,created_by) VALUES($1,$2,$3,clock_timestamp()-interval '1 hour',clock_timestamp()+interval '1 day','sale','Recorded verified release hold','Named professional',$4)",
       [restriction, farm, project, owner],
     );
+    const departed = randomUUID(), oldCamera = randomUUID(), newCamera = randomUUID();
+    await db.query("INSERT INTO users(id,username,password_hash,language) VALUES($1,'departed_worker','fixture','sn')", [departed]);
+    for (const id of [oldCamera, newCamera]) {
+      await db.query(
+        "INSERT INTO assets(id,farm_id,name,category,protocol,integration_state,created_by) VALUES($1,$2,'Gate','camera','http','unconfigured',$3)",
+        [id, farm, owner],
+      );
+      await db.query("INSERT INTO camera_configurations(asset_id,farm_id,provider) VALUES($1,$2,'gateway')", [id, farm]);
+      await db.query("INSERT INTO camera_access(asset_id,user_id,granted_by) VALUES($1,$2,$3),($1,$4,$3)", [id, worker, owner, departed]);
+    }
+    await db.query(
+      `INSERT INTO audit_events(id,farm_id,actor_id,entity_type,entity_id,action,reason,current,created_at)
+       VALUES(gen_random_uuid(),$1,$2,'membership',$3,'access_revoked','owner_review',NULL,now()-interval '1 minute'),
+             (gen_random_uuid(),$1,$2,'camera',$4,'access_granted','owner_confirmation',jsonb_build_object('userId',$3::uuid),now())`,
+      [farm, owner, worker, newCamera],
+    );
+    const newSession = randomUUID();
+    await db.query(
+      `INSERT INTO camera_sessions(id,farm_id,asset_id,user_id,token_hash,expires_at,created_at)
+       VALUES(gen_random_uuid(),$1,$2,$3,'legacy-revoked',now()+interval '1 minute',now()-interval '2 minutes'),
+             (gen_random_uuid(),$1,$2,$4,'legacy-orphan',now()+interval '1 minute',now()),
+             ($5,$1,$2,$3,'legacy-current',now()+interval '1 minute',now())`,
+      [farm, newCamera, worker, departed, newSession],
+    );
     const before = (
       await db.query(
         "SELECT amount,currency,source_type,receipt_activity_id FROM financial_entries WHERE id=$1",
@@ -145,6 +169,10 @@ test("published 001–006 records upgrade through the real migration runner with
     );
     assert.match(first.stdout, /Applied 007_asset_media.sql/);
     assert.match(first.stdout, /Applied 008_product_refinements.sql/);
+    assert.match(first.stdout, /Applied 015_camera_membership.sql/);
+    assert.deepEqual((await db.query("SELECT farm_id,asset_id,user_id FROM camera_access")).rows,
+      [{farm_id: farm, asset_id: newCamera, user_id: worker}]);
+    assert.deepEqual((await db.query("SELECT id FROM camera_sessions")).rows, [{id: newSession}]);
     assert.deepEqual(
       (
         await db.query(

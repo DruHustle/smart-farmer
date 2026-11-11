@@ -7,7 +7,7 @@ import {drainOutbox, queueRecords} from './lib/sync';
 import {Context, type Page} from './context';
 import {emptyFarmData, type Farm, type FarmData, type Lang, type OutboxItem} from './types';
 import type {Vault} from './lib/vault';
-import {Icon} from './components/ui';
+import {Field, Icon} from './components/ui';
 import {Today, Tasks, Incidents, SyncPage, More} from './pages/Work';
 import {Projects} from './pages/Projects';
 import {RecordActivity} from './pages/Record';
@@ -39,7 +39,7 @@ export function App() {
   useEffect(() => {const update = () => setOnline(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); return () => {window.removeEventListener('online', update); window.removeEventListener('offline', update);};}, []);
   const call = useCallback(async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
     if (!vault) throw new ApiError('unauthorized', 401);
-    try {return await request<T>(path, vault.snapshot().identity.token, options);} catch (error) {if (error instanceof ApiError && error.status === 401) await vault.mutate(next => {next.requiresAuth = true;}); throw error;}
+    try {return await request<T>(path, vault.snapshot().identity.token, options);} catch (error) {if (error instanceof ApiError && error.status === 401 && error.message === 'unauthorized') await vault.mutate(next => {next.requiresAuth = true;}); throw error;}
   }, [vault]);
   const refresh = useCallback(async () => {
     if (!vault || !navigator.onLine) return;
@@ -49,7 +49,7 @@ export function App() {
     await vault.mutate(next => {
       const lostFinancialRole = next.farms.some(old => ['owner', 'manager'].includes(old.role) && !farms.items.some(f => f.id === old.id && ['owner', 'manager'].includes(f.role)));
       const oldRoles = new Map(next.farms.map(f => [f.id, f.role]));
-      next.farms = farms.items; next.currentFarmId = current?.id ?? '';
+      next.farms = farms.items; next.currentFarmId = current?.id ?? ''; next.membershipsChecked = true;
       for (const id of Object.keys(next.data)) {
         const membership = farms.items.find(f => f.id === id);
         if (!membership) {delete next.data[id]; continue;}
@@ -82,7 +82,11 @@ export function App() {
   }, [vault, call]);
   const sync = useCallback(async (includeMedia = false) => {
     if (!vault || !navigator.onLine) return; if (synchronising.current) {pendingSync.current.requested=true; pendingSync.current.includeMedia ||= includeMedia; return;}
-    if (vault.snapshot().requiresAuth || new Date(vault.snapshot().identity.expiresAt).getTime() <= Date.now()) {setNotice(t.sessionExpired); return;}
+    if (vault.snapshot().requiresAuth) return;
+    if (new Date(vault.snapshot().identity.expiresAt).getTime() <= Date.now()) {
+      await vault.mutate(next => {next.requiresAuth = true;});
+      return;
+    }
     synchronising.current = true;
     try {
       await drainOutbox(vault, (entry, payload) => entry.mediaId ? uploadRecord(entry.path, vault.snapshot().identity.token, payload, percent => setUploadProgress(old => ({...old, [entry.id]: percent}))) : call(entry.path, jsonBody(payload, entry.method)), includeMedia);
@@ -127,6 +131,23 @@ export function App() {
         {page === 'forum' && <Forum/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
         {recordProject === null && page !== 'market' && page !== 'services' && page !== 'forum' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
-      </Context.Provider> : <div className="loading-card"><Icon name="leaf" size={30}/><p>{online ? t.loading : t.no_saved_data}</p><button onClick={lock}>{t.signIn}</button></div>}
+      </Context.Provider> : snapshot.membershipsChecked && !snapshot.requiresAuth ? <section className="panel">
+        <h1>{t.join}</h1><p>{t.noFarmMembership}</p>
+        <form className="form-grid" aria-label={t.join} onSubmit={async e => {
+          e.preventDefault();
+          if (busy || !online) return;
+          const form = e.currentTarget;
+          const token = String(new FormData(form).get('token') ?? '').trim();
+          await run(async () => {
+            await call('/v1/invitations/accept', jsonBody({token}));
+            form.reset();
+            await refresh();
+          }, t.saved);
+        }}>
+          <Field label={t.invitationToken}><input name="token" required autoComplete="off" spellCheck={false}/></Field>
+          <button className="primary" disabled={!online || busy}>{t.join}</button>
+        </form>
+        <button className="text-button" onClick={() => void logout()}>{t.logout}</button>
+      </section> : <div className="loading-card"><Icon name="leaf" size={30}/><p>{online ? t.loading : t.no_saved_data}</p><button onClick={lock}>{t.signIn}</button></div>}
     </main><nav className="mobile-nav" aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} onClick={() => setPage(item)}><Icon name={item}/><span>{t[item]}</span></button>)}</nav></div>;
 }

@@ -2,14 +2,21 @@ import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from email.message import Message
 from pathlib import Path
+from urllib.error import HTTPError
 from uuid import uuid4
 
 from agent import EdgeAgent, EdgeState, validate_event
 
 
 class FakeResponse:
-    status = 202
+    def __init__(self, body=b'{"accepted":true,"duplicate":false}', content_type="application/json", status=202):
+        self.body = body
+        self.status = status
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
+    def read(self, limit): return self.body[:limit]
     def __enter__(self): return self
     def __exit__(self, *_): pass
 
@@ -69,6 +76,42 @@ class EdgeTests(unittest.TestCase):
         event["data"]["value"] = 5.0
         self.assertEqual(self.agent.ingest(json.dumps(event).encode(), "a" * 40)[0], 400)
         self.assertIsNotNone(self.state.due())
+
+    def test_only_a_farmer_receipt_releases_the_reading(self):
+        event = sample()
+        self.agent.ingest(json.dumps(event).encode(), "a" * 40)
+        for response in (
+            FakeResponse(b"<html>Maintenance</html>", "text/html", 200),
+            FakeResponse(b'{"accepted":true}'),
+            FakeResponse(b'{'),
+            FakeResponse(b'{"accepted":false,"duplicate":false}'),
+            FakeResponse(b'{"accepted":true,"duplicate":false,"eventId":null}'),
+            FakeResponse(b" " * 1024 + b'{"accepted":true,"duplicate":false}'),
+        ):
+            with self.subTest(body=response.body[:40]):
+                self.agent.opener = lambda request, timeout: response
+                self.assertFalse(self.agent.deliver_once())
+                self.state.conn.execute("UPDATE outbox SET next_attempt=0")
+                self.assertEqual(self.state.due()[0], event["eventId"])
+        receipt = {"accepted": True, "duplicate": True, "eventId": event["eventId"]}
+        self.agent.opener = lambda request, timeout: FakeResponse(json.dumps(receipt).encode())
+        self.assertTrue(self.agent.deliver_once())
+        self.assertIsNone(self.state.due())
+
+    def test_authentication_outage_retries_after_restart(self):
+        event = sample()
+        self.agent.ingest(json.dumps(event).encode(), "a" * 40)
+        def unavailable(request, timeout):
+            raise HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+        self.agent.opener = unavailable
+        self.assertFalse(self.agent.deliver_once())
+        self.state.conn.close()
+        self.state = EdgeState(self.path)
+        self.agent.state = self.state
+        self.state.conn.execute("UPDATE outbox SET next_attempt=0")
+        self.assertEqual(self.state.due()[0], event["eventId"])
+        self.agent.opener = lambda request, timeout: FakeResponse()
+        self.assertTrue(self.agent.deliver_once())
 
     def test_invalid_measurement_never_enters_queue(self):
         event = sample()

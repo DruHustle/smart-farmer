@@ -10,7 +10,7 @@ import { LocalRepository } from './src/repository';
 import type { Language, Session } from './src/types';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { WorkspaceScreen } from './src/screens/WorkspaceScreen';
-import { Button, Card, Choice, Notice, Sheet, colors, styles } from './src/ui';
+import { Button, Choice, Notice, Sheet, colors, styles } from './src/ui';
 
 function observeSignOutPhase(phase: 'entry' | 'session-delete-completed' | 'notification-cleanup-completed' | 'notification-cleanup-failed' | 'local-auth-state-requested'): void {
   try { if (__DEV__) console.info('[native-signout]', phase); } catch { /* Diagnostics must not alter sign-out behavior. */ }
@@ -25,7 +25,6 @@ function Root() {
   const [starting, setStarting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [recoveryCode, setRecoveryCode] = useState('');
   const [nativePrompt, setNativePrompt] = useState(false);
   const nativePromptRef = useRef(false);
   const repositories = useRef(new Map<string, LocalRepository>());
@@ -34,7 +33,7 @@ function Root() {
   let configurationError: unknown = null;
   try { origin = apiOrigin(process.env.EXPO_PUBLIC_API_URL, __DEV__); } catch (value) { configurationError = value; }
 
-  const expire = useCallback(() => { setExpired(true); setLocked(true); setRecoveryCode(''); }, []);
+  const expire = useCallback(() => { setExpired(true); setLocked(true); }, []);
 
   async function getRepository(value: Session) {
     const key = `${value.origin}\n${value.userId}`;
@@ -80,10 +79,10 @@ function Root() {
     if (session) { const next = { ...session, language: value }; setSession(next); void saveSession(next).catch(setError); }
   }
 
-  async function authenticated(value: Session, code?: string) {
-    await saveSession(value); await saveLanguage(value.language);
+  async function authenticated(value: Session) {
     const local = await getRepository(value);
-    setSession(value); setRepository(local); setLanguage(value.language); setExpired(false); setLocked(false); setError(null); setRecoveryCode(code || '');
+    await saveLanguage(value.language); await saveSession(value);
+    setSession(value); setRepository(local); setLanguage(value.language); setExpired(false); setLocked(false); setError(null);
   }
 
   async function unlock() {
@@ -101,7 +100,7 @@ function Root() {
     await forgetSession();
     observeSignOutPhase('session-delete-completed');
     try { if (previous) await endDeviceNotifications(previous); else await clearReminders(); observeSignOutPhase('notification-cleanup-completed'); } catch { observeSignOutPhase('notification-cleanup-failed'); /* Notification service failure must not prevent local sign-out. */ }
-    setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null); setRecoveryCode('');
+    setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null);
     observeSignOutPhase('local-auth-state-requested');
     if (previous) {
       // Local access ends immediately; the server request is best-effort when a connection exists.
@@ -126,9 +125,6 @@ function Root() {
       {!expired ? <Button testID="device-unlock" title={t.unlock} busy={busy} onPress={() => { void unlock(); }} /> : null}
       <Button testID="device-reauthenticate" secondary title={t.reauthenticate} onPress={() => { void signOut().catch(setError); }} />
       <Text style={styles.caption}>{t.localPrivacy}</Text>
-    </Sheet>
-    <Sheet title={t.recoveryCode} visible={Boolean(recoveryCode) && !locked} closeLabel={t.close} onClose={() => setRecoveryCode('')}>
-      <Card><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{recoveryCode}</Text></Card>
     </Sheet>
   </View>;
 }
