@@ -42,3 +42,23 @@
 .node-red-review dd {margin:.2rem 0 0}
 .node-red-review .check-label {align-items:flex-start}
 .node-red-review .check-label input {flex-shrink:0;margin-top:.2rem}
+
+@media (max-width: 420px) {
+  .notifications-list .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .farm-switch {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .farm-switch select {
+    min-width: 0;
+  }
+}
