@@ -43,7 +43,9 @@ export class Synchronizer {
       const mutation = { ...original, attempts: Math.min(5, original.attempts + 1) };
       try {
         const { path, method } = mutationRequest(mutation);
-        await this.api.request(path, method, mutation.body);
+        const receipt = await this.api.request<{ id?: string }>(path, method, mutation.body);
+        const expectedId = mutation.kind === 'task-status' ? mutation.resourceId : mutation.id;
+        if (receipt?.id !== expectedId) throw new ApiError(502, 'invalid_response');
         if (accessChanged()) return result;
         await this.repository.accept(mutation);
         result.accepted++;

@@ -21,7 +21,11 @@ export async function drainOutbox(vault: Vault, send: Send, includeMedia: boolea
     if (entry.mediaId && vault.snapshot().outbox.some(e => !e.mediaId && e.payload.id === entry.payload.activityId)) continue;
     try {
       const payload = entry.mediaId ? {...entry.payload, ...await vault.readAttachment(entry.mediaId)} : entry.payload;
-      await send(entry, payload);
+      const receipt = await send(entry, payload);
+      // A task PATCH returns the task row. Other queued routes return the posted record's ID.
+      const expectedId = entry.method === 'PATCH' ? entry.path.split('/').at(-1) : entry.payload.id;
+      if (typeof expectedId !== 'string' || !expectedId || !receipt || typeof receipt !== 'object'
+          || !('id' in receipt) || receipt.id !== expectedId) throw new Error('invalid_response');
       await vault.mutate(next => {next.outbox = next.outbox.filter(e => e.id !== entry.id);});
       if (entry.mediaId) await vault.removeAttachment(entry.mediaId);
     } catch (error) {

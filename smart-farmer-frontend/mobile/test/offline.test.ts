@@ -49,7 +49,7 @@ test('media failures retain the photograph without repeating accepted metadata',
     const mutation = activity(); const file = attachment(mutation);
     await repository.attach(file); await repository.enqueue(mutation);
     let activities = 0; let uploads = 0;
-    const transport = api(async () => { activities++; return {}; }, async () => { uploads++; if (uploads === 1) throw new ApiError(503, 'unavailable'); return { id: file.id, status: 'stored' }; });
+    const transport = api(async () => { activities++; return { id: mutation.id }; }, async () => { uploads++; if (uploads === 1) throw new ApiError(503, 'unavailable'); return { id: file.id, status: 'stored' }; });
     const sync = new Synchronizer(repository, transport);
     await sync.flush(mutation.farmId, { media: true });
     assert.equal(activities, 1); assert.equal((await repository.attachments(mutation.farmId))[0]!.dataBase64, file.dataBase64);
@@ -78,6 +78,13 @@ test('expired access stops synchronisation and leaves the record recoverable', a
     const result = await new Synchronizer(repository, api(async () => { calls++; throw new ApiError(401, 'unauthorized'); })).flush(first.farmId, { media: true });
     assert.equal(result.unauthorized, true); assert.equal(calls, 1);
     const records = await repository.mutations(first.farmId); assert.equal(records.length, 2); assert.equal(records[0]!.state, 'blocked'); assert.equal(records[1]!.attempts, 0);
+    const submitted: string[] = [];
+    const signedIn = new Synchronizer(repository, api(async (_path, _method, body) => {
+      const { id } = body as { id: string }; submitted.push(id); return { id };
+    }));
+    await signedIn.flush(first.farmId); assert.deepEqual(submitted, [second.id]);
+    await repository.updateMutation({ ...records[0]!, state: 'pending', attempts: 0, lastError: null });
+    await signedIn.flush(first.farmId); assert.deepEqual(submitted, [second.id, first.id]);
   } finally { await repository.close(); }
 });
 
@@ -86,7 +93,7 @@ test('concurrent flushes coalesce and an entry added during upload is not lost',
   try {
     const first = activity(); const second = activity(first.farmId); await repository.enqueue(first);
     let release: () => void = () => undefined; const gate = new Promise<void>(resolve => { release = resolve; }); let calls = 0;
-    const sync = new Synchronizer(repository, api(async () => { calls++; await gate; return {}; }));
+    const sync = new Synchronizer(repository, api(async (_path, _method, body) => { calls++; await gate; return { id: (body as { id: string }).id }; }));
     const one = sync.flush(first.farmId); const two = sync.flush(first.farmId); assert.equal(one, two);
     await repository.enqueue(second); release(); await Promise.all([one, two]);
     assert.equal(calls, 1); assert.equal((await repository.mutations(first.farmId))[0]!.id, second.id);
@@ -129,7 +136,7 @@ test('five failed attempts stop automatic retries; explicit retry preserves the 
     for (let attempt = 0; attempt < 7; attempt++) await sync.flush(mutation.farmId);
     assert.equal(calls, 5); const blocked = (await repository.mutations(mutation.farmId))[0]!; assert.equal(blocked.state, 'blocked');
     await repository.updateMutation({ ...blocked, state: 'pending', attempts: 0 });
-    await new Synchronizer(repository, api(async (_path, _method, body) => { assert.equal((body as { id: string }).id, mutation.id); return {}; })).flush(mutation.farmId);
+    await new Synchronizer(repository, api(async (_path, _method, body) => { assert.equal((body as { id: string }).id, mutation.id); return { id: mutation.id }; })).flush(mutation.farmId);
     assert.deepEqual(await repository.mutations(mutation.farmId), []);
   } finally { await repository.close(); }
 });
@@ -153,7 +160,7 @@ test('restart resumes legacy pending records and photos interrupted on their fif
     await repository.close();
     repository = new LocalRepository(new TestDatabase(filename)); await repository.initialize();
     const sync = new Synchronizer(repository, api(async (_path, _method, body) => {
-      assert.deepEqual(body, record.body); return {};
+      assert.deepEqual(body, record.body); return { id: record.id };
     }, async (_path, body) => {
       const payload = body as { id: string; dataBase64: string };
       assert.equal(payload.id, photo.id); assert.equal(payload.dataBase64, photo.dataBase64);
@@ -178,7 +185,7 @@ test('a late response cannot reopen a revoked queue or send later work under an 
       const lateFailure = async () => {
         calls++; await repository.revokeFarm(first.farmId); throw new ApiError(503, 'unavailable');
       };
-      const sync = new Synchronizer(repository, api(during === 'record' ? lateFailure : async () => ({}), lateFailure));
+      const sync = new Synchronizer(repository, api(during === 'record' ? lateFailure : async (_path, _method, body) => ({ id: (body as { id: string }).id }), lateFailure));
       await sync.flush(first.farmId, { media: true });
       assert.equal(calls, 1);
       const pending = await repository.mutations(first.farmId);
@@ -199,7 +206,7 @@ test('submitting a recovered field draft does not requeue a previously revoked p
     await repository.revokeFarm(record.farmId);
     await repository.enqueue(record);
     assert.equal((await repository.attachments(record.farmId))[0]!.state, 'blocked');
-    const sync = new Synchronizer(repository, api(async () => ({}), async () => assert.fail('revoked photo was sent')));
+    const sync = new Synchronizer(repository, api(async () => ({ id: record.id }), async () => assert.fail('revoked photo was sent')));
     const result = await sync.flush(record.farmId, { media: true });
     assert.equal(result.accepted, 1); assert.equal(result.mediaUploaded, 0); assert.equal(result.failed, 0);
   } finally { await repository.close(); }
@@ -221,5 +228,25 @@ test('a photo stays queued until the API confirms that its exact ID was stored',
     }
     const result = await sync.flush(record.farmId, { media: true }); assert.equal(result.mediaUploaded, 1);
     assert.equal((await repository.attachments(record.farmId))[0]!.dataBase64, '');
+  } finally { await repository.close(); }
+});
+
+test('field records require a matching acknowledgement and task edits match the server task ID', async () => {
+  const repository = new LocalRepository(new TestDatabase(':memory:')); await repository.initialize();
+  try {
+    const record = activity(); const task = activity(record.farmId); const taskId = String(task.body.projectId);
+    await repository.attach(attachment(record)); await repository.enqueue(record);
+    await repository.enqueue({ ...task, kind: 'task-status', resourceId: taskId, body: { version: 2, status: 'started' } });
+    let correct = false;
+    const sync = new Synchronizer(repository, api(async (_path, method) => ({
+      id: method === 'PATCH' ? taskId : correct ? record.id : task.id,
+    })));
+    const first = await sync.flush(record.farmId, { media: true });
+    assert.equal(first.accepted, 0); assert.equal(first.mediaUploaded, 0);
+    assert.equal((await repository.mutations(record.farmId))[0]!.lastError, 'invalid_response');
+    correct = true;
+    const second = await sync.flush(record.farmId, { media: true });
+    assert.equal(second.accepted, 2); assert.equal(second.mediaUploaded, 1);
+    assert.deepEqual(await repository.mutations(record.farmId), []);
   } finally { await repository.close(); }
 });
