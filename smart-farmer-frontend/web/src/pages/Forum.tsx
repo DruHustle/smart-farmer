@@ -6,14 +6,22 @@ import {errorLabel} from '../locales';
 import {Empty, Field, Form, Icon, Modal, PageHead, Section, formValue} from '../components/ui';
 import {forumText, forumTopics, reportReasons, type ForumComposer, type ForumEntry, type ForumPage, type ForumReport, type ForumThread, type ForumTopic} from '../forum';
 
-type Mode='all'|'mine'|'reports'|'hidden';
-type Action={kind:'delete'|'report'|'hide'|'restore'|'dismiss';entry:ForumEntry;id:string;reportId?:string};
+type Mode='all'|'mine'|'reports'|'hidden'|'blocked';
+type Action={kind:'delete'|'report'|'block'|'hide'|'restore'|'dismiss';entry:ForumEntry;id:string;reportId?:string};
+function communityRules(): string | null {
+  const value = import.meta.env.VITE_COMMUNITY_RULES_URL;
+  if (!value || !URL.canParse(value)) return null;
+  const url = new URL(value);
+  return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+}
+const rules = communityRules();
 export function Forum() {
   const {farm,lang,t,online,snapshot,busy,call,run}=useFarm(),f=forumText(lang);
   const base=`/v1/farms/${farm.id}/forum`,available=online&&!snapshot.requiresAuth;
   const [mode,setMode]=useState<Mode>('all'),[topic,setTopic]=useState<ForumTopic|''>('');
   const [searchDraft,setSearchDraft]=useState(''),[search,setSearch]=useState('');
   const [items,setItems]=useState<ForumEntry[]>([]),[reports,setReports]=useState<ForumReport[]>([]);
+  const [blocked, setBlocked] = useState<Array<{id:string; displayName:string}>>([]);
   const [next,setNext]=useState<string|null>(null),[loaded,setLoaded]=useState(false),[loading,setLoading]=useState(false);
   const [thread,setThread]=useState<ForumThread|null>(null),[composer,setComposer]=useState<ForumComposer|null>(null),[action,setAction]=useState<Action|null>(null);
   const [formError,setFormError]=useState('');
@@ -26,7 +34,10 @@ export function Forum() {
     const q=new URLSearchParams({limit:'20'});if(cursor)q.set('cursor',cursor);
     if(mode==='all'||mode==='mine'){if(topic)q.set('topic',topic);if(search)q.set('search',search);q.set('mine',String(mode==='mine'));}
     try {
-      if(mode==='reports') {
+      if(mode==='blocked') {
+        const page=await call<ForumPage<{id:string;displayName:string}>>(`${base}/blocked-authors?${q}`);
+        if(alive.current&&current===generation.current){setBlocked(previous=>cursor?[...previous,...page.items]:page.items);setNext(page.nextCursor);setLoaded(true);}
+      } else if(mode==='reports') {
         const page=await call<ForumPage<ForumReport>>(`${base}/reports?${q}`);
         if(alive.current&&current===generation.current){setReports(previous=>cursor?[...previous,...page.items]:page.items);setNext(page.nextCursor);setLoaded(true);}
       } else {
@@ -36,7 +47,7 @@ export function Forum() {
     } finally {if(alive.current&&current===generation.current)setLoading(false);}
   }
   useEffect(()=>{
-    generation.current++;setThread(null);setItems([]);setReports([]);setNext(null);setLoaded(false);setLoading(false);
+    generation.current++;setThread(null);setItems([]);setReports([]);setBlocked([]);setNext(null);setLoaded(false);setLoading(false);
     if(available)void run(()=>loadFeed());
   },[farm.id,farm.role,available,mode,topic,search]);
   async function openThread(id:string,cursor?:string) {
@@ -73,15 +84,16 @@ export function Forum() {
     await run(async()=>{
       setFormError('');try {
       if(current.kind==='delete')await call(`${base}/entries/${current.entry.id}`,jsonBody({version},'DELETE'));
-      else if(current.kind==='report')await call(`${base}/entries/${current.entry.id}/reports`,jsonBody({id:current.id,version,reason:formValue(data,'category'),details:formValue(data,'details')}));
+      else if(current.kind==='block')await call(`${base}/entries/${current.entry.id}/author-block`,{method:'PUT'});
+      else if(current.kind==='report')await call(`${base}/entries/${current.entry.id}/reports`,jsonBody({id:current.id,version,target:formValue(data,'target'),reason:formValue(data,'category'),details:formValue(data,'details')}));
       else if(current.kind==='dismiss')await call(`${base}/reports/${current.reportId}/dismiss`,jsonBody({version,reason:formValue(data,'reason')}));
       else await call(`${base}/entries/${current.entry.id}/moderation`,jsonBody({version,status:current.kind==='hide'?'hidden':'visible',reason:formValue(data,'reason')}));
       if(!alive.current)return;setAction(null);
-      if(current.kind==='delete'&&current.entry.kind==='discussion'){setThread(null);await loadFeed();}
+      if(current.kind==='block'||(current.kind==='delete'&&current.entry.kind==='discussion')){setThread(null);await loadFeed();}
       else if(mode==='reports'||mode==='hidden')await loadFeed();
       else await afterWrite();
       } catch(error){if(alive.current)setFormError(errorLabel(t,error));throw error;}
-    },current.kind==='report'?f.reported:current.kind==='delete'?f.removed:f.moderationSaved);
+    },current.kind==='block'?f.blockSaved:current.kind==='report'?f.reported:current.kind==='delete'?f.removed:f.moderationSaved);
   }
   function controls(entry:ForumEntry,reportId?:string) {
     if(entry.status==='deleted')return null;
@@ -89,6 +101,7 @@ export function Forum() {
     return <div className="button-row forum-actions">
       {entry.canEdit&&<><button type="button" data-testid={`forum-edit-${entry.id}`} disabled={disabled} onClick={()=>start('edit',entry)}>{f.edit}</button><button type="button" className="danger-text" data-testid={`forum-delete-${entry.id}`} disabled={disabled} onClick={()=>act('delete')}>{f.remove}</button></>}
       {!entry.mine&&entry.status==='visible'&&<button type="button" data-testid={`forum-report-${entry.id}`} disabled={disabled} onClick={()=>act('report')}>{f.report}</button>}
+      {!entry.mine&&entry.status==='visible'&&!reportId&&<button type="button" disabled={disabled} onClick={()=>act('block')}>{f.block}</button>}
       {entry.canModerate&&<button type="button" data-testid={`forum-moderate-${entry.id}`} disabled={disabled} onClick={()=>act(entry.status==='hidden'?'restore':'hide')}>{entry.status==='hidden'?f.restore:f.hide}</button>}
       {reportId&&<button type="button" disabled={disabled} onClick={()=>act('dismiss')}>{f.dismiss}</button>}
     </div>;
@@ -104,7 +117,7 @@ export function Forum() {
       </>}
     </article>;
   }
-  const actionTitle=action?{delete:f.remove,report:f.reportTitle,hide:f.hide,restore:f.restore,dismiss:f.dismiss}[action.kind]:'';
+  const actionTitle=action?{delete:f.remove,report:f.reportTitle,block:f.block,hide:f.hide,restore:f.restore,dismiss:f.dismiss}[action.kind]:'';
   return <>
     <PageHead title={f.title} subtitle={f.intro} action={<button className="primary" data-testid="forum-new" disabled={disabled} onClick={()=>start('discussion')}><Icon name="plus"/>{f.newDiscussion}</button>}/>
     <p className="notice subtle">{f.audience}</p>
@@ -118,16 +131,18 @@ export function Forum() {
       </Section>
     </>:<>
       <div className="button-row forum-modes" role="group" aria-label={f.title}>
-        {([['all',f.discussions],['mine',f.mine],...(farm.role==='owner'?[['reports',f.reports],['hidden',f.hiddenEntries]]:[])] as [Mode,string][]).map(([value,title])=><button key={value} aria-pressed={mode===value} className={mode===value?'primary':''} disabled={busy||loading} onClick={()=>changeMode(value)}>{title}</button>)}
+        {([['all',f.discussions],['mine',f.mine],['blocked',f.blockedAuthors],...(farm.role==='owner'?[['reports',f.reports],['hidden',f.hiddenEntries]]:[])] as [Mode,string][]).map(([value,title])=><button key={value} aria-pressed={mode===value} className={mode===value?'primary':''} disabled={busy||loading} onClick={()=>changeMode(value)}>{title}</button>)}
       </div>
       {(mode==='all'||mode==='mine')?<form className="forum-filters" onSubmit={e=>{e.preventDefault();setSearch(searchDraft.trim());}}>
         <Field label={f.topic}><select data-testid="forum-filter-topic" value={topic} onChange={e=>setTopic(e.target.value as ForumTopic|'')} disabled={disabled}><option value="">{f.all}</option>{forumTopics.map(value=><option key={value} value={value}>{f[value]}</option>)}</select></Field>
         <Field label={f.search}><input type="search" maxLength={100} value={searchDraft} onChange={e=>setSearchDraft(e.target.value)} disabled={!available}/></Field><button type="submit" disabled={disabled}>{f.searchButton}</button>
       </form>:<p className="muted">{f.moderationHint}</p>}
       {loading&&<p role="status">{t.loading}</p>}
-      {available&&<Section title={mode==='reports'?f.reports:mode==='hidden'?f.hiddenEntries:f.discussions}>
-        {mode==='reports'?reports.map(report=><article className="forum-entry" key={report.id}><h2>{f[report.reason]}</h2><p className="preserve-lines">{report.details}</p><small>{displayTime(report.createdAt,lang,farm.timezone)}</small>{report.reportedVersion!==report.entry.version&&<p className="notice warning">{f.changedSinceReport}</p>}<blockquote><strong>{report.entry.displayName}</strong><p className="preserve-lines">{report.entry.title}</p><p className="preserve-lines">{report.entry.body}</p></blockquote>{controls(report.entry,report.id)}</article>):items.map(entry=>entryCard(entry,mode!=='hidden'))}
-        {loaded&&!loading&&!(mode==='reports'?reports:items).length&&<Empty icon="forum" title={mode==='reports'?f.noReports:mode==='hidden'?f.noHidden:f.empty}/>}
+      {available&&<Section title={mode==='blocked'?f.blockedAuthors:mode==='reports'?f.reports:mode==='hidden'?f.hiddenEntries:f.discussions}>
+        {mode==='blocked'?blocked.map(author=><article className="forum-entry" key={author.id}><strong>{author.displayName}</strong> <button type="button" disabled={disabled} onClick={()=>void run(async()=>{
+          await call(`${base}/blocked-authors/${author.id}`,{method:'DELETE'}); await loadFeed();
+        })}>{f.unblock}</button></article>):mode==='reports'?reports.map(report=><article className="forum-entry" key={report.id}><h2>{f[report.reason]}</h2>{report.target==='author'&&<p>{f.author}</p>}<p className="preserve-lines">{report.details}</p><small>{displayTime(report.createdAt,lang,farm.timezone)}</small>{report.reportedVersion!==report.entry.version&&<p className="notice warning">{f.changedSinceReport}</p>}<blockquote><strong>{report.entry.displayName}</strong><p className="preserve-lines">{report.entry.title}</p><p className="preserve-lines">{report.entry.body}</p></blockquote>{controls(report.entry,report.id)}</article>):items.map(entry=>entryCard(entry,mode!=='hidden'))}
+        {loaded&&!loading&&!(mode==='blocked'?blocked:mode==='reports'?reports:items).length&&<Empty icon="forum" title={mode==='blocked'?f.nobodyBlocked:mode==='reports'?f.noReports:mode==='hidden'?f.noHidden:f.empty}/>}
         {next&&<button className="load-more" disabled={disabled} onClick={()=>void run(()=>loadFeed(next))}>{f.more}</button>}
       </Section>}
     </>}
@@ -137,14 +152,14 @@ export function Forum() {
         <Field label={f.displayName} hint={f.nameHint}><input data-testid="forum-compose-name" name="displayName" minLength={2} maxLength={50} required defaultValue={composer.entry?.displayName??''} autoComplete="off"/></Field>
         {(composer.kind==='discussion'||composer.entry?.kind==='discussion')&&<><Field label={f.heading}><input data-testid="forum-compose-title" name="title" minLength={3} maxLength={160} required defaultValue={composer.entry?.title??''}/></Field><Field label={f.topic}><select name="topic" defaultValue={composer.entry?.topic??'general'}>{forumTopics.map(value=><option key={value} value={value}>{f[value]}</option>)}</select></Field></>}
         <Field label={f.body} hint={f.bodyHint}><textarea data-testid="forum-compose-body" name="body" maxLength={8000} required rows={8} defaultValue={composer.entry?.body??''}/></Field>
-        <p>{f.audience}</p><label className="check-label"><input data-testid="forum-compose-consent" type="checkbox" required/>{f.consent}</label>
+        <p>{f.audience}</p>{rules&&<><a href={rules} target="_blank" rel="noreferrer">{f.rules}</a><label className="check-label"><input name="agreeRules" type="checkbox" required/>{f.agreeRules}</label></>}<label className="check-label"><input data-testid="forum-compose-consent" type="checkbox" required/>{f.consent}</label>
         {!available&&<p className="notice warning">{f.offline}</p>}
         <button data-testid="forum-compose-submit" className="primary" type="submit" disabled={disabled}>{composer.kind==='edit'?f.save:f.share}</button>
       </Form>
     </Modal>}
     {action&&<Modal title={actionTitle} onClose={()=>{if(!busy)setAction(null);}}><Form onSubmit={submitAction}>
       {formError&&<p className="notice error" role="alert">{formError}</p>}
-      {action.kind==='delete'?<p>{f.removeHint}</p>:action.kind==='report'?<><p>{f.reportHint}</p><Field label={f.reason}><select name="category" defaultValue="other">{reportReasons.map(value=><option key={value} value={value}>{f[value]}</option>)}</select></Field><Field label={f.details}><textarea name="details" maxLength={1000}/></Field></>:<><p>{f.moderationHint}</p><Field label={f.moderationReason}><textarea name="reason" minLength={5} maxLength={1000} required/></Field></>}
+      {action.kind==='block'?<p>{f.blockHint}</p>:action.kind==='delete'?<p>{f.removeHint}</p>:action.kind==='report'?<><p>{f.reportHint}</p><Field label={f.target}><select name="target" defaultValue="content"><option value="content">{f.body}</option><option value="author">{f.author}</option></select></Field><Field label={f.reason}><select name="category" defaultValue="other">{reportReasons.map(value=><option key={value} value={value}>{f[value]}</option>)}</select></Field><Field label={f.details}><textarea name="details" maxLength={1000}/></Field></>:<><p>{f.moderationHint}</p><Field label={f.moderationReason}><textarea name="reason" minLength={5} maxLength={1000} required/></Field></>}
       <label className="check-label"><input data-testid="forum-action-consent" type="checkbox" required/>{f.confirm}</label><button data-testid="forum-action-submit" type="submit" className="primary" disabled={disabled}>{actionTitle}</button>
     </Form></Modal>}
   </>;

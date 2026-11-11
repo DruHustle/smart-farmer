@@ -39,6 +39,7 @@ export function App() {
     const path = pagePath(next);
     if (path !== location.pathname + location.search) history.pushState(null, '', path);
     showPage(next);
+    window.scrollTo(0, 0);
   }
   useEffect(() => {
     const restore = () => {showPage(destination(location).page); setRecordProject(null);};
@@ -150,7 +151,7 @@ export function App() {
         {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'accounting' && <Suspense fallback={<p role="status">{t.loading}</p>}><Accounting initialInvoiceId={accountingTarget?.farmId === farm.id && accountingTarget.userId === snapshot.identity.userId ? accountingTarget.invoiceId : undefined}/></Suspense>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
         {page === 'forum' && <Forum/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
-        {recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && page !== 'forum' && <button className="record-fab" disabled={!farmData.projects.length} onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
+        {farmData.projects.length > 0 && recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && page !== 'forum' && <button className="record-fab" onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
       </Context.Provider> : snapshot.membershipsChecked && !snapshot.requiresAuth ? <section className="panel">
         <h1>{t.join}</h1><p>{t.noFarmMembership}</p>
         <form className="form-grid" aria-label={t.join} onSubmit={async e => {

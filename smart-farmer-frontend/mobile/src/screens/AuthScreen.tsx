@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, ScrollView, Text, View } from 'react-native';
 import * as ScreenCapture from 'expo-screen-capture';
 import { openOnesa, redeemOnesa, type OnesaConfig } from '../onesa';
+import { PolicyLink } from '../PolicyLink';
 import { createApi } from '../api';
 import { errorText, textFor } from '../i18n';
 import type { Language, Session } from '../types';
@@ -99,6 +100,6 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       {mode === 'register' ? <Field label={t.farmName} value={farmName} onChangeText={setFarmName} maxLength={100} /> : null}
       {mode === 'join' || mode === 'recover' ? <Field label={mode === 'join' ? t.invitationCode : t.recoveryCode} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} secureTextEntry /> : null}
       <Button testID="auth-submit" title={t.submit} busy={busy} onPress={() => { void submit(); }} />
-    </Card>}<Text style={styles.caption}>{t.translations}</Text>
+    </Card>}<Text style={styles.caption}>{t.translations}</Text><PolicyLink language={language}/>
   </ScrollView></KeyboardAvoidingView>;
 }

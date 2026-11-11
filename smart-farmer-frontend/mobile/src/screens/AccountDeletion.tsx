@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {Text} from 'react-native';
+import {PolicyLink} from '../PolicyLink';
 import {ApiError} from '../api';
 import {errorText, textFor} from '../i18n';
 import type {Language} from '../types';
@@ -50,7 +51,7 @@ export function AccountDeletion({work, language}: {work: Workspace; language: La
     } finally { setBusy(false); }
   }
 
-  return <><Button testID="account-deletion" secondary title={t.deleteAccount} onPress={() => setVisible(true)}/>
+  return <><PolicyLink language={language}/><Button testID="account-deletion" secondary title={t.deleteAccount} onPress={() => setVisible(true)}/>
     <Sheet visible={visible} closeLabel={t.close} title={t.deleteAccount} dismissible={!busy} onClose={() => setVisible(false)}>
       <Text style={styles.text}>{t.deletionDetail}</Text>
       {error ? <Notice error text={errorText(language, error)}/> : null}

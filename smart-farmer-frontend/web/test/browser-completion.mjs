@@ -174,7 +174,7 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
       assert.equal(persisted[0].status,'completed');
       await tab('bookings',reopened);
       const card=reopened.locator('.booking-card').filter({has:reopened.getByRole('heading',{name:'Browser ploughing service',exact:true})});
-      await visible(card.getByText(sn.completed,{exact:true}));
+      await visible(card.locator(':scope > .split > .badge').filter({hasText:new RegExp(`^${escape(sn.completed)}$`)}));
       assert.equal(await card.count(),1);
     } finally { await reopened.close(); }
   }

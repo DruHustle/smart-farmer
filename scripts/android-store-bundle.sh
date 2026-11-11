@@ -3,6 +3,8 @@
 set -euo pipefail
 umask 077
 mobile=$(cd "$(dirname "$0")/../smart-farmer-frontend/mobile" && pwd)
+mode=${2:-store}
+case "$mode" in store|--qualification) ;; *) echo 'Use --qualification only for disposable local/CI signing.' >&2; exit 2 ;; esac
 output=${1:?Pass a new absolute .aab output path}
 case "$output" in /*.aab) ;; *) echo 'Use an absolute .aab output path.' >&2; exit 2 ;; esac
 test ! -e "$output" || { echo 'Choose an unused output path.' >&2; exit 2; }
@@ -14,6 +16,7 @@ test ! -e "$output" || { echo 'Choose an unused output path.' >&2; exit 2; }
 : "${ANDROID_RELEASE_CERT_SHA256:?Set the upload certificate SHA-256 fingerprint from Play Console}"
 export EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-https://farmer.onesa.eu}
 cd "$mobile"
+if [[ "$mode" == store ]]; then bash ../../scripts/check-store-policies.sh; fi
 node --import tsx --input-type=commonjs -e "require('./src/api.ts').apiOrigin(process.env.EXPO_PUBLIC_API_URL, false)"
 work=$(mktemp -d "$(dirname "$output")/.farmer-upload.XXXXXX")
 trap 'rm -rf "$work"' EXIT

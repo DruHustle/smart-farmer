@@ -35,6 +35,7 @@ case "$action" in
     if [[ "$action" == check ]]; then
       options+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
     else
+      bash ../../scripts/check-store-policies.sh
       : "${APPLE_TEAM_ID:?Set the enrolled Apple team ID}"
       options+=("DEVELOPMENT_TEAM=$APPLE_TEAM_ID")
     fi

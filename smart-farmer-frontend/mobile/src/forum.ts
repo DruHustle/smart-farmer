@@ -8,11 +8,16 @@ export type ForumEntry = {
 };
 export type ForumPage<T> = {items:T[];nextCursor:string|null};
 export type ForumThread = {discussion:ForumEntry;replies:ForumPage<ForumEntry>};
-export type ForumReport = {id:string;reason:typeof reportReasons[number];details:string;reportedVersion:number;createdAt:string;entry:ForumEntry};
+export type BlockedAuthor = {id:string; displayName:string};
+export type ForumReport = {id:string;target?:'content'|'author';reason:typeof reportReasons[number];details:string;reportedVersion:number;createdAt:string;entry:ForumEntry};
 export type ForumComposer = {kind:'discussion'|'reply'|'edit';id:string;entry?:ForumEntry;discussionId?:string};
 
 /** Preliminary Shona and Northern Ndebele copy follows the app's language-review policy. */
 export const forumPhrases = {
+  block:['Vharira munyori','Vimba umlobi'], unblock:['Bvisa kuvharira','Vulela umlobi'], blocked:['Vanyori vakavharirwa','Abalobi abavinjiweyo'],
+  blockHint:['Imi nemunyori uyu hamuchazooni mashoko emumwe nemumwe mudare.','Wena lomlobi lo kalisayikubona imibhalo yomunye enkundleni.'],
+  noneBlocked:['Hausati wavharira munhu.','Kawukavimbi muntu.'], reportTarget:['Chauri kumhan’ara','Okubikayo'],
+  author:['Munyori','Umlobi'], content:['Mashoko','Umbhalo'],
   title:['Dare revarimi','Inkundla yabalimi'],
   intro:['Goveranai ruzivo, mibvunzo nezvamakaona pakurima.','Yabelanani ulwazi, imibuzo lalokho elikubonileyo ekulimeni.'],
   audience:['Mashoko aunogovera pano anoonekwa nevarimi vose vakapinda. Zita rekuratidza raunonyora rinoonekwa; zita rekupinda, zita repurazi nemafaira ako hazvibatanidzwi.','Ulwazi olwabelana lapha lubonwa ngabalimi bonke abangenileyo. Ibizo lokubonisa olibhalayo liyabonakala; ibizo lokungena, elepulazi lamafayela akho akufakwa.'],

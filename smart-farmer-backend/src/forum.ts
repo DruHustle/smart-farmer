@@ -15,7 +15,7 @@ const replyInput = content.extend({id: uuid}).strict();
 const editInput = content.extend({version: z.number().int().positive().max(2_000_000_000), title: text(3,160).optional(), topic: topic.optional()}).strict();
 const versionInput = z.object({version: z.number().int().positive().max(2_000_000_000)}).strict();
 const moderationInput = versionInput.extend({status: z.enum(['visible','hidden']), reason: text(5,1000)}).strict();
-const reportInput = versionInput.extend({id: uuid, reason: z.enum(['spam','abuse','unsafe_advice','privacy','other']), details: text(0,1000).default('')}).strict();
+const reportInput = versionInput.extend({id: uuid, target:z.enum(['content','author']).optional(), reason: z.enum(['spam','abuse','unsafe_advice','privacy','other']), details: text(0,1000).default('')}).strict();
 const listInput = z.object({topic: topic.optional(), search: text(0,100).default(''), mine: z.enum(['true','false']).default('false'), limit: z.coerce.number().int().min(1).max(50).default(20), cursor: z.string().max(200).optional()}).strict();
 const pageInput = listInput.pick({limit:true,cursor:true});
 const cursorValue = z.object({time:z.iso.datetime(),id:uuid}).strict();
@@ -30,6 +30,11 @@ type Entry = {
 const projection = `e.*,to_char(e.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time,e.author_id=$1 AS mine,
  EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id) AS source_member,
  (e.farm_id=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id AND m.role='owner')) AS can_moderate`;
+// Ordinary reads and interactions respect the block in both directions, across farm memberships.
+function mayInteract(author: 'e.author_id' | 'r.author_id', viewer = '$1') {
+  return `NOT EXISTS (SELECT 1 FROM forum_author_blocks b WHERE
+    (b.viewer_id=${viewer} AND b.author_id=${author}) OR (b.viewer_id=${author} AND b.author_id=${viewer}))`;
+}
 function dto(e:Entry) {
   return {id:e.id,kind:e.parent_id?'reply':'discussion',displayName:e.display_name,title:e.title,topic:e.topic,
     body:e.body,status:e.status,version:e.version,createdAt:e.created_at,updatedAt:e.updated_at,
@@ -45,8 +50,8 @@ function page(rows:Entry[],limit:number) {
   const items=rows.slice(0,limit),last=items.at(-1);
   return {items:items.map(dto),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({time:last.cursor_time,id:last.id})).toString('base64url'):null};
 }
-async function findEntry(db:Query,id:string,actor:string,farmId:string,lock=false) {
-  const result=await db.query<Entry>(`SELECT ${projection} FROM forum_entries e WHERE e.id=$3 ${lock?'FOR UPDATE OF e':''}`,[actor,farmId,id]);
+async function findEntry(db:Query,id:string,actor:string,farmId:string,lock=false,respectBlocks=false) {
+  const result=await db.query<Entry>(`SELECT ${projection} FROM forum_entries e WHERE e.id=$3 ${respectBlocks?'AND '+mayInteract('e.author_id'):''} ${lock?'FOR UPDATE OF e':''}`,[actor,farmId,id]);
   if(!result.rowCount)throw new ApiError('not_found',404);
   return result.rows[0]!;
 }
@@ -76,13 +81,53 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
     if(e.status==='deleted')throw new ApiError('forum_content_removed',409);
   }
   const base='/v1/farms/:farmId/forum';
+  app.put(base+'/entries/:entryId/author-block',writeLimit,async(req,reply)=>{
+    const a=await access(req,reply);if(!a)return;
+    const {entryId}=z.object({entryId:uuid}).parse(req.params);
+    await transaction(async c=>{
+      await writeAccess(c,req,a.actor,a.farmId);
+      const entry=await findEntry(c,entryId,a.actor,a.farmId,true);
+      if(entry.author_id===a.actor)throw new ApiError('invalid_input');
+      // A repeated block succeeds even when the author has since removed this post.
+      const already=await c.query('SELECT 1 FROM forum_author_blocks WHERE viewer_id=$1 AND author_id=$2',[a.actor,entry.author_id]);
+      if(already.rowCount)return;
+      if(entry.status!=='visible')throw new ApiError('not_found',404);
+      if(entry.parent_id){
+        const parent=await findEntry(c,entry.parent_id,a.actor,a.farmId,false,true);
+        if(!visible(parent))throw new ApiError('not_found',404);
+      }
+      await findEntry(c,entry.id,a.actor,a.farmId,false,true);
+      await c.query(`INSERT INTO forum_author_blocks(viewer_id,author_id,display_name) VALUES($1,$2,$3)
+        ON CONFLICT (viewer_id,author_id) DO NOTHING`,[a.actor,entry.author_id,entry.display_name]);
+    });
+    return reply.code(204).send();
+  });
+  app.get(base+'/blocked-authors',async(req,reply)=>{
+    const a=await access(req,reply);if(!a)return;
+    const q=pageInput.parse(req.query),p=cursor(q.cursor);
+    const rows=await db.query(`SELECT id,display_name,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+      FROM forum_author_blocks WHERE viewer_id=$1 AND ($2::timestamptz IS NULL OR (created_at,id)>($2::timestamptz,$3::uuid))
+      ORDER BY created_at,id LIMIT $4`,[a.actor,p?.time??null,p?.id??null,q.limit+1]);
+    const items=rows.rows.slice(0,q.limit),last=items.at(-1);
+    return {items:items.map(row=>({id:row.id,displayName:row.display_name})),
+      nextCursor:rows.rows.length>q.limit&&last?Buffer.from(JSON.stringify({time:last.cursor_time,id:last.id})).toString('base64url'):null};
+  });
+  app.delete(base+'/blocked-authors/:blockId',writeLimit,async(req,reply)=>{
+    const a=await access(req,reply);if(!a)return;
+    const {blockId}=z.object({blockId:uuid}).parse(req.params);
+    await transaction(async c=>{
+      await writeAccess(c,req,a.actor,a.farmId);
+      await c.query('DELETE FROM forum_author_blocks WHERE id=$1 AND viewer_id=$2',[blockId,a.actor]);
+    });
+    return reply.code(204).send();
+  });
   app.get(base+'/discussions',async(req,reply)=>{
     const a=await access(req,reply);if(!a)return;
     const q=listInput.parse(req.query),p=cursor(q.cursor);
     const search=q.search?`%${q.search.replace(/[\\%_]/g,'\\$&')}%`:null;
     const result=await db.query<Entry>(`SELECT ${projection},
-      (SELECT count(*) FROM forum_entries r WHERE r.parent_id=e.id AND r.status='visible') AS reply_count
-      FROM forum_entries e WHERE e.parent_id IS NULL
+      (SELECT count(*) FROM forum_entries r WHERE r.parent_id=e.id AND r.status='visible' AND ${mayInteract('r.author_id')}) AS reply_count
+      FROM forum_entries e WHERE e.parent_id IS NULL AND ${mayInteract('e.author_id')}
       AND (e.status='visible' OR ($3 AND e.author_id=$1 AND e.status='hidden'))
       AND (NOT $3 OR e.author_id=$1) AND ($4::text IS NULL OR e.topic=$4)
       AND ($5::text IS NULL OR e.title ILIKE $5 OR e.body ILIKE $5)
@@ -93,9 +138,9 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
   app.get(base+'/discussions/:discussionId',async(req,reply)=>{
     const a=await access(req,reply);if(!a)return;
     const {discussionId}=z.object({discussionId:uuid}).parse(req.params),q=pageInput.parse(req.query),p=cursor(q.cursor);
-    const discussion=await findEntry(db,discussionId,a.actor,a.farmId);
+    const discussion=await findEntry(db,discussionId,a.actor,a.farmId,false,true);
     if(discussion.parent_id||!visible(discussion))throw new ApiError('not_found',404);
-    const replies=await db.query<Entry>(`SELECT ${projection} FROM forum_entries e WHERE e.parent_id=$3
+    const replies=await db.query<Entry>(`SELECT ${projection} FROM forum_entries e WHERE e.parent_id=$3 AND ${mayInteract('e.author_id')}
       AND (e.status IN ('visible','deleted') OR e.author_id=$1 OR (e.farm_id=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id AND m.role='owner')))
       AND ($4::timestamptz IS NULL OR (e.created_at,e.id)>($4::timestamptz,$5::uuid)) ORDER BY e.created_at,e.id LIMIT $6`,[a.actor,a.farmId,discussionId,p?.time??null,p?.id??null,q.limit+1]);
     return {discussion:dto(discussion),replies:page(replies.rows,q.limit)};
@@ -114,7 +159,7 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
         return {entry:await findEntry(c,b.id,a.actor,a.farmId),duplicate:true};
       }
       if(parentId) {
-        const parent=await c.query('SELECT parent_id,status FROM forum_entries WHERE id=$1 FOR SHARE',[parentId]);
+        const parent=await c.query(`SELECT e.parent_id,e.status FROM forum_entries e WHERE e.id=$1 AND ${mayInteract('e.author_id','$2')} FOR SHARE`,[parentId,a.actor]);
         if(!parent.rowCount||parent.rows[0].parent_id||parent.rows[0].status!=='visible')throw new ApiError('not_found',404);
       }
       await c.query('INSERT INTO forum_entries(id,farm_id,author_id,parent_id,display_name,title,topic,body,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[b.id,a.farmId,a.actor,parentId,b.displayName,'title'in b?b.title:null,'topic'in b?b.topic:null,b.body,hash]);
@@ -152,19 +197,21 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
   app.post(base+'/entries/:entryId/reports',writeLimit,async(req,reply)=>{
     const a=await access(req,reply);if(!a)return;
     const {entryId}=z.object({entryId:uuid}).parse(req.params),b=reportInput.parse(req.body);
-    const hash=sha256(JSON.stringify({entryId,...b}));
+    const {target='content', ...fields}=b;
+    // Match the original content-report hash on retries from an older app.
+    const hash=sha256(JSON.stringify({entryId,...fields,...(target==='author'?{target}:{})}));
     const result=await transaction(async c=>{
       await writeAccess(c,req,a.actor,a.farmId);
       await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['forum-report:'+b.id]);
       const previous=await c.query('SELECT reporter_id,payload_hash,status FROM forum_reports WHERE id=$1',[b.id]);
       if(previous.rowCount) {if(previous.rows[0].reporter_id!==a.actor||previous.rows[0].payload_hash!==hash)throw new ApiError('idempotency_conflict',409);return {id:b.id,status:previous.rows[0].status,duplicate:true};}
-      const e=await findEntry(c,entryId,a.actor,a.farmId,true);
+      const e=await findEntry(c,entryId,a.actor,a.farmId,true,true);
       if(e.status!=='visible'||e.author_id===a.actor)throw new ApiError('not_found',404);
-      if(e.parent_id){const parent=await c.query('SELECT status FROM forum_entries WHERE id=$1 FOR SHARE',[e.parent_id]);if(parent.rows[0]?.status!=='visible')throw new ApiError('not_found',404);}
+      if(e.parent_id){const parent=await c.query('SELECT status FROM forum_entries e WHERE id=$1 AND '+mayInteract('e.author_id','$2')+' FOR SHARE',[e.parent_id,a.actor]);if(parent.rows[0]?.status!=='visible')throw new ApiError('not_found',404);}
       currentVersion(e,b.version);
-      const existing=await c.query('SELECT id FROM forum_reports WHERE entry_id=$1 AND reporter_id=$2 AND reported_version=$3',[entryId,a.actor,b.version]);
+      const existing=await c.query('SELECT id FROM forum_reports WHERE entry_id=$1 AND reporter_id=$2 AND reported_version=$3 AND target=$4',[entryId,a.actor,b.version,target]);
       if(existing.rowCount)throw new ApiError('forum_already_reported',409);
-      await c.query('INSERT INTO forum_reports(id,entry_id,reporter_id,reported_version,reason,details,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7)',[b.id,entryId,a.actor,b.version,b.reason,b.details,hash]);
+      await c.query('INSERT INTO forum_reports(id,entry_id,reporter_id,reported_version,reason,details,payload_hash,target) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[b.id,entryId,a.actor,b.version,b.reason,b.details,hash,target]);
       return {id:b.id,status:'open',duplicate:false};
     });return reply.code(result.duplicate?200:201).send(result);
   });
@@ -172,12 +219,12 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
     const a=await access(req,reply);if(!a)return;
     if(!await member(a.farmId,a.actor,['owner']))throw new ApiError('not_found',404);
     const q=pageInput.parse(req.query),p=cursor(q.cursor);
-    const reports=await db.query(`SELECT r.id,r.reason,r.details,r.reported_version,r.created_at,r.entry_id,
+    const reports=await db.query(`SELECT r.id,r.target,r.reason,r.details,r.reported_version,r.created_at,r.entry_id,
       to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
       FROM forum_reports r JOIN forum_entries e ON e.id=r.entry_id WHERE e.farm_id=$1 AND r.status='open'
       AND ($2::timestamptz IS NULL OR (r.created_at,r.id)>($2::timestamptz,$3::uuid)) ORDER BY r.created_at,r.id LIMIT $4`,[a.farmId,p?.time??null,p?.id??null,q.limit+1]);
     const rows=reports.rows.slice(0,q.limit),items=[];
-    for(const report of rows)items.push({id:report.id,reason:report.reason,details:report.details,reportedVersion:report.reported_version,createdAt:report.created_at,entry:dto(await findEntry(db,report.entry_id,a.actor,a.farmId))});
+    for(const report of rows)items.push({id:report.id,target:report.target,reason:report.reason,details:report.details,reportedVersion:report.reported_version,createdAt:report.created_at,entry:dto(await findEntry(db,report.entry_id,a.actor,a.farmId))});
     const last=rows.at(-1);return {items,nextCursor:reports.rows.length>q.limit&&last?Buffer.from(JSON.stringify({time:last.cursor_time,id:last.id})).toString('base64url'):null};
   });
   app.get(base+'/hidden',async(req,reply)=>{
