@@ -92,6 +92,56 @@ def invoice_trace(z, tag):
             markers=[k for k in allowed_ids if k in json.dumps(command)]
             if markers or category in ('stopAppCommand','launchAppCommand','stopApp','launchApp','addMediaCommand','addMedia'):
                 trace.append({'type':category,'status':stat,'markers':markers})
+
+    # Search only the failed phase tree and print approved control names.
+    # Maestro versions may keep the hierarchy in commands metadata or an XML member.
+    landmarks = {
+      'Photos grid':'PXGGridLayout-Info','Farmer gallery':'invoice-library','Farmer upload':'invoice-upload-',
+      'Farmer preview':'invoice-local-source-image','Farmer finance':'accounting-tabs','OS Add':'Add',
+      'OS Done':'Done','OS Use Photo':'Use Photo','OS Cancel':'Cancel','Farmer remove':'invoice-remove-',
+      'OS photo grid':'Photos','OS permission dialog':'Allow Access','device reauth':'device-reauthenticate'
+    }
+    def id_flags(obj):
+        flags=set()
+        if isinstance(obj,dict):
+            for key, item in obj.items():
+                if key.lower() in ('accessibilitylabel','label','identifier','accessibilityidentifier','testid','text','resource-id','value','content-desc','description','accessibilityidentifier') and isinstance(item,str):
+                    for tag,target in landmarks.items():
+                        if item==target or (target.endswith('-') and item.startswith(target)):
+                            flags.add(tag)
+                elif isinstance(item,(dict,list)):
+                    flags.update(id_flags(item))
+        elif isinstance(obj,list):
+            for x in obj:
+                flags.update(id_flags(x))
+        return flags
+    shapes=set()
+    for path in z.namelist():
+        if not path.startswith('ios-intake-capture/') or z.getinfo(path).file_size>16000000: continue
+        name=Path(path).name.lower()
+        if not name.endswith(('.json','.xml')): continue
+        if 'command' in name: shapes.add('commands')
+        elif 'hierarchy' in name or 'viewtree' in name or 'view-tree' in name:
+            shapes.add('standalone hierarchy')
+            raw=z.read(path).decode(errors='replace')
+            try:
+                flags=id_flags(json.loads(raw))
+            except (ValueError,TypeError):
+                flags={k for k,v in landmarks.items() if ('"'+v+'"') in raw or ("'"+v+"'") in raw}
+            trace.append({'type':'saved hierarchy controls','markers':sorted(flags)})
+        if 'command' not in name: continue
+        try: commands=json.loads(z.read(path))
+        except (ValueError,TypeError): continue
+        if not isinstance(commands,list): continue
+        for cmd in commands:
+            if not isinstance(cmd,dict): continue
+            metadata=cmd.get('metadata') or {}
+            if metadata.get('status')!='FAILED': continue
+            tree_fields=[key for key in metadata if key in ('hierarchy','error','err','viewHierarchy','viewHierarchyFile','errorDetails','exception','errors','screenshotName')]
+            flags=id_flags({k:metadata[k] for k in tree_fields})
+            trace.append({'type':'failed command metadata','provided':tree_fields,'markers':sorted(flags)})
+    print('GALLERY DIAGNOSTIC FILE TYPES',tag,sorted(shapes))
+
     for entry in trace[-45:]:
         print('IOS GALLERY TRACE',tag,json.dumps(entry))
     return trace
