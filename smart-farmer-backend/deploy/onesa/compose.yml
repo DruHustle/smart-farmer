@@ -1,0 +1,92 @@
+# Production candidate: provision and qualify before use; never run migrations implicitly.
+name: smart-farmer-onesa
+x-app: &app
+  image: ${FARMER_API_IMAGE:?Set a reviewed immutable API image digest}
+  env_file:
+    - path: ${FARMER_RUNTIME_ENV_FILE:?Set the private application environment file}
+      format: raw
+  environment: &app-environment
+    NODE_ENV: production
+    HOST: 0.0.0.0
+    PORT: '3000'
+    APP_REVISION: ${FARMER_SOURCE_REVISION:?Set the exact reviewed source revision}
+    WEB_ORIGIN: ${FARMER_WEB_ORIGIN:?Set the reviewed HTTPS web origin}
+    MEDIA_ROOT: /data/media
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  read_only: true
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  networks: [farmer]
+services:
+  db:
+    # Optional dedicated local database. Do not start if an existing database is in use.
+    profiles: [local-db]
+    image: ${FARMER_DB_IMAGE:-smart-farmer-db:unconfigured}
+    environment:
+      POSTGRES_USER: ${FARMER_POSTGRES_USER:-smart_farmer}
+      POSTGRES_DB: ${FARMER_POSTGRES_DB:-smart_farmer}
+      POSTGRES_PASSWORD: ${FARMER_POSTGRES_PASSWORD:-}
+    volumes: ['farmer_postgres:/var/lib/postgresql/data']
+    healthcheck:
+      # Ignore the socket-only initialization server; wait for the final TCP listener.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 0.75
+    networks: [farmer]
+  migrate:
+    <<: *app
+    profiles: [ops]
+    command: ['node', 'dist/migrate.js']
+    healthcheck: {disable: true}
+    restart: 'no'
+    mem_limit: 384m
+    cpus: 0.75
+  api:
+    <<: *app
+    environment:
+      <<: *app-environment
+      ONESA_IDENTITY_ENABLED: ${ONESA_IDENTITY_ENABLED:-false}
+      ONESA_IDENTITY_ISSUER: ${ONESA_IDENTITY_ISSUER:-}
+      ONESA_IDENTITY_CLIENT_ID: ${ONESA_IDENTITY_CLIENT_ID:-}
+      ONESA_IDENTITY_CLIENT_SECRET: ${ONESA_IDENTITY_CLIENT_SECRET:-}
+    ports: ['127.0.0.1:${FARMER_API_PORT:?Set an unused loopback API port}:3000']
+    volumes: ['farmer_media:/data/media']
+    mem_limit: 768m
+    cpus: 0.75
+  worker:
+    <<: *app
+    command: ['node', 'dist/worker.js']
+    volumes: ['farmer_media:/data/media']
+    healthcheck:
+      test: ['CMD', 'node', 'dist/worker-health.js']
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    mem_limit: 384m
+    cpus: 0.50
+  web:
+    image: ${FARMER_WEB_IMAGE:?Set a reviewed immutable web image digest}
+    ports: ['127.0.0.1:${FARMER_WEB_PORT:?Set an unused loopback web port}:8080']
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    restart: unless-stopped
+    networks: [farmer]
+networks:
+  farmer: {}
+volumes:
+  farmer_postgres: {}
+  farmer_media: {}
