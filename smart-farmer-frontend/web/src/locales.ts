@@ -24,6 +24,7 @@ export const phrases = {
 
   today: ['Nhasi', 'Lamuhla'], farm: ['Purazi rangu', 'Ipulazi lami'], market: ['Musika', 'Imakethe'], services: ['Mabasa nemichina', 'Imisebenzi lemishini'], more: ['Zvimwe', 'Okunye'],
   welcome: ['Basa repapurazi, pamwe chete.', 'Umsebenzi wepulazi, sindawonye.'], intro: ['Ronga basa. Nyora zvinoitika. Chengeta zvawakaita.', 'Hlela umsebenzi. Bhala okwenzakalayo. Gcina okwenzileyo.'],
+  returnToApp: ['Dzokera muSmart Farmer', 'Buyela ku-Smart Farmer'],
   onesaSignIn: ['Pinda neOnesa', 'Ngena nge-Onesa'], onesa_unavailable: ['Onesa haisi kuwanikwa pari zvino.', 'I-Onesa ayitholakali okwamanje.'],
   signIn: ['Pinda', 'Ngena'], register: ['Gadzira purazi', 'Dala ipulazi'], username: ['Zita rekupinda', 'Ibizo lokungena'], password: ['Pasiwedhi', 'Igama lokudlula'], farmName: ['Zita repurazi', 'Ibizo lepulazi'],
   invalid_response: ['Mhinduro ye server haina kuverengeka. Edza zvakare uchishandisa chikumbiro chimwe chete.', 'Impendulo yeseva ayifundeki. Zama futhi usebenzisa isicelo esifanayo.'],

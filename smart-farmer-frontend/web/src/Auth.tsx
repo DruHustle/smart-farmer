@@ -4,6 +4,7 @@ import type {Lang, SessionIdentity, Snapshot} from './types';
 import {catalog, errorLabel} from './locales';
 import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
+import {nativeReturnLink} from './lib/native-return';
 import {beginOnesa, finishOnesa, type OnesaConfig} from './lib/onesa';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
@@ -12,6 +13,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   const [createdAccount, setCreatedAccount] = useState<{username: string; password: string; recoveryCode: string} | null>(null);
   const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot} | null>(null);
 
+  const [nativeLink, setNativeLink] = useState<string | null>(null);
   const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
   const afterLogin = useRef(onLogin);
   const words = useRef(t);
@@ -22,6 +24,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     if (location.pathname === '/auth/onesa/callback') {
       const callback = new URL(location.href);
       history.replaceState(null, '', '/');
+      const native = nativeReturnLink(callback);
+      if (native) { setNativeLink(native); return; }
       setBusy(true);
       void finishOnesa(callback).then(vault => {if (mounted) afterLogin.current(vault);})
         .catch(error => {if (mounted) setMessage(errorLabel(words.current,error));})
@@ -76,6 +80,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
       await signIn(username, password);
     } catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}
   }
+  if (nativeLink) return <main className="auth-screen"><section className="auth-card"><h1>Smart Farmer</h1><a className="primary" href={nativeLink}>{t.returnToApp}</a></section></main>;
   if (createdAccount) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoveryCode}</h1><p>{t.keepCode}</p><div className="secret-result"><code>{createdAccount.recoveryCode}</code></div><p className="muted small">{t.recoveryHint}</p>{message && <p className="notice error" role="alert">{message}</p>}<button className="primary" disabled={busy} onClick={() => void continueAfterRegistration()}>{busy ? t.working : t.savedCode}</button></section></main></div>;
   if (challenge) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoverDrafts}</h1><p className="muted">{t.recoveryArchiveHint}</p><form className="form-grid" onSubmit={async e => {e.preventDefault(); const previous = String(new FormData(e.currentTarget).get('previousPassword')); setBusy(true); setMessage(''); try {const v = await Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial, previous); onLogin(v);} catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}}}><Field label={t.previousPassword}><input name="previousPassword" type="password" required autoComplete="current-password"/></Field><button className="primary" disabled={busy}>{t.recoverDrafts}</button><button type="button" className="secondary" disabled={busy} onClick={() => {setBusy(true); void Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial).then(onLogin).catch(error => setMessage(errorLabel(t, error))).finally(() => setBusy(false));}}>{t.freshCache}</button>{message && <p className="notice error" role="alert">{message}</p>}</form></section></main></div>;
   return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select></Field></header>
