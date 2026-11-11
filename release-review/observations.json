@@ -27,8 +27,9 @@
       "A committed pump command whose response was lost retried without a duplicate. The UI showed submission, device acknowledgement and confirmed feedback separately. Camera events, livestock positions and equipment feedback used simulated inputs. Physical pumps, pivots, cameras and trackers were untested. AirTag support is a manual reference.",
       "Marketplace reservations rejected overselling. Financial records, invoices, camera media, tracker data, and moderation reports were checked for the relevant farm or user access. Forum tests included a second account, reporting, blocking, unblocking, moderation and offline publication rejection.",
       "The web suite also exercised crop setup, incidents and harvest, broilers and layers, incubation, rabbits, and fish. Marketplace and service payments were manual records with synthetic parties.",
-      "Final Android local-account suites completed the real system photo picker, SQLCipher restart, OCR review and exactly one USD 24.50 expense and ledger entry. The final iPhone app completed local login, offline write, restart, reconcile and the product suite. In its separate invoice-gallery test, the Photos grid and tap succeeded but the draft preview was not verified before restart. The earlier iPhone revision 0849891 completed that gallery-to-post journey.",
-      "The final Portal CI completed all seven jobs and 264 browser cases. The merged Portal source also passed 41 focused identity tests and a disposable PostgreSQL migration and restore rehearsal. The earlier repository’s provisioning profile is pinned through schema 016. The release owner needs a tested 017 profile and registered callback to operate the deployed pair."
+      "Final Android local-account suites completed the real gallery, SQLCipher restart, OCR review and exactly one USD 24.50 expense and journal. On the first final-source iPhone run, Apple delivered the 52,968-byte test PNG to the app process. Farmer returned to the scan sheet but showed its empty state. No draft or upload action appeared within the 30-second check. That run stopped before restart or upload. The earlier iPhone revision 0849891 completed the same gallery-to-post journey.",
+      "The final Portal CI completed all seven jobs and 264 browser cases. The merged Portal source also passed 41 focused identity tests and a disposable PostgreSQL migration and restore rehearsal. The earlier repository’s provisioning profile is pinned through schema 016. The release owner needs a tested 017 profile and registered callback to operate the deployed pair.",
+      "On a second iPhone 17 Pro simulator run with identical shipping files, all eight local-account farm suites passed. The complete gallery, restart, OCR review and post produced one USD 24.50 expense and one journal with zero automatic payments. This did not reproduce the first run's missing draft. The large-text iPad launched into the development client’s server-discovery screen. It never reached the Farmer login field. The enclosing iOS job timed out. An iPad farm or Portal session remains unverified."
     ],
     "apple": "Xcode 26.6, iOS SDK 26.5, arm64 device archive for iPhone and iPad, minimum OS 16.4. The app's compiled manifest declares 17 first-party collection categories, three required-reason API categories and no tracking. Thirteen privacy manifests were present across the product and its dependencies. The archive has no distribution signature or embedded provisioning profile. ZIP inside the Actions download is 26,130,924 bytes. SHA-256 `e0c4d76137faf976b691de3500b7591a92940abd98df48c047a6251fbbcfb494`.",
     "google": "Android minimum API 24 and target API 36. Bundletool and the signature verifier accepted the AAB. All 40 64-bit native libraries passed the 16 KB alignment checks. An APK generated from the actual bundle installed, cold-launched, force-stopped and relaunched without Metro. The disposable signer differs from an owner-registered Play upload key. The AAB inside the Actions download is 72,813,990 bytes. SHA-256 `8c1d31bb1e6f14a1f3e28b3a8bc7b0a1d4908a429a736f66d61316a98e4c6b35`.",
@@ -39,7 +40,7 @@
       ],
       [
         "Mobile QA",
-        "Use an ordinarily trusted staging Portal with an approved synthetic admin and ordinary member, working MFA, a farm and a saved record. Exercise cold and active system-browser sign-in on each platform, return to the intended screen, relaunch, sign-out, cancellation, expiry and revocation. Complete remaining two-person native workflows and iPad large-text screens."
+        "Use an ordinarily trusted staging Portal with an approved synthetic admin and ordinary member, working MFA, a farm and a saved record. Exercise cold and active system-browser sign-in on each platform, return to the intended screen, relaunch, sign-out, cancellation, expiry and revocation. Complete remaining two-person native workflows and iPad large-text screens. For the intermittent missing iPhone draft, retain safe stage outcomes from the Expo picker result through JPEG conversion, SQLCipher insert and list refresh. Verify the draft before and after relaunch, followed by one reviewed posting."
       ],
       [
         "Apple Developer team owner",
@@ -78,21 +79,27 @@
     "Canonical Android native farm evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13895359332",
     "Canonical iPhone native farm evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13895144057",
     "Canonical iOS Portal entry and redacted outcomes": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13896647581",
-    "Completed Portal CI evidence": "https://github.com/DruHustle/onesa-company-portal/actions/runs/43105952316/artifacts/13896375922"
+    "Completed Portal CI evidence": "https://github.com/DruHustle/onesa-company-portal/actions/runs/43105952316/artifacts/13896375922",
+    "Paired iOS Portal outcome and screen": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557/artifacts/13899116284",
+    "Paired Android account-service qualification": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557/artifacts/13894264835",
+    "Paired Android farm and invoice results": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557/artifacts/13898100376",
+    "Isolated iPhone cancellation job": "https://github.com/DruHustle/smart-farmer/actions/runs/43114638650",
+    "Isolated cancellation receipt": "https://github.com/DruHustle/smart-farmer/actions/runs/43114638650/artifacts/13898539719",
+    "Matched final iPhone and iPad acceptance evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557/artifacts/13900275345"
   },
   "matrix": [
     [
       "Portal access and return",
       "Ordinary user and MFA administrator passed with cold and active Portal sessions. Stable identity, assigned farm role, saved record and Forum return passed.",
       "Compact Shona entry rendered. The system certificate picker stopped the isolated issuer test before credentials on the final Portal pairing.",
-      "The canonical iPhone run reached the real Portal form for the administrator. Both cold attempts and cancellation failed, and neither active-session case ran. No authorized return was observed.",
+      "Both roles reached the real Portal form with the final issuer. Ordinary sign-in stopped at the email field, and administrator sign-in stopped before MFA. Neither active-session case ran.",
       "Authenticated Portal journey untested."
     ],
     [
       "Expiry, sign-out and farm privacy",
       "Expired source recovered with fresh credentials. Old token stayed invalid. Revocation while expired denied new access. Cross-farm roster and record access denied.",
       "Native Portal cases unverified.",
-      "Native Portal cases unverified.",
+      "Untested. The separate cancellation-only probe stopped in XCTest before interacting with the form.",
       "Untested."
     ],
     [
@@ -134,7 +141,7 @@
       "Supplier OCR, expenses and sales invoices",
       "Real OCR, human correction, posting, manual fallback, payment retry, credit, void and private documents passed.",
       "All eight native farm suites passed on the final revision. OS gallery, encrypted restart, reviewed OCR expense, issued sales invoice, partial payments and journal checks passed.",
-      "The final product suite passed. The separate Photos test tapped the asset, then could not verify the draft preview. Earlier 0849891 completed review and a USD 24.50 posting.",
+      "Passed on the matched rerun. System gallery, encrypted restart, real OCR, reviewed USD 24.50 posting and retained source passed. An earlier run of the same app source returned to an empty scan sheet after Photos delivered the image.",
       "Untested."
     ],
     [
@@ -149,7 +156,7 @@
       "Phone, tablet and desktop Chromium. Twelve axe reports, zero reported violations.",
       "360 × 640 dp Shona sign-in captured. Local-account language controls exercised.",
       "Shona sign-in captured. Local-account language controls exercised.",
-      "Large-font Shona sign-in captured. The earlier signed-in assertion stopped at the system password-save sheet."
+      "An earlier Shona large-text login screen was captured. The final iPad opened the development server chooser and never reached the Farmer form. No signed-in tablet journey."
     ],
     [
       "Account deletion",
@@ -175,5 +182,348 @@
       "Blocked",
       "AAB has a disposable qualification signature. The registered upload key, internal-track installation, signed-in farm workflow and store declarations remain open."
     ]
-  ]
+  ],
+  "additionalReceipts": {
+    "ios-gallery-diagnostic.json": {
+      "public_farmer_commit": "129b7560ba891255bd940f9ac8f95d956b625c88",
+      "source_tree": "e377b303b082ee103301fd5f5fc9a407ed4c3a11",
+      "run": 43102901141,
+      "job": 130798648535,
+      "artifact": 13895144057,
+      "artifact_url": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13895144057",
+      "archive_sha256": "422c0fd90627183b86a5f4be5b02b44b8e07364fe94c3a643976cf34288dbd94",
+      "archive_zip_integrity": "passed",
+      "junit": {
+        "ios-intake-capture.xml": {
+          "device": "iPhone 17 Pro - iOS 26.4",
+          "tests": 1,
+          "failures": 1,
+          "failure": [
+            "No visible element found: id: invoice-local-source-image"
+          ]
+        },
+        "ios-login.xml": {
+          "device": "iPhone 17 Pro - iOS 26.4",
+          "tests": 1,
+          "failures": 0,
+          "failure": []
+        },
+        "ios-offline.xml": {
+          "device": "iPhone 17 Pro - iOS 26.4",
+          "tests": 1,
+          "failures": 0,
+          "failure": []
+        },
+        "ios-products.xml": {
+          "device": "iPhone 17 Pro - iOS 26.4",
+          "tests": 1,
+          "failures": 0,
+          "failure": []
+        },
+        "ios-reconcile.xml": {
+          "device": "iPhone 17 Pro - iOS 26.4",
+          "tests": 1,
+          "failures": 0,
+          "failure": []
+        }
+      },
+      "capture_flow": {
+        "conclusion": "First attempt to scroll to the local image timed out after 30.633 seconds. No upload, stopApp, relaunch, or iPad phase had occurred.",
+        "commands": {
+          "entry": "ios-intake-capture/2026-11-11_221033/accounting-intake-capture/commands.json",
+          "size_bytes": 33126,
+          "sha256": "6d3b7030ba676114a956bc76e15f672e575043e63f979871ee6eaab1990301f2"
+        },
+        "photo_grid_assertion": "completed",
+        "photo_grid_tap": "completed",
+        "source_fixture": {
+          "event": "synthetic_invoice_image",
+          "sha256": "69003f5f07e09ec159658f62cde29c2497606e8b659a87e6053090e8d7db4152",
+          "sizeBytes": 52968
+        },
+        "provider_receipt": {
+          "log_entry": "ios-phone-startup.log",
+          "utc_timestamp": "2026-11-11 22:12:10.747656+0000",
+          "subsystem": "Foundation / NSItemProvider in SmartFarmer",
+          "operation": "Finished loading data representation for type identifier 'public.png' with 52968 bytes of data",
+          "matches_fixture_size": true
+        },
+        "scope": "The operating system delivered the PNG representation into the app process. This log does not expose the Expo JavaScript promise result, conversion to JPEG, byte read, database write or reload.",
+        "final_accessibility_hierarchy": {
+          "entry": "ios-intake-capture/2026-11-11_221033/accounting-intake-capture/screen-hierarchy/step-027-scrollUntilVisible-invoice-local-source.json",
+          "size_bytes": 39070,
+          "sha256": "d13fd3607a04a0c7b3268eacd5c87db65e1e600fdff4fb613697a5069c3395da",
+          "nodes": 71,
+          "visible_app_controls": [
+            "sheet-close",
+            "finance-tabs",
+            "accounting-tabs",
+            "invoice-camera",
+            "invoice-library",
+            "invoice-document",
+            "invoice-documents-refresh"
+          ],
+          "empty_state": "Hapana zvinyorwa parizvino.",
+          "photos_grid_present": false,
+          "local_image_or_upload_action_present": false
+        },
+        "final_screenshot": {
+          "entry": "ios-intake-capture/2026-11-11_221033/accounting-intake-capture/screenshots/step-027-scrollUntilVisible-invoice-local-source.png",
+          "size_bytes": 42342,
+          "sha256": "db8bb238a01c81c401bd0aaf9dc323c988672ca8dcafe7a7fb5d233aa1f8399f",
+          "pixels": [
+            1206,
+            2622
+          ],
+          "rgb_extrema": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ]
+          ],
+          "interpretation": "Protected signed-in screen. All pixels black. This image is excluded from the handoff."
+        },
+        "verified_signed_out_screenshot": {
+          "archive_entry": "ios-login/login/takeScreenshot/signed-out-smart-farmer.png",
+          "handoff_file": "native-captures/iphone-129b756-signed-out.png",
+          "sha256": "a744461efbf290324f61b51f5870d2a35d82302b69b4fdad26dfcf37c6b7b628",
+          "pixels": [
+            1206,
+            2622
+          ]
+        }
+      },
+      "owner": "Smart Farmer iOS owner",
+      "next_action": "Repeat this exact system-picker selection on iOS 26.4 with sanitized result stages for picker completion, JPEG materialization, local read, SQLCipher insert and reload. Verify a visible local draft before upload and after relaunch. Surface a classified capture error in the finance sheet if an actual operation fails.",
+      "qualification": "Cause after native data delivery is unestablished. The missed local draft appearance does not demonstrate deletion or corruption."
+    },
+    "public-availability.json": {
+      "checkedAt": "2026-11-11T23:04:11.253365+00:00",
+      "origin": "https://farmer.onesa.eu",
+      "results": [
+        {
+          "route": "/v1/onesa/config",
+          "observed": "503 text/plain",
+          "body": "Smart Farmer is being prepared. Please check back soon."
+        },
+        {
+          "route": "/auth/onesa/callback",
+          "observed": "503 text/plain",
+          "body": "Smart Farmer is being prepared. Please check back soon."
+        },
+        {
+          "route": "/account-deletion",
+          "observed": "503 text/plain",
+          "body": "Smart Farmer is being prepared. Please check back soon."
+        }
+      ]
+    },
+    "final-paired-ios-farm.json": {
+      "source_commit": "62c6d03513be560c486e374ebaa37a0ededfaf3a",
+      "run": 43106081557,
+      "job": 130809644455,
+      "artifact_id": 13900275345,
+      "artifact_url": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557/artifacts/13900275345",
+      "archive_sha256": "ed6f0911991db1f486c423dab94c374be88caee9b80fd28e99a47a54f6938f74",
+      "native_iOS_farm_step": "cancelled",
+      "phone_junit": [
+        {
+          "entry": "ios-intake-capture.xml",
+          "sha256": "0d74ade62ae2477e200aaf755011f07262755088d5c5dc274e8bf7f7d7776d99",
+          "size_bytes": 516,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-intake-post.xml",
+          "sha256": "5f5879a108811e8d9f42c6e6936d4acfafe359d42ca19ff45b9936b1aa508762",
+          "size_bytes": 502,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-intake-review.xml",
+          "sha256": "c07c2ea6d64013ec411bce745979dde20f083c9c21d13df55e452cfdc15d2c3b",
+          "size_bytes": 512,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-intake-upload.xml",
+          "sha256": "c3380384aa3424123971dd373d4141687a06cf34b050f8fc1e10225b43e48129",
+          "size_bytes": 510,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-login.xml",
+          "sha256": "bc58a801d5b08214dd89605263582afc862dd21b8fbe01c24646cb2c5deffc8a",
+          "size_bytes": 436,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-offline.xml",
+          "sha256": "6970dc8f009f46cbc28a54a12431d93258d5a073a79b26c35353af1a392cd034",
+          "size_bytes": 444,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-products.xml",
+          "sha256": "950ec23248ed5622b615ea3f6afab076500a3c051ab2d81563fa2b3fb303c764",
+          "size_bytes": 449,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        },
+        {
+          "entry": "ios-reconcile.xml",
+          "sha256": "1bf4429dd69eeccd3de48a252f67900f645742d6e92adcc8ae209c5a41bc84a4",
+          "size_bytes": 452,
+          "tests": 1,
+          "failures": 0,
+          "device": "iPhone 17 Pro - iOS 26.4"
+        }
+      ],
+      "phone_accounting_receipts": {
+        "source": {
+          "entry": "ios-intake-checks.txt",
+          "sha256": "0934b3cf5302e867577a42cb52b2fb0120ce8f58dddc168a9338938389a3df40",
+          "size_bytes": 948
+        },
+        "observed": [
+          {
+            "event": "native_gallery_extracted_without_money",
+            "engine": "local_tesseract",
+            "attempts": 1,
+            "contentHash": "14cf592251c12dbafd1f3ad66383a1774232dcc15e11807de49dedeac935ef8b",
+            "sizeBytes": 84738
+          },
+          {
+            "event": "native_gallery_reviewed_bill_verified",
+            "totalMinor": "2450",
+            "currency": "USD",
+            "journalsAdded": 1,
+            "expensesAdded": 1,
+            "paymentsAdded": 0,
+            "retainedSourceHash": "14cf592251c12dbafd1f3ad66383a1774232dcc15e11807de49dedeac935ef8b"
+          }
+        ],
+        "summary": "OS gallery selection, local encrypted source after relaunch, explicit upload, Tesseract extraction, reviewed price and tax, explicit posting, original retained. One USD 24.50 expense and journal, zero automatic payments."
+      },
+      "also_confirmed": {
+        "ios-product-records.txt": {
+          "entry": "ios-product-records.txt",
+          "sha256": "0816c550906558f28b056f48a6b0057a90dd2d2de56269a3335cf6989d975061",
+          "size_bytes": 740
+        },
+        "ios-encryption.txt": {
+          "entry": "ios-encryption.txt",
+          "sha256": "7d4873a385604f7a9a24c7dd9b93eb5664c839350bc77ece9c5c82066d7b6436",
+          "size_bytes": 80
+        },
+        "ios-exactly-once.txt": {
+          "entry": "ios-exactly-once.txt",
+          "sha256": "f0986965e6a203a1248f4b76777264e3cec8e64ff2d4eb7244c99cf398e2cf09",
+          "size_bytes": 77
+        },
+        "ios-intake-encryption.txt": {
+          "entry": "ios-intake-encryption.txt",
+          "sha256": "7d4873a385604f7a9a24c7dd9b93eb5664c839350bc77ece9c5c82066d7b6436",
+          "size_bytes": 80
+        }
+      },
+      "signed_out_phone": {
+        "entry": "ios-login/login/takeScreenshot/signed-out-smart-farmer.png",
+        "sha256": "66fbdea1af7a00dfcf8a24a0089b2a5fcff29a42f71da7bf662a6bc40472abb4",
+        "size_bytes": 164408,
+        "pixels": [
+          1206,
+          2622
+        ]
+      },
+      "ipad_large_font": {
+        "retained_commands": {
+          "entry": "ipad-large-font/login/commands.json",
+          "sha256": "ff2ce98e5f4de15cc1d7fd10c4df2623bad3359dbf02e4bc0fd9dc83fb64db6d",
+          "size_bytes": 6573
+        },
+        "safe_command_sequence": [
+          {
+            "seq": 0,
+            "command": "defineVariablesCommand",
+            "status": "COMPLETED"
+          },
+          {
+            "seq": 1,
+            "command": "applyConfigurationCommand",
+            "status": "COMPLETED"
+          },
+          {
+            "seq": 2,
+            "command": "runFlowCommand",
+            "status": "COMPLETED"
+          },
+          {
+            "seq": 3,
+            "command": "launchAppCommand",
+            "status": "COMPLETED"
+          },
+          {
+            "seq": 4,
+            "command": "runFlowCommand",
+            "status": "SKIPPED"
+          },
+          {
+            "seq": 5,
+            "command": "assertConditionCommand",
+            "status": "FAILED"
+          }
+        ],
+        "last_assertion": "Expected first-run Continue or Android System UI dialog. Failed at initial Expo developer-client launch before Farmer sign-in.",
+        "failure_hierarchy": {
+          "entry": "ipad-large-font/login/screen-hierarchy/step-006-assertCondition-^(ContinueSystem_UI_isn'.json",
+          "sha256": "8660eda009939edbe860e661d2b27576cd540e1790dde957b47778c86303c274",
+          "size_bytes": 41794,
+          "node_count": 65,
+          "landmarks": [
+            "Smart Farmer",
+            "Development Build",
+            "DEVELOPMENT SERVERS",
+            "Searching for development servers..."
+          ],
+          "farmer_login_field_or_record_tab_present": false
+        },
+        "failure_screenshot": {
+          "entry": "ipad-large-font/login/screenshots/step-006-assertCondition-^(ContinueSystem_UI_isn'.png",
+          "sha256": "f8de3d448b9de8b76d71728143fbbc506de1fa55c33d103d5da53a5e2b17e814",
+          "size_bytes": 166380,
+          "pixels": [
+            2064,
+            2752
+          ],
+          "visible_content": "Development client server-discovery screen; diagnostic only."
+        },
+        "tablet_junit_present": false,
+        "tablet_credentials_entered": false,
+        "tablet_customer_workflow_observed": false
+      },
+      "interpretation": "Paired iPhone gallery regression was not reproduced. Canonical 129b756 retains its separate failed first-preview result. The paired iPad did not reach the first Farmer screen or exercise the system password sheet."
+    }
+  }
 }

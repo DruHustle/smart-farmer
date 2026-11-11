@@ -77,6 +77,10 @@ def retained_gallery_frames(z,tag):
         leaf=Path(n).name.lower()
         if 'fail' in leaf or 'invoice-local-source-image' in leaf:
             candidates.append(n)
+    if not candidates:
+        all_frames=[e for e in z.infolist() if e.filename.startswith('ios-intake-capture/') and e.filename.lower().endswith('.png')]
+        ordered=sorted(all_frames,key=lambda v:(v.date_time, v.filename))
+        candidates=[e.filename for e in ordered[-2:]]
     print('GALLERY RELEVANT SCREEN COUNT',tag,len(candidates))
     results=[]
     for n in sorted(candidates)[-3:]:
@@ -233,7 +237,7 @@ def harvest(z, source, tag, kind):
         caption=None
         if kind=='ios-history' and n in HISTORIC_IOS:
             caption=HISTORIC_IOS[n]
-        elif kind=='onesa' and n in ('android-signed-out.png','ios-member-signed-out.png'):
+        elif kind=='onesa' and (n=='android-signed-out.png' or n==next((v for v in ('ios-member-signed-out.png','ios-admin-signed-out.png','ios-cancel-signed-out.png') if v in z.namelist()),None)):
             caption='Sign in with Onesa before credentials, '+('compact Android emulator' if n.startswith('android') else 'iPhone simulator')
         elif kind=='farm' and leaf=='signed-out-smart-farmer.png' and ('login/' in n or 'takeScreenshot/' in n):
             category='ipad' if n.startswith('ipad') else 'phone'
@@ -277,9 +281,38 @@ for run,sha,prefix in [(43102901141,FARMER,'application'),(43106081557,QA,'paire
         groups['native-onesa-'+plat]=(prefix+'-'+plat+'-onesa','onesa')
         groups['native-'+plat+'-acceptance']=(prefix+'-'+plat+'-farm','farm')
     capture_run(run,sha,groups)
+
+capture_run(43114638650,'d2bbd2e9a56a4a91ca8620166166be3f8d7c0e3e',{'13898539719':('focused-ios-cancel','onesa')})
+
+def missing_apple_junit():
+    jobid=130809644455
+    if any(x['group']=='paired-ios-farm' for x in receipts['nativeSuites']):
+        return
+    names=('ios-login','ios-offline','ios-reconcile','ios-products','ios-intake-capture','ios-intake-upload','ios-intake-review','ios-intake-post','ipad-large-font','ipad-products')
+    public_flow=('login','offline','reconcile','products','accounting-intake-capture','accounting-intake-upload','accounting-intake-review','accounting-intake-post','tablet')
+    findings=[]
+    with tempfile.TemporaryDirectory() as tmp:
+        out=Path(tmp)/'original.log'
+        with out.open('wb') as target:
+            call=subprocess.run(['gh','api','repos/'+REPO+'/actions/jobs/'+str(jobid)+'/logs'],stdout=target,stderr=subprocess.DEVNULL)
+        if not call.returncode:
+            for line in out.open(errors='replace'):
+                line=re.sub(r'\x1b\[[0-9;]*[a-zA-Z]','',line)
+                for tag in public_flow:
+                    if re.search(r'\[(?:Passed|Failed)\]\s+'+re.escape(tag)+r'(?:\s|\(|\.|$)',line,flags=re.I):
+                        findings.append({'flow':tag,'status':'passed' if '[passed]' in line.lower() else 'failed'})
+                if any(q in line.lower() for q in ('operation was canceled','job was canceled','execution has exceeded','reached the timeout')):
+                    if {'jobTimedOutOrCancelled':True} not in findings: findings.append({'jobTimedOutOrCancelled':True})
+    print('PAIRED IPHONE HOSTED STAGES',json.dumps(findings))
+    if findings: (REVIEW/'receipts'/'paired-iphone-visible-job-stages.json').write_text(json.dumps(findings,indent=2))
+missing_apple_junit()
+
 assert (PACKAGES/BUNDLES['ios'][2]).is_file() and (PACKAGES/BUNDLES['android'][2]).is_file()
 (REVIEW/'receipts'/'qualification.json').write_text(json.dumps(receipts,indent=2))
 (REVIEW/'observations.json').write_text(json.dumps(report,indent=2))
+for name, value in report.get('additionalReceipts',{}).items():
+    assert name in ('ios-gallery-diagnostic.json','public-availability.json','final-paired-ios-farm.json')
+    (REVIEW/'receipts'/name).write_text(json.dumps(value,indent=2))
 (PACKAGES/'SHA256SUMS').write_text(''.join(v[1]+'  '+v[2]+'\n' for v in BUNDLES.values()))
 
 def esc(value):
