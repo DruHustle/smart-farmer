@@ -1,6 +1,7 @@
 import type {FastifyReply, FastifyRequest} from 'fastify';
 import type pg from 'pg';
 import {randomUUID} from 'node:crypto';
+import {currentAdmin, identityConfig, openGrant} from './onesa-identity.js';
 import {sha256} from './security.js';
 
 export class ApiError extends Error {
@@ -10,13 +11,20 @@ export class ApiError extends Error {
 }
 export const writeRoles = ['owner','manager','worker'];
 export const manageRoles = ['owner','manager'];
-export function createContext(db: pg.Pool) {
+export function createContext(db: pg.Pool, central: ReturnType<typeof identityConfig> = null) {
   async function user(req: FastifyRequest, reply: FastifyReply) {
     const value = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
     if (!value) { reply.code(401).send({error:'unauthorized'}); return null; }
-    const result = await db.query('SELECT user_id FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
+    const result = await db.query('SELECT s.user_id,s.onesa_grant,u.onesa_subject,u.onesa_issuer FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [sha256(value)]);
     if (!result.rowCount) { reply.code(401).send({error:'unauthorized'}); return null; }
-    return result.rows[0].user_id as string;
+    const account = result.rows[0];
+    if (account.onesa_subject) {
+      if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
+      await currentAdmin(central, openGrant(account.onesa_grant, value), account.onesa_subject);
+      const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
+      if (!live.rowCount) throw new ApiError('unauthorized',401);
+    }
+    return account.user_id as string;
   }
   async function member(farmId: string, userId: string, roles?: string[]) {
     const result = await db.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2', [farmId,userId]);

@@ -1,15 +1,37 @@
 import {AppAvailability} from "./components/AppAvailability";
-import {useState, type FormEvent} from 'react';
+import {useEffect, useRef, useState, type FormEvent} from 'react';
 import type {Lang, SessionIdentity, Snapshot} from './types';
 import {catalog, errorLabel} from './locales';
 import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
+import {beginOnesa, finishOnesa, type OnesaConfig} from './lib/onesa';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
   const [mode, setMode] = useState<Mode>('signIn'); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const t = catalog[language];
   const [createdAccount, setCreatedAccount] = useState<{username: string; password: string; recoveryCode: string} | null>(null);
   const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot} | null>(null);
+
+  const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
+  const afterLogin = useRef(onLogin);
+  const words = useRef(t);
+  afterLogin.current = onLogin;
+  words.current = t;
+  useEffect(() => {
+    let mounted = true;
+    if (location.pathname === '/auth/onesa/callback') {
+      const callback = new URL(location.href);
+      history.replaceState(null, '', '/');
+      setBusy(true);
+      void finishOnesa(callback).then(vault => {if (mounted) afterLogin.current(vault);})
+        .catch(error => {if (mounted) setMessage(errorLabel(words.current,error));})
+        .finally(() => {if (mounted) setBusy(false);});
+    }
+    void request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
+      if (mounted && 'issuer' in config) setOnesa(config);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   async function signIn(username: string, password: string) {
     const identity = await request<SessionIdentity>('/v1/sessions', '', jsonBody({username, password}));
@@ -60,6 +82,9 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div><AppAvailability heading={t.farmerApps} unpublished={t.notPublished}/></section>
       <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>
         <h2>{t[mode]}</h2>{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
+        {mode === 'signIn' && onesa && <button type="button" className="secondary" disabled={busy} onClick={() => {
+          setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
+        }}>{t.onesaSignIn}</button>}
         <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}
           {mode === 'recover' && <Field label={t.recoveryCode}><input name="recoveryCode" required autoComplete="off" spellCheck={false}/></Field>}
