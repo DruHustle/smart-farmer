@@ -3,7 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/android-preview-apk.yml'
-      - 'smart-farmer-frontend/mobile/scripts/android-delivery.py'
+      - 'scripts/android-delivery.py'
   workflow_dispatch:
     inputs:
       publish:
@@ -69,7 +69,7 @@ jobs:
           keytool -genkeypair -storetype PKCS12 -keystore "$ANDROID_RELEASE_KEYSTORE" -storepass:env ANDROID_RELEASE_STORE_PASSWORD -alias qualification -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=Disposable package verification' >/dev/null 2>&1
           keytool -exportcert -alias qualification -keystore "$ANDROID_RELEASE_KEYSTORE" -storepass:env ANDROID_RELEASE_STORE_PASSWORD -file "$work/cert.der"
           cert=$(sha256sum "$work/cert.der" | cut -d' ' -f1)
-          tool="$MOBILE/scripts/android-delivery.py"
+          tool="$GITHUB_WORKSPACE/scripts/android-delivery.py"
           buildtools="$ANDROID_HOME/build-tools/37.0.0"
           unsigned="$MOBILE/android/app/build/outputs/apk/release/app-release-unsigned.apk"
           python3 "$tool" sign --apk "$unsigned" --output "$work/test.apk" --package "$APP_ID" --certificate "$cert" --tools "$buildtools"
@@ -143,7 +143,7 @@ jobs:
           export ANDROID_RELEASE_KEYSTORE="$RUNNER_TEMP/owner-signing-key"
           trap 'rm -f "$ANDROID_RELEASE_KEYSTORE"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ANDROID_RELEASE_KEYSTORE"
-          python3 "$MOBILE/scripts/android-delivery.py" sign --apk "$RUNNER_TEMP/input/app-release-unsigned.apk" --output "$RUNNER_TEMP/$APK_NAME" --package "$APP_ID" --certificate "$CERTIFICATE" --tools "$ANDROID_HOME/build-tools/37.0.0" > "$RUNNER_TEMP/apk-receipt.json"
+          python3 "$GITHUB_WORKSPACE/scripts/android-delivery.py" sign --apk "$RUNNER_TEMP/input/app-release-unsigned.apk" --output "$RUNNER_TEMP/$APK_NAME" --package "$APP_ID" --certificate "$CERTIFICATE" --tools "$ANDROID_HOME/build-tools/37.0.0" > "$RUNNER_TEMP/apk-receipt.json"
       - name: Publish the verified package and confirm the public download
         env:
           GH_TOKEN: ${{ github.token }}
@@ -159,5 +159,5 @@ jobs:
           fi
           curl --fail --location --retry 3 "$url" -o downloaded.apk
           cmp "$APK_NAME" downloaded.apk
-          python3 "$GITHUB_WORKSPACE/$MOBILE/scripts/android-delivery.py" verify --apk downloaded.apk --package "$APP_ID" --certificate "$CERTIFICATE" --tools "$ANDROID_HOME/build-tools/37.0.0"
+          python3 "$GITHUB_WORKSPACE/scripts/android-delivery.py" verify --apk downloaded.apk --package "$APP_ID" --certificate "$CERTIFICATE" --tools "$ANDROID_HOME/build-tools/37.0.0"
           echo "Verified public Android preview: $url" >> "$GITHUB_STEP_SUMMARY"
