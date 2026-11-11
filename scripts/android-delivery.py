@@ -21,8 +21,13 @@ def fingerprint(value):
 
 def verify(apk, tools, package, expected):
     signature = run([tools / "apksigner", "verify", "--verbose", "--print-certs", apk])
-    signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: (\S+)$", signature, re.M)
-    if [fingerprint(item) for item in signers] != [expected]:
+    # Build Tools 37 prints the same identity once per signature scheme. Older
+    # versions use "Signer #1". The signer count still distinguishes co-signers.
+    signer_lines = [line for line in signature.splitlines()
+                    if re.match(r"^(?:V\d+(?:\.\d+)? Signer\b|Signer #\d+\b)", line)]
+    digests = {fingerprint(line.split("certificate SHA-256 digest: ", 1)[1])
+               for line in signer_lines if "certificate SHA-256 digest: " in line}
+    if not re.search(r"^Number of signers: 1$", signature, re.M) or digests != {expected}:
         raise ValueError("APK signer does not match the expected certificate")
     if not re.search(r"Verified using v[23](?:\.\d+)? scheme .*: true", signature):
         raise ValueError("APK must have an Android v2 or newer binary signature")
