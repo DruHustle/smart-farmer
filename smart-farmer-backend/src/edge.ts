@@ -112,10 +112,10 @@ export function registerFarmEdgeRoutes(
         'SELECT payload_hash FROM farm_edge_observations WHERE farm_id=$1 AND gateway_id=$2 AND event_id=$3',
         [gateway.farmId,params.gatewayId,event.eventId]);
       return old.rows[0]?.payload_hash === digest
-        ? reply.code(202).send({accepted:true,duplicate:true})
+        ? reply.code(202).send({accepted:true,duplicate:true,eventId:event.eventId})
         : reply.code(409).send({error:'event_identity_conflict'});
     }
-    return reply.code(202).send({accepted:true,duplicate:false});
+    return reply.code(202).send({accepted:true,duplicate:false,eventId:event.eventId});
   });
 
   app.get('/v1/farms/:farmId/equipment/observations',async(req,reply)=>{

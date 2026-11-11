@@ -237,8 +237,8 @@ export function registerCameras(app: FastifyInstance, ctx: Context) {
       await permitted(a.farmId, a.userId, assetId, c);
       await memberExists(c, a.farmId, userId);
       await c.query(
-        "INSERT INTO camera_access(asset_id,user_id,granted_by) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-        [assetId, userId, a.userId],
+        "INSERT INTO camera_access(asset_id,user_id,granted_by,farm_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+        [assetId, userId, a.userId, a.farmId],
       );
       await audit(
         c,

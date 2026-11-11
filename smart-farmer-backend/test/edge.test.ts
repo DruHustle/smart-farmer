@@ -54,8 +54,10 @@ test('gateway signature, source scope, replay conflicts and farm access',
       method:'POST',url:address,payload:body,headers
     });
     assert.equal((await post(payload,{'content-type':'application/vnd.smart-farmer.edge+json'})).statusCode,401);
-    assert.equal((await post(payload)).statusCode,202);
-    assert.equal((await post(payload)).json().duplicate,true);
+    const first=await post(payload);
+    assert.equal(first.statusCode,202);
+    assert.deepEqual(first.json(),{accepted:true,duplicate:false,eventId:sample.eventId});
+    assert.deepEqual((await post(payload)).json(),{accepted:true,duplicate:true,eventId:sample.eventId});
     assert.equal((await post(JSON.stringify({...sample,data:{...sample.data,value:4.8}}))).statusCode,409);
     const unauthorized=JSON.stringify({...sample,eventId:randomUUID(),sourceId:'uncommissioned'});
     assert.equal((await post(unauthorized)).statusCode,403);

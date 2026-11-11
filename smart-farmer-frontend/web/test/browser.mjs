@@ -106,6 +106,11 @@ try {
   await page.getByRole('button', {name: sn.continue, exact: true}).click();
   await expectVisible(page.getByRole('heading', {name: sn.recoveryCode, exact: true}));
   const recoveryCode = await page.locator('.secret-result code').textContent(); assert.ok(recoveryCode?.length > 15);
+  await context.setOffline(true);
+  await page.getByRole('button', {name: sn.savedCode, exact: true}).click();
+  await expectVisible(page.getByRole('alert'));
+  assert.equal(await page.locator('.secret-result code').textContent(), recoveryCode);
+  await context.setOffline(false);
   await page.getByRole('button', {name: sn.savedCode, exact: true}).click();
   await expectVisible(page.locator('.farm-switch')); checkpoint('Wait for active service worker and page control');
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), undefined, {timeout: 15000});

@@ -1275,3 +1275,75 @@ test("camera gateway ingests bounded real-format segments/snapshots with source,
     await f.close();
   }
 });
+
+test("offboarding releases planned work and removes camera access permanently for that farm", async () => {
+  const f = await fixture();
+  try {
+    const worker = await f.register();
+    const joinFarm = async () => {
+      const invite = await f.ok("POST", f.prefix + "/invitations", { role: "worker" }, 201);
+      await f.ok("POST", "/v1/invitations/accept", { token: invite.token }, 201, worker);
+    };
+    await joinFarm();
+
+    const project = await f.ok("POST", f.prefix + "/projects", { name: "Maize", crop: "maize" }, 201);
+    const template = await f.ok("POST", f.prefix + "/templates", {
+      id: randomUUID(), name: "Inspection", enterpriseType: "crop", language: "sn",
+      source: "Farm supervisor", sourceDate: "2026-11-01",
+      steps: [{key: "inspect", title: "Inspect", instructions: "Check the field", offsetDays: 0}],
+    }, 201);
+    const plans = f.prefix + "/projects/" + project.id + "/plans";
+    const plan = await f.ok("POST", plans, {
+      id: randomUUID(), templateId: template.id, templateVersion: 1, anchorAt: new Date().toISOString(),
+      assigneeId: worker.userId,
+    }, 201);
+
+    const cameraId = randomUUID();
+    await f.ok("POST", f.prefix + "/assets", {id: cameraId, name: "Gate", category: "camera", protocol: "simulator"}, 201);
+    const asset = f.prefix + "/assets/" + cameraId;
+    await f.ok("PATCH", asset, { version: 1, responsibleId: worker.userId, reason: "Gate assignment" });
+    const serviceId = randomUUID();
+    await f.ok("POST", asset + "/maintenance", {id: serviceId, title: "Inspect gate", dueAt: new Date().toISOString(), assigneeId: worker.userId}, 201);
+    const camera = f.prefix + "/cameras/" + cameraId;
+    await f.ok("POST", camera + "/configure", {version: 2, provider: "simulator", retentionDays: 1, eventsEnabled: true, liveEnabled: true});
+    await f.ok("POST", camera + "/access", {userId: worker.userId});
+    const session = await f.ok("POST", camera + "/sessions", {confirmed: true}, 200, worker);
+    const playback = () => f.app.inject({url: session.playlistPath, headers: {authorization: "Bearer " + session.token}});
+    assert.equal((await playback()).statusCode, 200);
+
+    const remove = await f.request("DELETE", f.prefix + "/members/" + worker.userId);
+    assert.equal(remove.statusCode, 204, remove.body);
+    assert.equal((await f.request("GET", plans, undefined, worker)).statusCode, 404);
+    assert.deepEqual((await f.db.query("SELECT assignee_id,version FROM project_plans WHERE id=$1", [plan.id])).rows[0], {assignee_id: null, version: 2});
+    assert.deepEqual((await f.db.query("SELECT assignee_id,version FROM asset_maintenance WHERE id=$1", [serviceId])).rows[0], {assignee_id: null, version: 2});
+    assert.equal((await f.db.query("SELECT responsible_id FROM assets WHERE id=$1", [cameraId])).rows[0].responsible_id, null);
+    assert.equal((await f.ok("GET", "/v1/farms", undefined, 200, worker)).items[0].id, worker.farmId);
+
+    await joinFarm();
+    assert.equal((await f.ok("GET", f.prefix + "/cameras", undefined, 200, worker)).items.length, 0);
+    assert.equal((await f.request("POST", camera + "/sessions", {confirmed: true}, worker)).statusCode, 404);
+    await f.ok("POST", camera + "/access", {userId: worker.userId});
+    assert.equal((await playback()).statusCode, 404, "previous membership's playback token stays revoked after a fresh grant");
+    assert.equal((await f.ok("POST", camera + "/sessions", {confirmed: true}, 200, worker)).mode, "simulated");
+  } finally {
+    await f.close();
+  }
+});
+
+test("concurrent owner changes recheck the acting owner's membership", async () => {
+  const f = await fixture();
+  try {
+    const otherOwner = await f.register();
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')", [otherOwner.userId, f.owner.farmId]);
+    const member = f.prefix + "/members/";
+    const results = await Promise.all([
+      f.request("PATCH", member + otherOwner.userId, {role: "manager"}),
+      f.request("PATCH", member + f.owner.userId, {role: "manager"}, otherOwner),
+    ]);
+    assert.deepEqual(results.map(r => r.statusCode).sort(), [200, 404]);
+    const owners = await f.db.query("SELECT user_id FROM memberships WHERE farm_id=$1 AND role='owner'", [f.owner.farmId]);
+    assert.equal(owners.rowCount, 1);
+  } finally {
+    await f.close();
+  }
+});

@@ -15,13 +15,36 @@ import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 MAX_BYTES = 16384
+MAX_RECEIPT_BYTES = 1024
+
+
+class NoDeliveryRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def accepted_receipt(response, event_id):
+    if response.status not in (200, 202) or response.headers.get_content_type() != "application/json":
+        return False
+    raw = response.read(MAX_RECEIPT_BYTES + 1)
+    if len(raw) > MAX_RECEIPT_BYTES:
+        return False
+    try:
+        receipt = json.loads(raw.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return False
+    # Older Farmer APIs return just accepted and duplicate for this signed request.
+    return (isinstance(receipt, dict) and receipt.get("accepted") is True
+            and isinstance(receipt.get("duplicate"), bool)
+            and receipt.get("eventId", event_id) == event_id)
 
 
 def validate_event(value, allowed_sources):
@@ -142,7 +165,7 @@ class EdgeState:
 
 class EdgeAgent:
     def __init__(self, state, gateway_id, sources, ingress_token, outbound_secret,
-                 api_origin, allow_loopback_http=False, opener=urlopen):
+                 api_origin, allow_loopback_http=False, opener=None):
         if not ID.fullmatch(gateway_id) or len(ingress_token) < 32 or len(outbound_secret) < 32:
             raise ValueError("invalid_agent_identity_or_credentials")
         parsed = urlsplit(api_origin)
@@ -155,7 +178,7 @@ class EdgeAgent:
         self.state, self.gateway_id = state, gateway_id
         self.sources, self.ingress_token, self.outbound_secret = set(sources), ingress_token, outbound_secret
         self.target = api_origin.rstrip("/") + "/v1/edge/" + gateway_id + "/events"
-        self.opener = opener
+        self.opener = opener or build_opener(NoDeliveryRedirects()).open
 
     def ingest(self, payload, presented_token):
         if not hmac.compare_digest(presented_token, self.ingress_token):
@@ -191,13 +214,16 @@ class EdgeAgent:
         })
         try:
             with self.opener(request, timeout=8) as response:
-                if response.status not in (200, 202):
-                    raise RuntimeError("unexpected_response")
+                if not accepted_receipt(response, event_id):
+                    self.state.retry(event_id, attempts + 1)
+                    return False
             self.state.delivered(event_id)
             return True
         except HTTPError as error:
-            self.state.retry(event_id, attempts + 1, permanent=error.code in (400,401,403,409,422))
-        except (URLError, TimeoutError, OSError, RuntimeError):
+            # A bad gateway clock or a rotating credential can temporarily return 401.
+            self.state.retry(event_id, attempts + 1, permanent=error.code in (400,403,409,422))
+            error.close()
+        except (URLError, TimeoutError, OSError, HTTPException):
             self.state.retry(event_id, attempts + 1)
         return False
 

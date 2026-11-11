@@ -10,7 +10,7 @@ import type { FarmSnapshot, Mutation, RecordDraft } from '../src/types';
 import { activity, attachment, TestDatabase } from './helpers';
 
 function api(handler: (path: string, method: string, body: unknown) => Promise<unknown>, media?: (path: string, body: unknown) => Promise<unknown>): ApiClient {
-  return { request: <T>(path: string, method = 'GET', body?: unknown) => handler(path, method, body) as Promise<T>, upload: <T>(path: string, body: unknown) => (media ? media(path, body) : Promise.resolve({ id: 'stored' })) as Promise<T> };
+  return { request: <T>(path: string, method = 'GET', body?: unknown) => handler(path, method, body) as Promise<T>, upload: <T>(path: string, body: unknown) => (media ? media(path, body) : Promise.resolve({ id: (body as { id: string }).id, status: 'stored' })) as Promise<T> };
 }
 
 test('SQLite restart keeps one exact field payload; a lost acknowledgement retries its ID and uploads media only after acknowledgement', async () => {
@@ -28,7 +28,7 @@ test('SQLite restart keeps one exact field payload; a lost acknowledgement retri
       calls++; const item = body as { id: string };
       if (!accepted.has(item.id)) { accepted.set(item.id, body); stockEffects++; costEffects++; throw new ApiError(0, 'network_error'); }
       assert.deepEqual(accepted.get(item.id), body); return { id: item.id };
-    }, async (_path, body) => { mediaCalls++; assert.equal((body as { activityId: string }).activityId, mutation.id); return { id: file.id }; });
+    }, async (_path, body) => { mediaCalls++; assert.equal((body as { activityId: string }).activityId, mutation.id); return { id: file.id, status: 'stored' }; });
     await new Synchronizer(repository, transport).flush(mutation.farmId, { media: true });
     assert.equal(mediaCalls, 0); assert.equal((await repository.mutations(mutation.farmId))[0]!.attempts, 1);
     await repository.close();
@@ -49,7 +49,7 @@ test('media failures retain the photograph without repeating accepted metadata',
     const mutation = activity(); const file = attachment(mutation);
     await repository.attach(file); await repository.enqueue(mutation);
     let activities = 0; let uploads = 0;
-    const transport = api(async () => { activities++; return {}; }, async () => { uploads++; if (uploads === 1) throw new ApiError(503, 'unavailable'); return {}; });
+    const transport = api(async () => { activities++; return {}; }, async () => { uploads++; if (uploads === 1) throw new ApiError(503, 'unavailable'); return { id: file.id, status: 'stored' }; });
     const sync = new Synchronizer(repository, transport);
     await sync.flush(mutation.farmId, { media: true });
     assert.equal(activities, 1); assert.equal((await repository.attachments(mutation.farmId))[0]!.dataBase64, file.dataBase64);
@@ -139,4 +139,87 @@ test('the offline path cannot queue delayed actuator commands or inject a resour
   assert.throws(() => mutationRequest({ ...mutation, kind: 'equipment-command' } as unknown as Mutation), /unsafe_offline_action/);
   assert.throws(() => mutationRequest({ ...mutation, kind: 'task-status', resourceId: '../assets/pump/commands' }), /invalid_record/);
   assert.match(mutationRequest(mutation).path, /\/activities$/);
+});
+
+test('restart resumes legacy pending records and photos interrupted on their fifth attempt', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'smart-farmer-interrupted-'));
+  const filename = join(directory, 'account.db');
+  let repository = new LocalRepository(new TestDatabase(filename)); await repository.initialize();
+  try {
+    const record = activity(); const photo = attachment(record);
+    await repository.attach(photo); await repository.enqueue(record);
+    await repository.updateMutation({ ...record, attempts: 5 });
+    await repository.updateAttachment({ ...photo, state: 'pending', attempts: 5 });
+    await repository.close();
+    repository = new LocalRepository(new TestDatabase(filename)); await repository.initialize();
+    const sync = new Synchronizer(repository, api(async (_path, _method, body) => {
+      assert.deepEqual(body, record.body); return {};
+    }, async (_path, body) => {
+      const payload = body as { id: string; dataBase64: string };
+      assert.equal(payload.id, photo.id); assert.equal(payload.dataBase64, photo.dataBase64);
+      return { id: photo.id, status: 'stored' };
+    }));
+    const result = await sync.flush(record.farmId, { media: true });
+    assert.equal(result.accepted, 1); assert.equal(result.mediaUploaded, 1);
+    assert.deepEqual(await repository.mutations(record.farmId), []);
+    assert.equal((await repository.attachments(record.farmId))[0]!.state, 'synced');
+  } finally { await repository.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a late response cannot reopen a revoked queue or send later work under an old role', async () => {
+  for (const during of ['record', 'photo'] as const) {
+    const repository = new LocalRepository(new TestDatabase(':memory:')); await repository.initialize();
+    try {
+      const first = activity(); const second = activity(first.farmId);
+      for (const record of [first, second]) {
+        await repository.attach(attachment(record)); await repository.enqueue(record);
+      }
+      let calls = 0;
+      const lateFailure = async () => {
+        calls++; await repository.revokeFarm(first.farmId); throw new ApiError(503, 'unavailable');
+      };
+      const sync = new Synchronizer(repository, api(during === 'record' ? lateFailure : async () => ({}), lateFailure));
+      await sync.flush(first.farmId, { media: true });
+      assert.equal(calls, 1);
+      const pending = await repository.mutations(first.farmId);
+      assert.equal(pending.length, during === 'record' ? 2 : 0);
+      for (const item of [...pending, ...await repository.attachments(first.farmId)]) {
+        assert.equal(item.state, 'blocked'); assert.equal(item.lastError, 'access_revoked');
+      }
+      await sync.flush(first.farmId, { media: true }); assert.equal(calls, 1);
+    } finally { await repository.close(); }
+  }
+});
+
+test('submitting a recovered field draft does not requeue a previously revoked photograph', async () => {
+  const repository = new LocalRepository(new TestDatabase(':memory:')); await repository.initialize();
+  try {
+    const record = activity(); const photo = attachment(record);
+    await repository.attach(photo);
+    await repository.revokeFarm(record.farmId);
+    await repository.enqueue(record);
+    assert.equal((await repository.attachments(record.farmId))[0]!.state, 'blocked');
+    const sync = new Synchronizer(repository, api(async () => ({}), async () => assert.fail('revoked photo was sent')));
+    const result = await sync.flush(record.farmId, { media: true });
+    assert.equal(result.accepted, 1); assert.equal(result.mediaUploaded, 0); assert.equal(result.failed, 0);
+  } finally { await repository.close(); }
+});
+
+test('a photo stays queued until the API confirms that its exact ID was stored', async () => {
+  const repository = new LocalRepository(new TestDatabase(':memory:')); await repository.initialize();
+  try {
+    const record = activity(); const photo = attachment(record);
+    await repository.attach(photo); await repository.enqueue(record);
+    const receipts = [null, { id: record.id, status: 'stored' }, { id: photo.id, status: 'pending' }, { id: photo.id, status: 'stored' }];
+    const sync = new Synchronizer(repository, api(async () => ({ id: record.id }), async () => receipts.shift()));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const result = await sync.flush(record.farmId, { media: true });
+      assert.equal(result.failed, 1);
+      const retained = (await repository.attachments(record.farmId))[0]!;
+      assert.equal(retained.state, 'pending'); assert.equal(retained.lastError, 'invalid_response');
+      assert.equal(retained.dataBase64, photo.dataBase64);
+    }
+    const result = await sync.flush(record.farmId, { media: true }); assert.equal(result.mediaUploaded, 1);
+    assert.equal((await repository.attachments(record.farmId))[0]!.dataBase64, '');
+  } finally { await repository.close(); }
 });
