@@ -14,7 +14,7 @@ permissions:
   contents: read
 concurrency:
   group: android-preview-apk-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CI: '1'
   EXPO_NO_TELEMETRY: '1'
