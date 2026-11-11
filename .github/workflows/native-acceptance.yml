@@ -192,6 +192,9 @@ jobs:
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
         run: bash smart-farmer-frontend/mobile/acceptance/ios.sh
+      - name: Omit system-wide simulator logs from successful automated evidence
+        if: success() && github.event_name != 'workflow_dispatch'
+        run: find "$RUNNER_TEMP/native-evidence" -type f -path '*/logs/device-simulator.log' -delete
       - name: Retain ios acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
