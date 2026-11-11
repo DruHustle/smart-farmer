@@ -23,7 +23,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-git -C "$repo" archive "$revision" -- smart-farmer-backend smart-farmer-frontend/web | tar -x -C "$temp"
+# The private parent protects the checkout. Preserve tracked input modes in the
+# build contexts, including nginx.conf, which the web image reads as UID 101.
+git -C "$repo" -c tar.umask=0022 archive "$revision" -- smart-farmer-backend smart-farmer-frontend/web |
+  tar --no-same-owner --same-permissions -x -C "$temp"
 backend="$temp/smart-farmer-backend"
 web="$temp/smart-farmer-frontend/web"
 builder=()
