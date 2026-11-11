@@ -48,6 +48,34 @@ appId: eu.onesa.smartfarmer
     visible:
       id: tab-record
     timeout: 45000
+- runFlow:
+    label: Dismiss the iOS password-save sheet after synthetic sign-in
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          text: '^Not Now
+    element:
+      id: record-note
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: signed-in-sqlcipher-workspace
+
+          below: '^Securely store your password so it’s filled automatically the next time you need it\.
+    element:
+      id: record-note
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: signed-in-sqlcipher-workspace
+
+          optional: true
+      - assertNotVisible: '^Save Password\?
+    element:
+      id: record-note
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: signed-in-sqlcipher-workspace
+
 - tapOn:
     id: tab-record
 - scrollUntilVisible:
