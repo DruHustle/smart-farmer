@@ -30,6 +30,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   const settings = useRef({ dataSaver, reminders, language, online, wifi: network.type === NetworkStateType.WIFI });
   settings.current = { dataSaver, reminders, language, online, wifi: network.type === NetworkStateType.WIFI };
   const refreshing = useRef(false);
+  const refreshSelection = useRef(false);
   const ready = useRef(false);
 
   const reportError = useCallback((value: unknown) => {
@@ -40,21 +41,26 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
 
   const reloadLocal = useCallback(async (id = currentFarm.current) => {
     if (!id || !alive.current) return;
+    const revision = repository.farmRevision(id);
     const [queued, files] = await Promise.all([repository.mutations(id), repository.attachments(id)]);
-    if (alive.current && currentFarm.current === id) { setMutations(queued); setAttachments(files); }
+    if (alive.current && currentFarm.current === id && revision === repository.farmRevision(id)) { setMutations(queued); setAttachments(files); }
   }, [repository]);
 
   async function download(farm: Farm) {
     const base = `/v1/farms/${farm.id}`;
+    const revision = repository.farmRevision(farm.id);
+    const current = () => alive.current && revision === repository.farmRevision(farm.id)
+      && currentFarms.current.some(item => item.id === farm.id && item.role === farm.role);
     const [projects, tasks, activities, stock, members, assets] = await Promise.all([
       allPages<Project>(api, `${base}/projects`), allPages<Task>(api, `${base}/tasks`),
       allPages<Activity>(api, `${base}/activities`), allPages<Stock>(api, `${base}/stock`),
       allPages<Member>(api, `${base}/members`), allPages<Asset>(api, `${base}/assets`),
     ]);
-    if (!alive.current) return;
+    if (!current()) return;
     const next: FarmSnapshot = { farm, projects, tasks, activities, stock, members, assets, syncedAt: new Date().toISOString() };
     await repository.saveSnapshot(next);
-    if (alive.current && currentFarm.current === farm.id) setSnapshot(next);
+    if (!current() || currentFarm.current !== farm.id) return;
+    setSnapshot(next);
     if (settings.current.reminders) await scheduleTaskReminders(next.tasks.filter(task => task.assignee_id === session.userId), settings.current.language);
   }
 
@@ -78,16 +84,14 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
     try {
       const result = await api.request<Items<Farm>>('/v1/farms');
       if (!alive.current) return;
-      for (const previous of currentFarms.current) {
-        const updated = result.items.find(farm => farm.id === previous.id);
-        if (!updated || updated.role !== previous.role) {
-          await repository.revokeFarm(previous.id);
-          if (currentFarm.current === previous.id) { setSnapshot(null); setMutations([]); setAttachments([]); }
-        }
+      const revoked = currentFarms.current.filter(previous => !result.items.some(farm => farm.id === previous.id && farm.role === previous.role));
+      if (revoked.some(previous => previous.id === currentFarm.current)) {
+        setFarmId(''); setSnapshot(null); setMutations([]); setAttachments([]); setNotice(''); setProgress(null);
       }
-      const selected = result.items.find(farm => farm.id === currentFarm.current) || result.items[0];
-      currentFarms.current = result.items; setFarms(result.items);
+      await Promise.all(revoked.map(previous => repository.revokeFarm(previous.id)));
       await repository.setPreference('farms', result.items);
+      currentFarms.current = result.items; setFarms(result.items);
+      const selected = result.items.find(farm => farm.id === currentFarm.current) || result.items[0];
       if (!selected) { currentFarm.current = ''; setFarmId(''); setSnapshot(null); return; }
       currentFarm.current = selected.id; setFarmId(selected.id);
       await repository.setPreference('selectedFarm', selected.id);
@@ -97,19 +101,30 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
       if (resultSync?.unauthorized || !alive.current) return;
       await download(selected);
     } catch (value) { reportError(value); }
-    finally { refreshing.current = false; if (alive.current) setBusy(false); }
+    finally {
+      refreshing.current = false;
+      if (alive.current) {
+        setBusy(false);
+        if (refreshSelection.current) { refreshSelection.current = false; void refresh(); }
+      }
+    }
   }
 
   async function selectFarm(id: string) {
     if (id === currentFarm.current) return;
     const farm = currentFarms.current.find(value => value.id === id);
     if (!farm) return;
-    currentFarm.current = id; setFarmId(id); setSnapshot(null); setMutations([]); setAttachments([]); setError(null);
+    currentFarm.current = id; setFarmId(id); setSnapshot(null); setMutations([]); setAttachments([]); setError(null); setNotice(''); setProgress(null);
+    const revision = repository.farmRevision(id);
     await repository.setPreference('selectedFarm', id);
     const cached = await repository.snapshot(id);
-    if (alive.current && currentFarm.current === id) setSnapshot(cached);
+    if (!alive.current || currentFarm.current !== id || revision !== repository.farmRevision(id)) return;
+    if (cached?.farm.role === farm.role) setSnapshot(cached);
     await reloadLocal(id);
-    if (settings.current.online && !refreshing.current) await refresh();
+    if (settings.current.online && currentFarm.current === id) {
+      if (refreshing.current) refreshSelection.current = true;
+      else await refresh();
+    }
   }
 
   async function sync(forceMedia = false) {
@@ -155,7 +170,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
       if (chosen) {
         currentFarm.current = chosen.id; setFarmId(chosen.id);
         const saved = await repository.snapshot(chosen.id);
-        if (alive.current) setSnapshot(saved);
+        if (alive.current && currentFarm.current === chosen.id && saved?.farm.role === chosen.role) setSnapshot(saved);
         await reloadLocal(chosen.id);
       }
       ready.current = true;

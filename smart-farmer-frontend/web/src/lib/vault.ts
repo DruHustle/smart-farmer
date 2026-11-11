@@ -35,6 +35,21 @@ function withPreviousRecord(next: Sealed, previous: Sealed): Sealed {
   const {archives, ...record} = previous;
   return {...next, archives: [...(archives ?? []), {id: crypto.randomUUID(), record}]};
 }
+function resumeSession(data: Snapshot, initial: Snapshot) {
+  if (data.identity.userId !== initial.identity.userId) throw new Error('account_mismatch');
+  data.identity = initial.identity;
+  data.language = initial.language;
+  data.requiresAuth = false;
+  // Older clients counted an expired session as a permanent failure.
+  for (const entry of data.outbox) {
+    if (entry.status === 'failed' && entry.error === 'unauthorized') {
+      entry.status = 'pending';
+      entry.attempts = 0;
+      delete entry.error;
+      delete entry.nextAttemptAt;
+    }
+  }
+}
 /** A password unlocks this account only. The key and plaintext never enter browser storage. */
 export class Vault {
   private key: CryptoKey;
@@ -54,8 +69,7 @@ export class Vault {
     let data: Snapshot;
     if (saved) {
       try {data = await openSealed<Snapshot>(saved, key, id);} catch {throw new Error('saved_data_locked');}
-      if (initial && data.identity.userId !== initial.identity.userId) throw new Error('account_mismatch');
-      if (initial) {data.identity = initial.identity; data.language = initial.language; data.requiresAuth = false;}
+      if (initial) resumeSession(data, initial);
     } else {if (!initial) throw new Error('no_saved_data'); data = initial;}
     const vault = new Vault(id, key, salt, storage, data, saved?.archives ?? []);
     await vault.mutate(() => {});
@@ -70,8 +84,7 @@ export class Vault {
     if (saved) {
       if (previousPassword) {
         try {const oldKey = await derive(previousPassword, saved.salt); data = await openSealed<Snapshot>(saved, oldKey, id);} catch {throw new Error('saved_data_locked');}
-        if (data.identity.userId !== initial.identity.userId) throw new Error('account_mismatch');
-        data.identity = initial.identity; data.language = initial.language; data.requiresAuth = false;
+        resumeSession(data, initial);
         // Re-encrypt media with the new key below; metadata alone must never claim media was recovered.
       } else {
         const {archives: _oldArchives, ...record} = saved;
@@ -98,7 +111,7 @@ export class Vault {
     for (const archive of this.archives) {
       let old: Snapshot; let oldKey: CryptoKey;
       try {oldKey = await derive(previousPassword, archive.record.salt); old = await openSealed<Snapshot>(archive.record, oldKey, this.keyId);} catch {continue;}
-      if (old.identity.userId !== this.current.identity.userId) throw new Error('account_mismatch');
+      resumeSession(old, this.current);
       const recovered = old.outbox.filter(entry => !this.current.outbox.some(live => live.id === entry.id));
       for (const entry of recovered) if (entry.mediaId) {
         const context = `${this.keyId}|media|${entry.mediaId}`, attachment = await this.storage.get(context);

@@ -21,7 +21,11 @@ export function validateMutation(mutation: Mutation): void {
 /** The native adapter uses SQLCipher. This port also permits actual restart tests with SQLite. */
 export class LocalRepository {
   private serial: Promise<unknown> = Promise.resolve();
+  private readonly farmRevisions = new Map<string, number>();
   constructor(private readonly db: SqlDatabase) {}
+
+  /** Fence requests started before a membership or role change in this process. */
+  farmRevision(farmId: string): number { return this.farmRevisions.get(farmId) ?? 0; }
 
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
     const result = this.serial.then(action);
@@ -81,19 +85,16 @@ export class LocalRepository {
 
   /** On reconnect revoke cached reads immediately, keeping only the account's recoverable drafts. */
   revokeFarm(farmId: string): Promise<void> {
+    this.farmRevisions.set(farmId, this.farmRevision(farmId) + 1);
     return this.exclusive(async () => {
-      await this.db.runAsync('DELETE FROM snapshots WHERE farm_id = ?', farmId);
-      await this.db.runAsync('DELETE FROM preferences WHERE key LIKE ?', `farm:${farmId}:%`);
-      const files = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ?', farmId);
-      for (const row of files) { const attachment = JSON.parse(row.value) as Attachment; if (attachment.state !== 'synced') await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ?', JSON.stringify({ ...attachment, state: 'blocked', lastError: 'access_revoked' }), attachment.id); }
-      const rows = await this.db.getAllAsync<JsonRow>('SELECT value FROM outbox WHERE farm_id = ?', farmId);
-      for (const row of rows) {
-        const mutation = JSON.parse(row.value) as Mutation;
-        if (mutation.state !== 'resolved') {
-          mutation.state = 'blocked'; mutation.lastError = 'access_revoked';
-          await this.db.runAsync('UPDATE outbox SET value = ? WHERE id = ?', JSON.stringify(mutation), mutation.id);
-        }
-      }
+      await this.db.execAsync('BEGIN IMMEDIATE');
+      try {
+        await this.db.runAsync('DELETE FROM snapshots WHERE farm_id = ?', farmId);
+        await this.db.runAsync('DELETE FROM preferences WHERE key LIKE ?', `farm:${farmId}:%`);
+        await this.db.runAsync("UPDATE attachments SET value = json_set(value, '$.state', 'blocked', '$.lastError', 'access_revoked') WHERE farm_id = ? AND json_extract(value, '$.state') <> 'synced'", farmId);
+        await this.db.runAsync("UPDATE outbox SET value = json_set(value, '$.state', 'blocked', '$.lastError', 'access_revoked') WHERE farm_id = ? AND json_extract(value, '$.state') <> 'resolved'", farmId);
+        await this.db.execAsync('COMMIT');
+      } catch (error) { await this.db.execAsync('ROLLBACK'); throw error; }
     });
   }
 
@@ -123,8 +124,10 @@ export class LocalRepository {
         const attachments = await this.db.getAllAsync<JsonRow>('SELECT value FROM attachments WHERE farm_id = ? AND activity_id = ?', mutation.farmId, mutation.id);
         for (const row of attachments) {
           const attachment = JSON.parse(row.value) as Attachment;
-          attachment.state = 'pending';
-          await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ?', JSON.stringify(attachment), attachment.id);
+          if (attachment.state === 'draft') {
+            attachment.state = 'pending';
+            await this.db.runAsync('UPDATE attachments SET value = ? WHERE id = ?', JSON.stringify(attachment), attachment.id);
+          }
         }
         if (clearDraft) await this.db.runAsync('DELETE FROM drafts WHERE farm_id = ?', mutation.farmId);
         await this.db.execAsync('COMMIT');

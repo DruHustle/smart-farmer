@@ -31,11 +31,13 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
       {stale && work.snapshot ? <Text style={styles.caption}>{t.stale} · {t.lastSync}: {formatFarmTime(work.snapshot.syncedAt, work.snapshot.farm.timezone, language)}</Text> : null}
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       {work.notice ? <Notice text={label(language, work.notice)} /> : null}
+      <React.Fragment key={`${work.farmId}:${work.selectedFarm?.role}`}>
       {tab === 'today' ? <TodayScreen work={work} language={language} onRecord={() => setTab('record')} /> : null}
       {tab === 'farm' ? <FarmScreen work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
       {tab === 'record' ? <RecordScreen work={work} language={language} nativeBusy={nativeBusy} onNativePrompt={onNativePrompt} /> : null}
-      {tab === 'forum' ? <ForumScreen key={`${session.userId}:${work.farmId}:${work.selectedFarm?.role}`} work={work} language={language} nativeBusy={nativeBusy} /> : null}
+      {tab === 'forum' ? <ForumScreen work={work} language={language} nativeBusy={nativeBusy} /> : null}
       {tab === 'more' ? <MoreScreen work={work} language={language} onLogout={onLogout} onLock={onLock} onNativePrompt={onNativePrompt} /> : null}
+      </React.Fragment>
     </ScrollView>
     <KeyboardDismissButton label={t.hideKeyboard} />
     <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>

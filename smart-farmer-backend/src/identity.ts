@@ -132,10 +132,17 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
       await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);
       const actor=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,id]);
       if(actor.rows[0]?.role!=='owner')throw new ApiError('not_found',404);
-      const m=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!m.rowCount)throw new ApiError('not_found',404);
+      const m=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2 FOR UPDATE',[farmId,userId]);if(!m.rowCount)throw new ApiError('not_found',404);
       if(m.rows[0].role==='owner'){const owners=await c.query("SELECT count(*) FROM memberships WHERE farm_id=$1 AND role='owner'",[farmId]);if(Number(owners.rows[0].count)<2)throw new ApiError('last_owner',409);}
-      await c.query('UPDATE tasks SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);
-      await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',[farmId,userId]);await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');
+      const assignment=[farmId,userId];
+      await c.query('UPDATE project_plans SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query('UPDATE tasks SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query("UPDATE asset_maintenance SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2 AND status='planned'",assignment);
+      await c.query('UPDATE assets SET responsible_id=NULL,version=version+1 WHERE farm_id=$1 AND responsible_id=$2',assignment);
+      await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',assignment);
+      await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',assignment);
+      await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');
     });return reply.code(204).send();
   });
 }

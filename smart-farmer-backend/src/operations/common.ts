@@ -41,7 +41,7 @@ export async function memberExists(
     userId &&
     !(
       await c.query(
-        "SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2",
+        "SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2 FOR KEY SHARE",
         [farmId, userId],
       )
     ).rowCount
