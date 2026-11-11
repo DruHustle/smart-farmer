@@ -66,6 +66,44 @@ BUNDLES = {
 }
 
 
+
+def retained_gallery_frames(z,tag):
+    import shutil
+    from io import BytesIO
+    from struct import unpack
+    candidates=[]
+    for n in z.namelist():
+        if not n.startswith('ios-intake-capture/') or not n.lower().endswith('.png'): continue
+        leaf=Path(n).name.lower()
+        if 'fail' in leaf or 'invoice-local-source-image' in leaf:
+            candidates.append(n)
+    print('GALLERY RELEVANT SCREEN COUNT',tag,len(candidates))
+    results=[]
+    for n in sorted(candidates)[-3:]:
+        blob=z.read(n)
+        if len(blob)<24 or blob[:8]!=b'\x89PNG\r\n\x1a\n': continue
+        w,h=unpack('>II',blob[16:24])
+        result={'width':w,'height':h,'sha256':digest(blob),'fileKind':'failed frame' if 'fail' in Path(n).name.lower() else 'frame at preview control'}
+        with tempfile.TemporaryDirectory() as temp:
+            image=Path(temp)/'frame.png';image.write_bytes(blob)
+            color=shutil.which('convert') or shutil.which('magick')
+            if color:
+                crop=f'{w*9//10}x{h*3//4}+{w//20}+{h//10}'
+                calc=subprocess.run([color,str(image),'-crop',crop,'+repage','-colorspace','gray','-threshold','5%','-format','%[fx:mean]','info:'],capture_output=True,text=True)
+                if calc.returncode==0:
+                    try:
+                        result['interiorDarkFraction']=round(1-float(calc.stdout.strip()),3)
+                    except ValueError:
+                        pass
+            ocr=shutil.which('tesseract')
+            if ocr:
+                scan=subprocess.run([ocr,str(image),'stdout','--psm','11'],capture_output=True,text=True)
+                terms=('Photos','Cancel','Add','Done','Use Photo','Albums','Collections','Library','Recents','Choose Photo','Save Password','Not Now','Allow Access','Select Photos')
+                result['matchedSystemWords']=[v for v in terms if re.search(r'\b'+re.escape(v)+r'\b',scan.stdout,flags=re.I)]
+        results.append(result)
+        print('GALLERY SCREEN CLASSIFICATION',tag,json.dumps(result))
+    return results
+
 def invoice_trace(z, tag):
     allowed_ids=('invoice-library','PXGGridLayout-Info','invoice-local-source-image','invoice-upload-','device-reauthenticate','auth-username','tab-more','finance-tabs','accounting-tabs','more-finance','auth-submit','Save Password','Not Now')
     trace=[]
@@ -174,6 +212,8 @@ def harvest(z, source, tag, kind):
         assert len(receipts['accessibility'])==12 and not any(receipts['accessibility'].values())
         return
     if tag.endswith('ios-farm'):
+        frame_summary=retained_gallery_frames(z,tag)
+        if frame_summary: (folder/'ios-failed-frame-classification.json').write_text(json.dumps(frame_summary,indent=2))
         trace=invoice_trace(z,tag)
         if trace: (folder/'ios-gallery-stages.json').write_text(json.dumps(trace,indent=2))
     emitted = set()

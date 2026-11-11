@@ -20,13 +20,15 @@
     ],
     "identity": "Both the ordinary member and the MFA administrator completed Farmer sign-in once fully signed out and once with an active Portal session. The browser returned them to Forum. An active Portal session required no second credential entry. Repeated sign-in kept the same Farmer user, assigned role and saved record. A newly approved user saw an empty farm list and could create a farm or redeem an invitation. Verified Portal staff could enter under their existing approval. A self-service customer approved for another product could request Farmer on the existing Portal account.",
     "privacy": "The Portal administrator received only the role granted by the farm. A worker and an adviser could not read the other farm or grant manager access. Cancelling returned the original state without issuing a code. Sign-out invalidated the Farmer token. After the source session expired, the actual browser requested fresh credentials and returned the same Farmer identity. The previous token stayed invalid. Revocation while expired denied new access, including after valid credentials were entered.",
-    "design": "Web review covered 360-pixel Android-phone width, 390-pixel iPhone width, 820-pixel tablet width and 1280-pixel desktop width. Changes moved the first-project actions clear of the phone navigation, kept longer labels within their controls, translated validation and updated an existing success message when switching from isiNdebele to Shona. Twelve axe scans reported zero violations. The native screenshot sets identify their OS and revision. Signed-in native captures protected by the operating system cannot serve as listing imagery. A fluent agricultural terminology review remains open.",
+    "design": "Web review covered 360-pixel Android-phone width, 390-pixel iPhone width, 820-pixel tablet width and 1280-pixel desktop width. Changes moved the first-project actions clear of the phone navigation, kept longer labels within their controls, translated validation and updated an existing success message when switching from isiNdebele to Shona. Twelve axe scans reported zero violations. The responsive browser checks also covered empty states, interrupted submissions and stale telemetry. The native screenshot sets identify their OS and revision. Signed-in native captures protected by the operating system cannot serve as listing imagery. A fluent agricultural terminology review remains open.",
     "details": [
       "Both tractor-booking participants reopened the same completed booking. The farm received one USD 55 expense and the task completed once.",
       "The real OCR worker extracted a synthetic raster invoice. Human review produced a USD 37.50 payable. Recording USD 12.50 left USD 25. A failed scan supported manual entry and a later void retained its history.",
       "A committed pump command whose response was lost retried without a duplicate. The UI showed submission, device acknowledgement and confirmed feedback separately. Camera events, livestock positions and equipment feedback used simulated inputs. Physical pumps, pivots, cameras and trackers were untested. AirTag support is a manual reference.",
       "Marketplace reservations rejected overselling. Financial records, invoices, camera media, tracker data, and moderation reports were checked for the relevant farm or user access. Forum tests included a second account, reporting, blocking, unblocking, moderation and offline publication rejection.",
-      "The web suite also exercised crop setup, incidents and harvest, broilers and layers, incubation, rabbits, and fish. Marketplace and service payments were manual records with synthetic parties."
+      "The web suite also exercised crop setup, incidents and harvest, broilers and layers, incubation, rabbits, and fish. Marketplace and service payments were manual records with synthetic parties.",
+      "Final Android local-account suites completed the real system photo picker, SQLCipher restart, OCR review and exactly one USD 24.50 expense and ledger entry. The final iPhone app completed local login, offline write, restart, reconcile and the product suite. In its separate invoice-gallery test, the Photos grid and tap succeeded but the draft preview was not verified before restart. The earlier iPhone revision 0849891 completed that gallery-to-post journey.",
+      "The final Portal CI completed all seven jobs and 264 browser cases. The merged Portal source also passed 41 focused identity tests and a disposable PostgreSQL migration and restore rehearsal. The earlier repository’s provisioning profile is pinned through schema 016. The release owner needs a tested 017 profile and registered callback to operate the deployed pair."
     ],
     "apple": "Xcode 26.6, iOS SDK 26.5, arm64 device archive for iPhone and iPad, minimum OS 16.4. The app's compiled manifest declares 17 first-party collection categories, three required-reason API categories and no tracking. Thirteen privacy manifests were present across the product and its dependencies. The archive has no distribution signature or embedded provisioning profile. ZIP inside the Actions download is 26,130,924 bytes. SHA-256 `e0c4d76137faf976b691de3500b7591a92940abd98df48c047a6251fbbcfb494`.",
     "google": "Android minimum API 24 and target API 36. Bundletool and the signature verifier accepted the AAB. All 40 64-bit native libraries passed the 16 KB alignment checks. An APK generated from the actual bundle installed, cold-launched, force-stopped and relaunched without Metro. The disposable signer differs from an owner-registered Play upload key. The AAB inside the Actions download is 72,813,990 bytes. SHA-256 `8c1d31bb1e6f14a1f3e28b3a8bc7b0a1d4908a429a736f66d61316a98e4c6b35`.",
@@ -72,14 +74,18 @@
     "Google Play target requirements": "https://support.google.com/googleplay/android-developer/answer/11926878",
     "Android 16 KB compatibility": "https://developer.android.com/guide/practices/page-sizes",
     "Apple privacy disclosures": "https://developer.apple.com/app-store/app-privacy-details/",
-    "Google Play Data safety": "https://support.google.com/googleplay/android-developer/answer/10787469"
+    "Google Play Data safety": "https://support.google.com/googleplay/android-developer/answer/10787469",
+    "Canonical Android native farm evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13895359332",
+    "Canonical iPhone native farm evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13895144057",
+    "Canonical iOS Portal entry and redacted outcomes": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141/artifacts/13896647581",
+    "Completed Portal CI evidence": "https://github.com/DruHustle/onesa-company-portal/actions/runs/43105952316/artifacts/13896375922"
   },
   "matrix": [
     [
       "Portal access and return",
       "Ordinary user and MFA administrator passed with cold and active Portal sessions. Stable identity, assigned farm role, saved record and Forum return passed.",
-      "System picker blocked local issuer installation before sign-in.",
-      "System browser reached Portal. Successful account return and active-session cases remain unverified.",
+      "Compact Shona entry rendered. The system certificate picker stopped the isolated issuer test before credentials on the final Portal pairing.",
+      "The canonical iPhone run reached the real Portal form for the administrator. Both cold attempts and cancellation failed, and neither active-session case ran. No authorized return was observed.",
       "Authenticated Portal journey untested."
     ],
     [
@@ -92,8 +98,8 @@
     [
       "Farm setup, memberships and field records",
       "Farm creation retry created one farm. Invitation, role restrictions, farm-less onboarding, offline record and restart passed.",
-      "Installed local-account journey passed offline restart and exactly-once sync. New Portal member workflow unverified.",
-      "Installed local-account journey passed offline restart and exactly-once sync. New Portal member workflow unverified.",
+      "Final local-account login, encrypted restart and exactly-once reconciliation passed. Native Portal onboarding and membership recovery unverified.",
+      "Final local-account login, encrypted restart and exactly-once reconciliation passed. Native Portal onboarding and membership recovery unverified.",
       "Signed-in journeys unverified."
     ],
     [
@@ -127,8 +133,8 @@
     [
       "Supplier OCR, expenses and sales invoices",
       "Real OCR, human correction, posting, manual fallback, payment retry, credit, void and private documents passed.",
-      "System gallery, encrypted restart, OCR and posting passed. Sales invoice and payment ledger exercised.",
-      "System gallery, encrypted restart, OCR and posting passed. Sales invoice and payment ledger exercised.",
+      "All eight native farm suites passed on the final revision. OS gallery, encrypted restart, reviewed OCR expense, issued sales invoice, partial payments and journal checks passed.",
+      "The final product suite passed. The separate Photos test tapped the asset, then could not verify the draft preview. Earlier 0849891 completed review and a USD 24.50 posting.",
       "Untested."
     ],
     [
