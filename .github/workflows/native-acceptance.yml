@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DruHustle/onesa-company-portal
-          ref: ce8fbf35261a3afc5c4cf9548144ebdd3eab3f2f
+          ref: e8c4544b50648425c0948914505fab1617e3b3f9
           path: qualification-portal
           persist-credentials: false
       - name: Install real Portal and browser callback dependencies
@@ -222,7 +222,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DruHustle/onesa-company-portal
-          ref: ce8fbf35261a3afc5c4cf9548144ebdd3eab3f2f
+          ref: e8c4544b50648425c0948914505fab1617e3b3f9
           path: qualification-portal
           persist-credentials: false
       - name: Install real Portal and browser callback dependencies
