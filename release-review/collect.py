@@ -65,6 +65,37 @@ BUNDLES = {
     'android':('SmartFarmer-qualification.aab','8c1d31bb1e6f14a1f3e28b3a8bc7b0a1d4908a429a736f66d61316a98e4c6b35','Smart-Farmer-Android-0.2.0-1-test-signed.aab')
 }
 
+
+def invoice_trace(z, tag):
+    allowed_ids=('invoice-library','PXGGridLayout-Info','invoice-local-source-image','invoice-upload-','device-reauthenticate','auth-username','tab-more','finance-tabs','accounting-tabs','more-finance','auth-submit','Save Password','Not Now')
+    trace=[]
+    for path in z.namelist():
+        if not path.startswith('ios-intake-capture/') or not path.endswith('.json') or z.getinfo(path).file_size>16000000: continue
+        leaf=Path(path).name
+        if not any(w in leaf for w in ('commands','hierarchy')): continue
+        try:
+            value=json.loads(z.read(path))
+        except (ValueError,UnicodeError):
+            continue
+        if 'hierarchy' in leaf:
+            public_ids=[k for k in allowed_ids if k in json.dumps(value)]
+            trace.append({'type':'failure hierarchy contains named controls','markers':public_ids})
+        if not isinstance(value,list): continue
+        for row in value:
+            if not isinstance(row,dict) or not isinstance(row.get('command'),dict): continue
+            command=row['command']
+            category=next(iter(command),'')
+            public_categories=('stopAppCommand','launchAppCommand','tapOnElement','scrollUntilVisible','assertCondition','addMedia','stopApp','launchApp','assertVisible','tapOnPoint','waitForAnimationToEnd','tapOnElementCommand','scrollUntilVisibleCommand','assertConditionCommand','addMediaCommand','extendedWaitUntilCommand')
+            if category not in public_categories: continue
+            stat=(row.get('metadata') or {}).get('status')
+            if stat not in ('PENDING','RUNNING','FAILED','COMPLETED','SKIPPED'): continue
+            markers=[k for k in allowed_ids if k in json.dumps(command)]
+            if markers or category in ('stopAppCommand','launchAppCommand','stopApp','launchApp','addMediaCommand','addMedia'):
+                trace.append({'type':category,'status':stat,'markers':markers})
+    for entry in trace[-45:]:
+        print('IOS GALLERY TRACE',tag,json.dumps(entry))
+    return trace
+
 def harvest(z, source, tag, kind):
     folder = REVIEW / 'receipts' / tag
     folder.mkdir(parents=True, exist_ok=True)
@@ -92,6 +123,9 @@ def harvest(z, source, tag, kind):
                 receipts['accessibility'][n]=len(violations)
         assert len(receipts['accessibility'])==12 and not any(receipts['accessibility'].values())
         return
+    if tag.endswith('ios-farm'):
+        trace=invoice_trace(z,tag)
+        if trace: (folder/'ios-gallery-stages.json').write_text(json.dumps(trace,indent=2))
     emitted = set()
     for n in z.namelist():
         leaf = Path(n).name
