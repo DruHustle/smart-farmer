@@ -16,12 +16,12 @@ appId: com.android.settings
 - runFlow: unlock.yaml
 - runFlow:
     when:
-      notVisible: '^farmer-device-ca.crt$'
+      notVisible: '^farmer-device-ca[.]crt$'
     commands:
       - tapOn:
           text: '^(Show roots|Open navigation drawer|Open from)$'
-      - tapOn: '^Downloads$'
-- tapOn: '^farmer-device-ca.crt$'
+      - tapOn: '^Onesa test issuer$'
+- tapOn: '^farmer-device-ca[.]crt$'
 - runFlow: unlock.yaml
 - tapOn:
     text: '^(OK|Install)$'
