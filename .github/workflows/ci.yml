@@ -177,3 +177,18 @@ jobs:
           node-version: 24.22.1
       - name: Build and verify the read-only static web and PWA image
         run: node smart-farmer-frontend/web/scripts/test-container.mjs
+
+  arm64-release:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify native ARM64 images and restore a private attachment
+        run: |
+          bash smart-farmer-backend/deploy/onesa/qualify-arm64.sh "$RUNNER_TEMP/farmer-arm64.env"
+          cat "$RUNNER_TEMP/farmer-arm64.env" >> "$GITHUB_STEP_SUMMARY"

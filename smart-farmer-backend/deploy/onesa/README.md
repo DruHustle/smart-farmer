@@ -4,6 +4,18 @@ This is a **candidate**, not a deployed or capacity-qualified production stack. 
 
 The API, singleton maintenance worker, optional dedicated PostgreSQL and static web each have their own project network, limits, health checks and named data volumes. Only the API and web bind host loopback. Node-RED runs on the separately commissioned farm gateway; the Python agent retains validation and command policy. The independently provisioned Activepieces candidate remains optional and must not receive application or machine authority by default.
 
+## Qualify images on native ARM64
+
+From a checkout of the reviewed release commit, run the following command with an account that can use the local ARM64 Docker daemon. The receipt path must be new. Use a directory outside the checkout for release records.
+
+```bash
+bash smart-farmer-backend/deploy/onesa/qualify-arm64.sh /private/receipts/farmer-arm64.env
+```
+
+The script builds API, web, database and backup images sequentially from a Git archive of the current commit. It uses a disposable internal Docker network, dedicated test database and media volume. It checks the API and web revisions, worker heartbeat, account registration and login, private attachment upload, encrypted backup and restore into an empty database. Each successful run retains four locally tagged images and writes their immutable image IDs to the receipt. The qualification removes its test containers, network and volume. On a shared host, set `FARMER_BUILDER` to the name of a resource-limited Buildx builder. The script publishes no host ports or registry images.
+
+GitHub runs the same check on its standard Linux ARM64 runner. The Oracle operator must qualify the images on the target daemon and use its own receipt for the production Compose configuration. Independent builds may have different image IDs. Keep the target receipt and images for rollback.
+
 ## Prepare and qualify
 
 1. Build the API from this reviewed source with `docker build --platform linux/arm64 --build-arg APP_REVISION=<full-reviewed-commit> -t <candidate> smart-farmer-backend`, and the web image from `smart-farmer-frontend/web` with both `--build-arg APP_REVISION=<full-reviewed-commit>` and `--build-arg VITE_API_URL=https://farmer.onesa.eu`. Record source revision, scan results and immutable image digests. Confirm the API and web image `org.opencontainers.image.revision` labels, API `/version` and web `/release.json` all equal the reviewed commit; a response or label alone can be configured and is not proof of image provenance. The API Dockerfile, web Dockerfile and PostgreSQL base are pinned. Verify the intended ARM64 image manifests and load or distribute the exact reviewed images before release.
