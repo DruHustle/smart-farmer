@@ -178,9 +178,17 @@ try {
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
 
   checkpoint('Phone and desktop notifications evidence');
-  await page.setViewportSize({width: 1280, height: 900}); await screenshot('desktop-notifications.png');
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
-  await page.setViewportSize({width: 320, height: 740}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false); await screenshot('small-phone-notifications.png');
+  await more('notifications');
+  const notificationsHeading = page.getByRole('heading', {level: 1, name: sn.notifications, exact: true});
+  for (const [width, height, filename] of [
+    [1280, 900, 'desktop-notifications.png'],
+    [320, 740, 'small-phone-notifications.png'],
+  ]) {
+    await page.setViewportSize({width, height});
+    await expectVisible(notificationsHeading);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
+    await screenshot(filename);
+  }
   await page.setViewportSize({width: 390, height: 844});
   assert.deepEqual(errors, []); pass('Small-phone and desktop layouts have no horizontal overflow or runtime errors');
   await writeFile(resolve(artifacts, 'results.json'), JSON.stringify({status: 'passed', passed: steps, generatedAt: new Date().toISOString(), viewport: '390x844 + 320x740 + 1280x900', backend: 'real PostgreSQL; isolated fixture only'}, null, 2));

@@ -118,15 +118,21 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: bash smart-farmer-frontend/mobile/acceptance/android.sh
-      - name: Retain debug APK and native evidence
+      - name: Retain android acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-android-acceptance
-          retention-days: 7
-          path: |
-            smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/*.apk
-            ${{ runner.temp }}/native-evidence
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
+          path: ${{ runner.temp }}/native-evidence
+      - name: Retain successful debug APK for review
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-android-preview
+          retention-days: 3
+          path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
   ios:
     # Use the standard ARM simulator runner. The Intel XCTest process exceeded
     # the startup deadline before it served its first request; retain that deadline.
@@ -224,12 +230,18 @@ jobs:
         run: |
           set -euo pipefail
           bash smart-farmer-frontend/mobile/acceptance/ios.sh 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-journey.log"
-      - name: Retain simulator app and native evidence
+      - name: Retain iOS acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-ios-acceptance
-          retention-days: 7
-          path: |
-            ${{ runner.temp }}/SmartFarmer-simulator.zip
-            ${{ runner.temp }}/native-evidence
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
+          path: ${{ runner.temp }}/native-evidence
+      - name: Retain successful simulator app for review
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ios-preview
+          retention-days: 3
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          if-no-files-found: error
