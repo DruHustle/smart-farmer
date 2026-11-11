@@ -2,7 +2,9 @@ appId: eu.onesa.smartfarmer
 ---
 # Keep Expo's debug-only floating touch target away from real app controls.
 # The offline restart supplies this URI again before interacting with app controls.
-# On iOS, launch once after Maestro has initialized its driver.
+# On iOS, use the exact warmed Hermes bundle after the driver is ready.
+# Expo supports direct bundle URLs; avoid its extra dynamic-manifest HEAD
+# request, which can time out before loading any application code on CI.
 - runFlow:
     when:
       platform: iOS
@@ -11,7 +13,7 @@ appId: eu.onesa.smartfarmer
           stopApp: false
           permissions: {}
           arguments:
-            "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1"
+            "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1"
 - runFlow:
     when:
       platform: Android

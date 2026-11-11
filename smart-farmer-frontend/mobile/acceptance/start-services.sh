@@ -32,7 +32,8 @@ node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("htt
 # The router root and Hermes transform profile are part of that graph's identity.
 curl --fail --show-error --silent --max-time 180 --output /dev/null "http://127.0.0.1:8081/index.bundle?platform=$NATIVE_PLATFORM&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
 if [[ "$NATIVE_PLATFORM" == ios ]]; then
-  # Prepare the native launcher's separate manifest path before its fixed 10s lookup.
+  # Retain separate manifest diagnostics. iOS acceptance launches the warmed
+  # bundle directly so this SDK development lookup is not a startup dependency.
   NATIVE_MANIFEST_URL='http://127.0.0.1:8081/'
   NATIVE_MANIFEST_HEADERS=(
     --header 'expo-platform: ios'
