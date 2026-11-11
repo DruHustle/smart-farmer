@@ -1,0 +1,34 @@
+name: Assemble Smart Farmer qualification evidence
+on:
+  push:
+    branches: [qualify/release-evidence-20261111]
+    paths: ['release-review/**', '.github/workflows/release-evidence.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reconcile fixed-source reports, representative screens and package digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release-review/collect.py
+      - name: Save the report and test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Farmer-verification
+          path: qualification-output
+          retention-days: 90
+          if-no-files-found: error
+      - name: Save the previously validated archive and bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Farmer-checked-packages-0.2.0-1
+          path: verified-packages
+          retention-days: 90
+          if-no-files-found: error

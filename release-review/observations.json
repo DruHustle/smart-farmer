@@ -1,0 +1,173 @@
+{
+  "base": {
+    "intro": "On 11 November 2026, the integrated browser passed its customer workflow suite against running Farmer services and PostgreSQL. Production customer use and both store submissions remain blocked. The public sign-in configuration, HTTPS callback, and web account-deletion entry each returned HTTP 503. No submission or rollout was performed.",
+    "sources": [
+      [
+        "Smart Farmer application",
+        "129b7560ba891255bd940f9ac8f95d956b625c88",
+        "https://github.com/DruHustle/smart-farmer/pull/24"
+      ],
+      [
+        "Onesa Portal identity",
+        "e8c4544b50648425c0948914505fab1617e3b3f9",
+        "https://github.com/DruHustle/onesa-company-portal/pull/350"
+      ],
+      [
+        "Focused native tests",
+        "62c6d03513be560c486e374ebaa37a0ededfaf3a",
+        "https://github.com/DruHustle/smart-farmer/pull/25"
+      ]
+    ],
+    "identity": "Both the ordinary member and the MFA administrator completed Farmer sign-in once fully signed out and once with an active Portal session. The browser returned them to Forum. An active Portal session required no second credential entry. Repeated sign-in kept the same Farmer user, assigned role and saved record. A newly approved user saw an empty farm list and could create a farm or redeem an invitation. Verified Portal staff could enter under their existing approval. A self-service customer approved for another product could request Farmer on the existing Portal account.",
+    "privacy": "The Portal administrator received only the role granted by the farm. A worker and an adviser could not read the other farm or grant manager access. Cancelling returned the original state without issuing a code. Sign-out invalidated the Farmer token. After the source session expired, the actual browser requested fresh credentials and returned the same Farmer identity. The previous token stayed invalid. Revocation while expired denied new access, including after valid credentials were entered.",
+    "design": "Web review covered 360-pixel Android-phone width, 390-pixel iPhone width, 820-pixel tablet width and 1280-pixel desktop width. Changes moved the first-project actions clear of the phone navigation, kept longer labels within their controls, translated validation and updated an existing success message when switching from isiNdebele to Shona. Twelve axe scans reported zero violations. The native screenshot sets identify their OS and revision. Signed-in native captures protected by the operating system cannot serve as listing imagery. A fluent agricultural terminology review remains open.",
+    "details": [
+      "Both tractor-booking participants reopened the same completed booking. The farm received one USD 55 expense and the task completed once.",
+      "The real OCR worker extracted a synthetic raster invoice. Human review produced a USD 37.50 payable. Recording USD 12.50 left USD 25. A failed scan supported manual entry and a later void retained its history.",
+      "A committed pump command whose response was lost retried without a duplicate. The UI showed submission, device acknowledgement and confirmed feedback separately. Camera events, livestock positions and equipment feedback used simulated inputs. Physical pumps, pivots, cameras and trackers were untested. AirTag support is a manual reference.",
+      "Marketplace reservations rejected overselling. Financial records, invoices, camera media, tracker data, and moderation reports were checked for the relevant farm or user access. Forum tests included a second account, reporting, blocking, unblocking, moderation and offline publication rejection.",
+      "The web suite also exercised crop setup, incidents and harvest, broilers and layers, incubation, rabbits, and fish. Marketplace and service payments were manual records with synthetic parties."
+    ],
+    "apple": "Xcode 26.6, iOS SDK 26.5, arm64 device archive for iPhone and iPad, minimum OS 16.4. The app's compiled manifest declares 17 first-party collection categories, three required-reason API categories and no tracking. Thirteen privacy manifests were present across the product and its dependencies. The archive has no distribution signature or embedded provisioning profile. ZIP inside the Actions download is 26,130,924 bytes. SHA-256 `e0c4d76137faf976b691de3500b7591a92940abd98df48c047a6251fbbcfb494`.",
+    "google": "Android minimum API 24 and target API 36. Bundletool and the signature verifier accepted the AAB. All 40 64-bit native libraries passed the 16 KB alignment checks. An APK generated from the actual bundle installed, cold-launched, force-stopped and relaunched without Metro. The disposable signer differs from an owner-registered Play upload key. The AAB inside the Actions download is 72,813,990 bytes. SHA-256 `8c1d31bb1e6f14a1f3e28b3a8bc7b0a1d4908a429a736f66d61316a98e4c6b35`.",
+    "gates": [
+      [
+        "Onesa Portal and Farmer release owners",
+        "Stage the reviewed schema 016-to-017 change against a restored database. Configure the confidential Farmer client, issuer, secret and exact callback https://farmer.onesa.eu/auth/onesa/callback. Restore the public API, callback and deletion route and repeat both roles plus a real farm workflow before enabling customers."
+      ],
+      [
+        "Mobile QA",
+        "Use an ordinarily trusted staging Portal with an approved synthetic admin and ordinary member, working MFA, a farm and a saved record. Exercise cold and active system-browser sign-in on each platform, return to the intended screen, relaunch, sign-out, cancellation, expiry and revocation. Complete remaining two-person native workflows and iPad large-text screens."
+      ],
+      [
+        "Apple Developer team owner",
+        "Confirm the bundle record and an unused build number. Supply the enrolled team's Apple Distribution identity and provisioning profile. Archive, export and validate the IPA, then install through TestFlight and repeat sign-in, farm action and relaunch. Answer the export-compliance questions for SQLCipher."
+      ],
+      [
+        "Google Play Console owner",
+        "Confirm an unused version code and sign with the registered upload key. Install the Play-generated splits from internal testing, then repeat sign-in, farm action and relaunch."
+      ],
+      [
+        "Product, privacy and review owners",
+        "Publish approved privacy and community policies and configure the public URLs. Verify deletion through request and fulfilment against the retention policy. Reconcile App Privacy and Play Data safety with deployed providers. Give reviewers working demonstration accounts with synthetic farm data and supply submission-version phone and tablet screenshots."
+      ],
+      [
+        "Field QA and language owners",
+        "Commission the actual pumps, pivots, cameras and GPS collars before enabling or claiming physical control. Have fluent Shona and Zimbabwean isiNdebele users review agricultural terms."
+      ]
+    ]
+  },
+  "links": {
+    "34 Chromium workflow groups and accessibility evidence": "https://github.com/DruHustle/smart-farmer/actions/runs/43102900837/artifacts/13892053926",
+    "Apple archive": "https://github.com/DruHustle/smart-farmer/actions/runs/43102900932/artifacts/13891719398",
+    "Android bundle": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901057/artifacts/13892334857",
+    "Final Portal CI": "https://github.com/DruHustle/onesa-company-portal/actions/runs/43105952316",
+    "Installed clients on application revision": "https://github.com/DruHustle/smart-farmer/actions/runs/43102901141",
+    "Installed clients with final Portal checkout": "https://github.com/DruHustle/smart-farmer/actions/runs/43106081557",
+    "Earlier Android farm workflow receipts": "https://github.com/DruHustle/smart-farmer/actions/runs/43100158237/artifacts/13893273548",
+    "Earlier iPhone and iPad workflow receipts": "https://github.com/DruHustle/smart-farmer/actions/runs/43094817484/artifacts/13891718330",
+    "Mobile release, data and reviewer guide": "https://github.com/DruHustle/smart-farmer/blob/129b7560ba891255bd940f9ac8f95d956b625c88/smart-farmer-frontend/mobile/DISTRIBUTION.md",
+    "Mapping of all 24 brief outcomes": "https://github.com/DruHustle/smart-farmer/blob/129b7560ba891255bd940f9ac8f95d956b625c88/smart-farmer-backend/docs/product-verification.md",
+    "Apple SDK requirements": "https://developer.apple.com/news/upcoming-requirements/?id=04282026a",
+    "Google Play target requirements": "https://support.google.com/googleplay/android-developer/answer/11926878",
+    "Android 16 KB compatibility": "https://developer.android.com/guide/practices/page-sizes",
+    "Apple privacy disclosures": "https://developer.apple.com/app-store/app-privacy-details/",
+    "Google Play Data safety": "https://support.google.com/googleplay/android-developer/answer/10787469"
+  },
+  "matrix": [
+    [
+      "Portal access and return",
+      "Ordinary user and MFA administrator passed with cold and active Portal sessions. Stable identity, assigned farm role, saved record and Forum return passed.",
+      "System picker blocked local issuer installation before sign-in.",
+      "System browser reached Portal. Successful account return and active-session cases remain unverified.",
+      "Authenticated Portal journey untested."
+    ],
+    [
+      "Expiry, sign-out and farm privacy",
+      "Expired source recovered with fresh credentials. Old token stayed invalid. Revocation while expired denied new access. Cross-farm roster and record access denied.",
+      "Native Portal cases unverified.",
+      "Native Portal cases unverified.",
+      "Untested."
+    ],
+    [
+      "Farm setup, memberships and field records",
+      "Farm creation retry created one farm. Invitation, role restrictions, farm-less onboarding, offline record and restart passed.",
+      "Installed local-account journey passed offline restart and exactly-once sync. New Portal member workflow unverified.",
+      "Installed local-account journey passed offline restart and exactly-once sync. New Portal member workflow unverified.",
+      "Signed-in journeys unverified."
+    ],
+    [
+      "Crop work, livestock and stock",
+      "Crop planning, incidents and harvest passed. Broiler, layer, hatchery, rabbit and fish records reconciled through the tested production cycles.",
+      "Reviewed project plan tested. Full native livestock cycles untested.",
+      "Reviewed project plan tested. Full native livestock cycles untested.",
+      "Untested."
+    ],
+    [
+      "Irrigation and equipment",
+      "Simulated command submission, acknowledgement, feedback, cancellation and lost-response retry passed.",
+      "Explicitly submitted a simulator command. Physical actuation untested.",
+      "Explicitly submitted a simulator command. Physical actuation untested.",
+      "Untested."
+    ],
+    [
+      "Camera alerts and livestock tracking",
+      "Private camera alert and follow-up passed. Tracker stale, uncertain, outside and return states passed with synthetic coordinates.",
+      "Private test video and alert acknowledgement passed. Native livestock tracking untested.",
+      "Private test video and alert acknowledgement passed. Native livestock tracking untested.",
+      "Untested."
+    ],
+    [
+      "Marketplace and machinery hire",
+      "Two-person sale and oversell rejection passed. Both farmers reopened the same completed tractor booking with one linked expense.",
+      "Reserved stock and requested a tractor. Native two-party completion untested.",
+      "Reserved stock and requested a tractor. Native two-party completion untested.",
+      "Untested."
+    ],
+    [
+      "Supplier OCR, expenses and sales invoices",
+      "Real OCR, human correction, posting, manual fallback, payment retry, credit, void and private documents passed.",
+      "System gallery, encrypted restart, OCR and posting passed. Sales invoice and payment ledger exercised.",
+      "System gallery, encrypted restart, OCR and posting passed. Sales invoice and payment ledger exercised.",
+      "Untested."
+    ],
+    [
+      "Forum and safety",
+      "Two-person posting, reply, moderation, blocking, unblocking, report privacy and offline rejection passed.",
+      "Local-account forum suite passed, including offline and reporting checks.",
+      "Local-account forum suite passed, including offline and reporting checks.",
+      "Untested."
+    ],
+    [
+      "Shona, isiNdebele and accessible layouts",
+      "Phone, tablet and desktop Chromium. Twelve axe reports, zero reported violations.",
+      "360 × 640 dp Shona sign-in captured. Local-account language controls exercised.",
+      "Shona sign-in captured. Local-account language controls exercised.",
+      "Large-font Shona sign-in captured. The earlier signed-in assertion stopped at the system password-save sheet."
+    ],
+    [
+      "Account deletion",
+      "Request and withdrawal passed for a newly signed-in account with no farm. Production web entry returned HTTP 503.",
+      "App control implemented. Staff erasure and installed store-release journey untested.",
+      "App control implemented. Staff erasure and installed store-release journey untested.",
+      "Untested."
+    ]
+  ],
+  "decisions": [
+    [
+      "Web customer use",
+      "Blocked",
+      "Public Farmer identity configuration, HTTPS callback and account-deletion route returned HTTP 503. Stage the paired services and exercise the live workflow."
+    ],
+    [
+      "App Store submission",
+      "Blocked",
+      "Release archive is unsigned. Apple Distribution export, TestFlight sign-in, a core farm action after relaunch and store validation remain open."
+    ],
+    [
+      "Google Play submission",
+      "Blocked",
+      "AAB has a disposable qualification signature. The registered upload key, internal-track installation, signed-in farm workflow and store declarations remain open."
+    ]
+  ]
+}
