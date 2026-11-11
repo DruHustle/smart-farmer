@@ -102,7 +102,10 @@ def harvest(z, source, tag, kind):
             tests = list(xml.iter('testcase'))
             def count(name):
                 return sum(any(child.tag==name for child in t) for t in tests)
-            receipts['nativeSuites'].append({'suite':n,'group':tag,'tests':len(tests),'failures':count('failure'),'errors':count('error'),'skipped':count('skipped'),**source})
+            error_msg=' '.join(' '.join(list(node.attrib.values()))+' '+(node.text or '') for node in xml.iter() if node.tag in ('failure','error'))
+            safe_markers=[label for label in ('tab-record','auth-username','device-reauthenticate','auth-onesa','Not Now','Save Password','Email address','Authenticator or recovery code','driver','XCTest','startup','tab-forum','payment','description','Timeout') if label.lower() in error_msg.lower()]
+            print('NATIVE TEST',tag,n,len(tests),'failures',count('failure'),'errors',count('error'),'skips',count('skipped'),'landmarks',safe_markers)
+            receipts['nativeSuites'].append({'landmarks':safe_markers,'suite':n,'group':tag,'tests':len(tests),'failures':count('failure'),'errors':count('error'),'skipped':count('skipped'),**source})
         caption=None
         if kind=='ios-history' and n in HISTORIC_IOS:
             caption=HISTORIC_IOS[n]
@@ -175,3 +178,10 @@ for f in figures:
 parts+=['</section><h2>Full browser suite</h2><ul>'+''.join('<li>'+esc(x)+'</li>' for x in receipts['browserGroups'])+'</ul><h2>Review links</h2><ul>'+''.join('<li>'+link(n,url)+'</li>' for n,url in report['links'].items())+'</ul></html>']
 (REVIEW/'index.html').write_text(''.join(parts))
 print('Saved',len(figures),'screenshots,',len(receipts['nativeSuites']),'native JUnit suite records,',len(receipts['browserGroups']),'browser workflow groups and both verified packages.')
+
+for f in figures:
+    print('SCREEN',f['file'],f['sha256'])
+for name in ('ios-results.txt','android-results.txt','ios-product-records.txt','android-product-records.txt','ios-intake-checks.txt','android-intake-checks.txt'):
+    for result_file in sorted((REVIEW/'receipts').glob('*/'+name)):
+        print('SUITE RECEIPT',result_file.parent.name,name)
+        print(result_file.read_text()[:2400])
