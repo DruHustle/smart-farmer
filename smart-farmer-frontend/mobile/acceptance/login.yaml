@@ -48,8 +48,35 @@ appId: eu.onesa.smartfarmer
     visible:
       id: tab-record
     timeout: 45000
-- tapOn:
-    id: tab-record
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: tab-record
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # AutoFill can consume the first tap while the signed-in screen appears.
+      # Repeat only this navigation, as in the existing forum-offline journey.
+      - repeat:
+          times: 2
+          while:
+            notVisible:
+              id: tab-record
+              selected: true
+          commands:
+            - runFlow: dismiss-password-save.yaml
+            - tapOn:
+                id: tab-record
+                enabled: true
+      - runFlow: dismiss-password-save.yaml
+      - extendedWaitUntil:
+          visible:
+            id: tab-record
+            selected: true
+          timeout: 5000
 - scrollUntilVisible:
     element:
       id: record-note
