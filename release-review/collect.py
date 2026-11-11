@@ -103,7 +103,7 @@ def harvest(z, source, tag, kind):
             def count(name):
                 return sum(any(child.tag==name for child in t) for t in tests)
             error_msg=' '.join(' '.join(list(node.attrib.values()))+' '+(node.text or '') for node in xml.iter() if node.tag in ('failure','error'))
-            safe_markers=[label for label in ('tab-record','auth-username','device-reauthenticate','auth-onesa','Not Now','Save Password','Email address','Authenticator or recovery code','driver','XCTest','startup','tab-forum','payment','description','Timeout') if label.lower() in error_msg.lower()]
+            safe_markers=[label for label in ('tab-record','auth-username','auth-password','auth-submit','device-reauthenticate','auth-onesa','tab-more','workspace-language','more-finance','finance-tabs','accounting-tabs','invoice-library','PXGGridLayout-Info','invoice-local-source-image','invoice-upload-','addMedia','Open Photos','photo picker','photo','keyboard','Not Now','Save Password','Email address','Authenticator or recovery code','driver','XCTest','startup','tab-forum','payment','description','timeout','permission','Unable to','NoSuchElement','scroll','UIContinuousPathIntroductionView','record-after-login','native server','Expo') if label.lower() in error_msg.lower()]
             print('NATIVE TEST',tag,n,len(tests),'failures',count('failure'),'errors',count('error'),'skips',count('skipped'),'landmarks',safe_markers)
             receipts['nativeSuites'].append({'landmarks':safe_markers,'suite':n,'group':tag,'tests':len(tests),'failures':count('failure'),'errors':count('error'),'skipped':count('skipped'),**source})
         caption=None
@@ -146,6 +146,7 @@ capture_run(43102900932,FARMER,{'13891719398':('apple-archive','ios')})
 capture_run(43102901057,FARMER,{'13892334857':('android-bundle','android')})
 capture_run(43094817484,'08498917394bdd5d4b7938f2522635b4a8ee2c13',{'13891718330':('earlier-ios-farm','ios-history')})
 capture_run(43100158237,'8e636df8e2a8ad2ee1093873bef567e881ab963c',{'13893273548':('earlier-android-farm','farm'),'13894371918':('earlier-ios-onesa','onesa')})
+capture_run(43105366426,'8aab77cc585c9092ee4271e2cb4a01073b4dd762',{'native-ios-acceptance':('previous-paired-ios-farm','farm')})
 for run,sha,prefix in [(43102901141,FARMER,'application'),(43106081557,QA,'paired')]:
     groups={}
     for plat in ('android','ios'):
