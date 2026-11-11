@@ -5,7 +5,7 @@ x-app: &app
   env_file:
     - path: ${FARMER_RUNTIME_ENV_FILE:?Set the private application environment file}
       format: raw
-  environment:
+  environment: &app-environment
     NODE_ENV: production
     HOST: 0.0.0.0
     PORT: '3000'
@@ -51,6 +51,12 @@ services:
     cpus: 0.75
   api:
     <<: *app
+    environment:
+      <<: *app-environment
+      ONESA_IDENTITY_ENABLED: ${ONESA_IDENTITY_ENABLED:-false}
+      ONESA_IDENTITY_ISSUER: ${ONESA_IDENTITY_ISSUER:-}
+      ONESA_IDENTITY_CLIENT_ID: ${ONESA_IDENTITY_CLIENT_ID:-}
+      ONESA_IDENTITY_CLIENT_SECRET: ${ONESA_IDENTITY_CLIENT_SECRET:-}
     ports: ['127.0.0.1:${FARMER_API_PORT:?Set an unused loopback API port}:3000']
     volumes: ['farmer_media:/data/media']
     mem_limit: 768m

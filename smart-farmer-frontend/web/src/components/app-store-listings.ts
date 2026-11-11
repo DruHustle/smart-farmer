@@ -7,7 +7,9 @@ interface AppStoreListing {
   url: string | null;
 }
 
-// Set the store name and URL together for a verified public listing or official install invitation.
+// Use a verified customer-facing destination. The store label is shown beside the icon:
+// "TestFlight beta", "Google Play", or "Download preview · 64-bit APK".
+// A direct APK uses its verified, versioned release-asset URL (see mobile/DISTRIBUTION.md).
 export const appStoreListings: readonly AppStoreListing[] = [
   { platform: "ios", device: "iPhone / iPad", store: "App Store", url: null },
   { platform: "android", device: "Android", store: "Google Play", url: null },

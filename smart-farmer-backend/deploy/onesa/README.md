@@ -26,6 +26,12 @@ GitHub runs the same check on its standard Linux ARM64 runner. The Oracle operat
 
 The backup image uses UID/GID 1000, matching the API's media owner. Preserve owner-only permissions and verify real attachment readback and restoration on the selected storage; do not make private media world-readable to work around an ownership mismatch.
 
+## Platform administrator sign-in
+
+Register the confidential Farmer client with the Portal issuer and its frontend callback allowlist using the exact callback `https://farmer.onesa.eu/auth/onesa/callback`. The private Compose environment supplies the API-only client ID, client secret, issuer and enable flag. Migration `016_onesa_identity.sql` adds the issuer/subject projection and encrypted grant. Use the normal migration procedure before deploying the API.
+
+After deployment, `GET /v1/onesa/config` should return the registered public client ID, issuer and callback. Complete sign-in with an approved MFA-enabled Onesa administrator and check that only explicitly joined farms appear. The same callback also returns proof-bound codes to the existing Farmer mobile apps.
+
 ## Ingress and safety gate
 
 The static web intentionally returns 404 for `/v1`; a reviewed HTTPS ingress must route `/v1/` to the loopback API and other web requests to the loopback web service, without SPA fallback for API responses. Verify the Cloudflare zone, DNS, tunnel, TLS and origin before adding or changing routes. There is no public database port.
