@@ -1,6 +1,1 @@
-<resources>
-  <string name="NSCameraUsageDescription">"Thatha isithombe somsebenzi kumbe okubonakele epulazini."</string>
-  <string name="NSPhotoLibraryUsageDescription">"Khetha isithombe esiphathelane lomsebenzi wepulazi."</string>
-  <string name="NSMicrophoneUsageDescription">"Rekhoda izwi eliphathelane lomsebenzi wepulazi."</string>
-  <string name="NSFaceIDUsageDescription">"Vula imibhalo yakho yepulazi ekhiyiweyo."</string>
-</resources>
+<resources/>
