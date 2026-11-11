@@ -87,7 +87,7 @@ test('maize facts, version conflict, offline-ID retry, transactional stock/cost/
     await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:100,currency:'ZAR'});
     for(const amount of [0.1,0.3])await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount,currency:'USD'});
     const fractionalMoney=await f.send('POST','/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:0.000000001,currency:'USD'});assert.equal(fractionalMoney.statusCode,400);
-    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.40');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.00');
+    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.400');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.000');
     const stock=await f.stock('Harvested maize','kg',0,{projectId:p.id});await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'harvest',observedAt,stockItemId:stock.id,quantity:12,unit:'kg'});
     await f.post(`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'consumption',quantity:2,unit:'kg',observedAt,reason:'Household consumption'});assert.equal(await f.balance(stock.id),10);
     const tiny=await f.send('POST',`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'adjustment',quantity:0.000000001,unit:'kg',observedAt,reason:'Must not round a recorded operation to zero'});assert.equal(tiny.statusCode,400);assert.equal(await f.balance(stock.id),10);
@@ -129,7 +129,7 @@ test('broilers: placement, feeding, sampled growth, losses, partial sales, payme
     const over=await f.send('POST',`/projects/${p.id}/payments`,{...pay,id:randomUUID(),amount:1});assert.equal(over.statusCode,409);
     await f.event(p.id,'close',{note:'All birds reconciled'});assert.equal((await f.get('/projects')).items[0].status,'closed');
     const after=await f.send('POST',`/projects/${p.id}/events`,{id:randomUUID(),type:'observation',observedAt,note:'Should not mutate closed cycle'});assert.equal(after.statusCode,409);
-    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.00');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.50');
+    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.000');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.500');
   }finally{await f.close();}
 });
 
@@ -193,4 +193,48 @@ test('treatment restrictions follow animals and egg/chick transfers and cannot b
     await f.event(layer.id,'egg_collection',{count:2,stockItemId:eggs.id});await f.event(incubator.id,'incubation',{count:2,stockItemId:eggs.id});await f.event(incubator.id,'hatch',{count:2,destinationProjectId:chicks.id,metadata:{eggsProcessed:2}});
     const restriction=await f.get(`/projects/${chicks.id}/restrictions`);assert.equal(restriction.items.length,1);const blocked=await f.send('POST',`/projects/${chicks.id}/events`,{id:randomUUID(),type:'sale',observedAt,count:1,amount:2,currency:'USD'});assert.equal(blocked.statusCode,409);
   }finally{await f.close();}
+});
+
+test('deletion requests are private, replayable and withdrawable until claimed', async t => {
+  const f = await fixture(); t.after(f.close);
+  const path = '/v1/me/deletion-request';
+  assert.equal((await f.app.inject({method: 'GET', url: path})).statusCode, 401);
+  assert.equal((await f.send('POST', path, {confirm: false})).statusCode, 400);
+  const submit = () => f.send('POST', path, {confirm: true});
+  const [first, retry] = await Promise.all([submit(), submit()]);
+  assert.equal(first.statusCode, 202, first.body);
+  assert.deepEqual(first.json().request, retry.json().request);
+  assert.equal((await f.send('GET', path)).json().request.id, first.json().request.id);
+  const other = {username: 'other_farmer', password};
+  await f.app.inject({method: 'POST', url: '/v1/register', payload: {...other, language: 'nd', farmName: 'Other farm'}});
+  const login = await f.app.inject({method: 'POST', url: '/v1/sessions', payload: other});
+  const headers = {authorization: 'Bearer ' + login.json().token};
+  assert.equal((await f.app.inject({method:'GET', url:path, headers})).json().request, null);
+  assert.equal((await f.send('DELETE', path)).statusCode, 204);
+  assert.equal((await f.send('GET', path)).json().request, null);
+  const next = await submit();
+  await f.db.query("UPDATE account_deletion_requests SET status='in_review' WHERE id=$1", [next.json().request.id]);
+  assert.equal((await f.send('DELETE', path)).statusCode, 409);
+  assert.equal((await submit()).json().request.status, 'in_review');
+});
+
+test('a farm creation retry returns its original farm and cannot grant another actor a membership', async () => {
+  const f = await fixture();
+  try {
+    const request = {id: randomUUID(), name: 'New irrigation farm'};
+    const replies = await Promise.all([f.send('POST', '/v1/farms', request), f.send('POST', '/v1/farms', request)]);
+    assert.deepEqual(replies.map(reply => reply.statusCode).sort(), [200, 201]);
+    const farm = replies[0]!.json().id;
+    assert.equal(replies[1]!.json().id, farm);
+    assert.equal((await f.send('POST', '/v1/farms', {...request, name:'Another farm'})).statusCode, 409);
+    const other = {username:'other_owner',password};
+    assert.equal((await f.app.inject({method:'POST',url:'/v1/register',payload:{...other,language:'nd',farmName:'Other farm'}})).statusCode, 201);
+    const login = await f.app.inject({method:'POST',url:'/v1/sessions',payload:other});
+    const headers = {authorization: 'Bearer ' + login.json().token};
+    assert.equal((await f.send('POST', '/v1/farms', request, headers)).statusCode, 409);
+    assert.equal((await f.send('GET', '/v1/farms/' + farm + '/members', undefined, headers)).statusCode, 404);
+    assert.equal((await f.db.query('SELECT COUNT(*)::int AS total FROM farms WHERE name=$1',[request.name])).rows[0].total, 1);
+    await f.db.query('DELETE FROM memberships WHERE farm_id=$1', [farm]);
+    assert.equal((await f.send('POST', '/v1/farms', request)).statusCode, 404);
+  } finally { await f.close(); }
 });

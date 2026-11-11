@@ -7,12 +7,12 @@ import {readFile,readdir} from 'node:fs/promises';
 import pg from 'pg';
 import {buildApp} from '../src/app.js';
 
-test('Onesa admin sign-in uses an identified MFA session and ordinary farm membership checks',async t=>{
+test('Approved Onesa users keep their farm membership and administrators require MFA',async t=>{
   const verifier = 'V'.repeat(43), clientId = 'farmer-test', secret='synthetic-secret-for-a-local-integration-test';
   const grant='synthetic-opaque-central-session-grant';
   const origin='http://127.0.0.1:5173', callback=origin+'/auth/onesa/callback';
   const subject=randomUUID();
-  let role=true, mfa=true, verified=true, active=true, audience=clientId;
+  let allowed=true, role=true, mfa=true, verified=true, active=true, audience=clientId;
   const issued=new Set<string>();
   let issuer='';
   const server=createServer(async(req,res)=>{
@@ -26,7 +26,7 @@ test('Onesa admin sign-in uses an identified MFA session and ordinary farm membe
     }
     if(req.url!=='/api/v1/identity/session'||JSON.parse(body).token!==grant)return send(400,{});
     const now=Math.floor(Date.now()/1000);
-    send(200,{active,iss:issuer,aud:audience,sub:subject,email_verified:verified,auth_time:now-2,exp:now+900,amr:mfa?['pwd','otp']:['pwd'],onesa_roles:role?['global_admin']:[]});
+    send(200,{active,iss:issuer,aud:audience,sub:subject,email_verified:verified,auth_time:now-2,exp:now+900,amr:mfa?['pwd','otp']:['pwd'],onesa_roles:role?['global_admin']:[],onesa_applications:allowed?['farmer']:[],onesa_product_roles:{farmer:role?'admin':'user'}});
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));
@@ -64,7 +64,17 @@ test('Onesa admin sign-in uses an identified MFA session and ordinary farm membe
   audience='other-app';assert.equal((await me()).statusCode,401);audience=clientId;
   mfa=false;assert.equal((await fresh()).statusCode,401);mfa=true;
   verified=false;assert.equal((await me()).statusCode,401);verified=true;
-  role=false;assert.equal((await me()).statusCode,401);role=true;
+  role=false; mfa=false;
+  const ordinary=await fresh();
+  assert.equal(ordinary.statusCode,200,ordinary.body);
+  assert.equal(ordinary.json().userId,a.userId);
+  const ordinaryHeaders={authorization:'Bearer '+ordinary.json().token};
+  const farms=await app.inject({url:'/v1/farms',headers:ordinaryHeaders});
+  assert.deepEqual(farms.json().items.map((farm:{id:string;role:string})=>[farm.id,farm.role]),[[farmId,'adviser']]);
+  allowed=false;
+  assert.equal((await app.inject({url:'/v1/me',headers:ordinaryHeaders})).statusCode,401);
+  assert.equal((await fresh()).statusCode,401);
+  allowed=true; role=true; mfa=true;
   active=false;assert.equal((await me()).statusCode,401);active=true;
   assert.equal((await signIn('invalid-code')).statusCode,401);
   assert.equal((await app.inject({method:'DELETE',url:'/v1/sessions/current',headers})).statusCode,204);

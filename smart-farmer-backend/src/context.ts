@@ -1,7 +1,7 @@
 import type {FastifyReply, FastifyRequest} from 'fastify';
 import type pg from 'pg';
 import {randomUUID} from 'node:crypto';
-import {currentAdmin, identityConfig, openGrant} from './onesa-identity.js';
+import {currentFarmerAccount, identityConfig, openGrant} from './onesa-identity.js';
 import {sha256} from './security.js';
 
 export class ApiError extends Error {
@@ -20,7 +20,7 @@ export function createContext(db: pg.Pool, central: ReturnType<typeof identityCo
     const account = result.rows[0];
     if (account.onesa_subject) {
       if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
-      await currentAdmin(central, openGrant(account.onesa_grant, value), account.onesa_subject);
+      await currentFarmerAccount(central, openGrant(account.onesa_grant, value), account.onesa_subject);
       const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
       if (!live.rowCount) throw new ApiError('unauthorized',401);
     }

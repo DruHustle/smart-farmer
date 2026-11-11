@@ -65,10 +65,35 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
   const workerIdentity=await apiCall('/v1/sessions',{username:workerName,password:workerPassword});await denied(`${base}/reports/summary`,workerIdentity.token);await more(worker,'reports',nd);await visible(worker.getByText(nd.financialAccess,{exact:true}));
   await refresh();await more(page,'tasks');detail=await expand(page,sn.newTask);await fill(detail,{title:'Check irrigation conflict',projectId:project.id,assigneeId:workerIdentity.userId,instructions:'Record measured irrigation and leave evidence',dueAt:future});const task=await submit(page,detail.locator('form'),`${base}/tasks`);await refresh(worker,nd);await more(worker,'tasks',nd);let taskRow=worker.locator('.task-row').filter({hasText:'Check irrigation conflict'});await visible(taskRow);await workerContext.setOffline(true);await worker.waitForFunction(()=>!navigator.onLine);await taskRow.getByRole('button',{name:nd.edit,exact:true}).click();await fill(taskRow,{status:'started',evidence:'Worker examined the inlet',reason:'Field start'});await taskRow.getByRole('button',{name:nd.save,exact:true}).click();await taskRow.locator('form').waitFor({state:'hidden'});await more(worker,'sync',nd);await visible(worker.locator('.outbox-row'));assert.equal(await worker.locator('.outbox-row').count(),1);
   await apiCall(`${base}/tasks/${task.id}`,{version:1,status:'started',evidence:'Manager measured inlet',reason:'Concurrent review'},token,'PATCH');const conflictResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===`${base}/tasks/${task.id}`&&r.request().method()==='PATCH',{timeout:20000});await workerContext.setOffline(false);await worker.waitForFunction(()=>navigator.onLine);await worker.getByRole('button',{name:nd.sync,exact:true}).click();const actualConflict=await conflictResponse;assert.equal(actualConflict.status(),409,await actualConflict.text());let conflict=worker.locator('.outbox-row').filter({hasText:nd.conflict});await visible(conflict);await conflict.getByRole('button',{name:nd.currentRecord,exact:true}).click();await visible(conflict.getByText('Manager measured inlet',{exact:true}));await fill(conflict,{reason:'Both checked same inlet; retain current status and worker evidence'});await conflict.locator('input[type=checkbox]').check();
-  // Reapply first changes the conflict to pending; wait for the write and its local acknowledgement.
-  const reapplyResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===`${base}/tasks/${task.id}`&&r.request().method()==='PATCH',{timeout:20000});
-  await conflict.getByRole('button',{name:nd.reapply,exact:true}).click();const reapplied=await reapplyResponse;assert.equal(await reapplied.finished(),null);const reappliedTask=await reapplied.json();assert.equal(reapplied.status(),200,JSON.stringify(reappliedTask));assert.equal(reappliedTask.id,task.id);assert.equal(reappliedTask.evidence,'Worker examined the inlet');assert.ok(reappliedTask.version>=3);
-  await worker.locator('.outbox-row').waitFor({state:'hidden'});await visible(worker.getByText(nd.emptyOutbox,{exact:true}));const merged=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);assert.equal(merged.evidence,'Worker examined the inlet');assert.ok(merged.version>=3);
+  // Changing conflict -> pending hides this locator before its PATCH commits.
+  // Hold the real request to prove that local queue state is not a server receipt.
+  let releaseReapply;
+  const reapplyGate=new Promise(resolve=>{releaseReapply=resolve;});
+  const reapplyPath=`${base}/tasks/${task.id}`;
+  const reapplyRequest=worker.waitForRequest(r=>new URL(r.url()).pathname===reapplyPath&&r.method()==='PATCH',{timeout:20000});
+  const reapplyResponse=worker.waitForResponse(r=>new URL(r.url()).pathname===reapplyPath&&r.request().method()==='PATCH',{timeout:20000});
+  await worker.route(api+reapplyPath,async route=>{await reapplyGate;await route.continue();},{times:1});
+  try {
+    await conflict.getByRole('button',{name:nd.reapply,exact:true}).click();
+    const queued=await reapplyRequest;
+    assert.equal(queued.postDataJSON().version,2);
+    assert.equal(queued.postDataJSON().evidence,'Worker examined the inlet');
+    await conflict.waitFor({state:'hidden'});
+    assert.equal(await worker.locator('.outbox-row').count(),1,'Pending draft remains until the real server accepts it');
+    const beforeCommit=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);
+    assert.equal(beforeCommit.evidence,'Manager measured inlet');
+    assert.equal(beforeCommit.version,2);
+  } finally {releaseReapply();}
+  const accepted=await reapplyResponse;
+  assert.equal(accepted.status(),200,await accepted.text());
+  const reapplyReceipt=await accepted.json();
+  assert.equal(reapplyReceipt.evidence,'Worker examined the inlet');
+  assert.equal(reapplyReceipt.version,3);
+  await worker.locator('.outbox-row').waitFor({state:'hidden'});
+  const merged=(await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id);
+  assert.equal(merged.evidence,'Worker examined the inlet');
+  assert.equal(merged.version,3);
+  await visible(worker.getByText(nd.emptyOutbox,{exact:true}));
   await worker.getByLabel(nd.language,{exact:true}).selectOption('sn');await nav(worker,'today');await worker.locator('.record-fab').click();let dialog=worker.locator('dialog');await fill(dialog,{projectId:project.id,kind:'irrigation',taskId:task.id,quantity:120,unit:'l',note:'Assigned irrigation completed',observedAt:observed});await submit(worker,dialog,`${base}/activities`);assert.equal((await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===task.id).status,'completed');
   pass('Acceptance 1, 3, 4: worker invitation in Ndebele, restricted money access, explicit two-actor conflict review and task-linked irrigation');
 
@@ -131,8 +156,29 @@ export async function completionJourneys({page, context, browser, api, ui, apiCa
   await nav(buyer,'services');await tab('bookings',buyer);let bookingCard=buyer.locator('.booking-card').filter({hasText:'Browser ploughing service'});detail=await expand(bookingCard,sn.quote);await fill(detail,{amount:55,currency:'USD',workDescription:'One hectare ploughed including mobilisation',quotedQuantity:1,quotedUnit:'ha',depositRequired:10,mobilisationCharge:5});await submit(buyer,detail.locator('form'),`/v1/farms/${buyerFarm.id}/bookings/${booking.id}/status`,{label:sn.quote});
   await nav(page,'today');await nav(page,'services');await tab('bookings');bookingCard=page.locator('.booking-card').filter({hasText:'Browser ploughing service'});let bookingConfirm=bookingCard.locator('form').filter({has:page.getByRole('button',{name:sn.confirm,exact:true})});await bookingConfirm.locator('input[type=checkbox]').check();await submit(page,bookingConfirm,`${base}/bookings/${booking.id}/status`,{label:sn.confirm});detail=await expand(bookingCard,sn.payment);await fill(detail.locator('form').first(),{kind:'deposit',amount:10,note:'Customer declared cash deposit'});const payment=await submit(page,detail.locator('form').first(),`${base}/bookings/${booking.id}/payments`);assert.equal(payment.status,'declared');
   await nav(buyer,'today');await nav(buyer,'services');await tab('bookings',buyer);bookingCard=buyer.locator('.booking-card').filter({hasText:'Browser ploughing service'});detail=await expand(bookingCard,sn.payment);let receipt=detail.locator('form').filter({has:buyer.getByRole('button',{name:sn.acknowledge,exact:true})});await receipt.locator('input[type=checkbox]').check();await submit(buyer,receipt,`/v1/farms/${buyerFarm.id}/bookings/${booking.id}/payments/${payment.id}/acknowledge`,{label:sn.acknowledge});detail=await expand(bookingCard,sn.actualWork);await fill(detail,{quantity:1,unit:'ha',note:'One hectare measured as completed',observedAt:observed});await submit(buyer,detail.locator('form'),`/v1/farms/${buyerFarm.id}/bookings/${booking.id}/work`);
-  await nav(page,'today');await nav(page,'services');await tab('bookings');bookingCard=page.locator('.booking-card').filter({hasText:'Browser ploughing service'});const complete=bookingCard.locator('form').filter({has:page.getByRole('button',{name:sn.complete,exact:true})});await complete.locator('input[type=checkbox]').check();await submit(page,complete,`${base}/bookings/${booking.id}/status`,{label:sn.complete});assert.equal((await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===serviceTaskId).status,'completed');const ledger=(await apiCall(`${base}/projects/${project.id}/ledger`,undefined,token)).items;assert.ok(ledger.some(e=>e.source_id===booking.id&&e.kind==='expense'&&Number(e.amount)===55));
-  pass('Acceptance 17, 18: real machinery request/quote/acceptance, customer-declared deposit/provider receipt, actual work, completion, linked task and one project charge');
+  await nav(page,'today');await nav(page,'services');await tab('bookings');bookingCard=page.locator('.booking-card').filter({hasText:'Browser ploughing service'});const complete=bookingCard.locator('form').filter({has:page.getByRole('button',{name:sn.complete,exact:true})});await complete.locator('input[type=checkbox]').check();await submit(page,complete,`${base}/bookings/${booking.id}/status`,{label:sn.complete});assert.equal((await apiCall(`${base}/tasks`,undefined,token)).items.find(t=>t.id===serviceTaskId).status,'completed');const ledger=(await apiCall(`${base}/projects/${project.id}/ledger`,undefined,token)).items;const charges=ledger.filter(entry=>entry.source_id===booking.id&&entry.kind==='expense');
+  assert.equal(charges.length,1);
+  assert.equal(Number(charges[0].amount),55);
+  for (const participant of [
+    {context, user:username, password, farmId:farm.id},
+    {context:buyerContext, user:buyerName, password:buyerPassword, farmId:buyerFarm.id},
+  ]) {
+    // Each fresh client starts at sign-in and requests the persisted booking again.
+    const reopened=await participant.context.newPage();
+    try {
+      await signIn(reopened,participant.user,participant.password);
+      const response=reopened.waitForResponse(r=>new URL(r.url()).pathname===`/v1/farms/${participant.farmId}/bookings`&&r.ok());
+      await nav(reopened,'services');
+      const persisted=(await (await response).json()).items.filter(row=>row.id===booking.id);
+      assert.equal(persisted.length,1);
+      assert.equal(persisted[0].status,'completed');
+      await tab('bookings',reopened);
+      const card=reopened.locator('.booking-card').filter({has:reopened.getByRole('heading',{name:'Browser ploughing service',exact:true})});
+      await visible(card.getByText(sn.completed,{exact:true}));
+      assert.equal(await card.count(),1);
+    } finally { await reopened.close(); }
+  }
+  pass('Acceptance 17, 18: real machinery request/quote/acceptance, customer-declared deposit/provider receipt, actual work, linked task, one project charge and both clients seeing the completed booking after relaunch');
 
   checkpoint('Unknown asset registration, explicit simulation mapping, maintenance and usage');
   await more(page,'equipment');detail=await expand(page,sn.newAsset);await fill(detail,{name:'Browser unknown valve',category:'valve',protocol:'unconfigured'});const unknownAsset=await submit(page,detail.locator('form'),`${base}/assets`);card=page.locator('.asset-card').filter({hasText:'Browser unknown valve'});assert.equal(await card.getByRole('button',{name:sn.start,exact:true}).count(),0);detail=await expand(card,sn.details);let edit=await expand(detail,sn.edit);await fill(edit,{make:'Fixture manufacturer',model:'Documented unknown model',controller:'Fixture controller',firmware:'1',notes:'Registered without claiming real compatibility',reason:'Read physical nameplate',staleAfterSeconds:10});await submit(page,edit.locator('form'),`${base}/assets/${unknownAsset.id}`,{method:'PATCH'});detail=await expand(card,sn.details);const mapping=await expand(detail,sn.protocolMapping);await fill(mapping,{protocol:'simulator',connectionRef:'browser_valve_fixture',reason:'Explicit isolated simulation'});const mappingRow=mapping.locator('fieldset').first();await mappingRow.locator('input[name$="name"]').fill('running');await mappingRow.locator('input[name$="unit"]').fill('boolean');await mappingRow.locator('input[name$="address"]').fill('running');await submit(page,mapping.locator('form'),`${base}/assets/${unknownAsset.id}/integration`);assert.equal((await apiCall(`${base}/assets`,undefined,token)).items.find(a=>a.id===unknownAsset.id).integration_state,'simulated');detail=await expand(card,sn.details);let maintenance=await expand(detail,sn.maintenance);let newMaintenance=await expand(maintenance,sn.newMaintenance);await fill(newMaintenance,{title:'Inspect valve seal',dueAt:future,intervalDays:30,projectId:project.id,assigneeId:workerIdentity.userId,instructions:'Check seal and record observed state'});const maintenanceRecord=await submit(page,newMaintenance.locator('form'),`${base}/assets/${unknownAsset.id}/maintenance`);const maintenanceRow=maintenance.locator('article.record-card').filter({hasText:'Inspect valve seal'});await fill(maintenanceRow,{status:'completed',performedAt:observed,hours:1,amount:3,currency:'USD',note:'Seal inspected and replaced from recorded stock'});await submit(page,maintenanceRow.locator('form'),`${base}/maintenance/${maintenanceRecord.id}`,{method:'PATCH'});let usage=await expand(detail,sn.actualWork);await fill(usage,{kind:'runtime',quantity:2,unit:'h',observedAt:observed,projectId:project.id,note:'Two hours manually recorded'});await submit(page,usage.locator('form'),`${base}/assets/${unknownAsset.id}/usage`);

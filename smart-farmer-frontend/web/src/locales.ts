@@ -2,9 +2,11 @@ import {validationPhrases} from './validation-locales.ts';
 import type {Lang} from './types';
 import {completionPhrases} from './completion-locales.ts';
 import {nodeRedPhrases} from './node-red-locales.ts';
+import {accountingPhrases} from './accounting-locales.ts';
+import {trackingMarketPhrases} from './tracking-market-locales.ts';
 /** Preliminary translations; agricultural terminology requires native-speaker review. */
 export const phrases = {
-  ...validationPhrases, ...completionPhrases, ...nodeRedPhrases,
+  ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases, ...trackingMarketPhrases,
   language: ['Mutauro', 'Ulimi'],
   farmerApps: ['Maapp eSmart Farmer', 'Ama-app eSmart Farmer'],
   notPublished: ['Haisati yaburitswa', 'Ayikakhitshwa'],
@@ -25,9 +27,18 @@ export const phrases = {
   today: ['Nhasi', 'Lamuhla'], farm: ['Purazi rangu', 'Ipulazi lami'], market: ['Musika', 'Imakethe'], services: ['Mabasa nemichina', 'Imisebenzi lemishini'], more: ['Zvimwe', 'Okunye'],
   welcome: ['Basa repapurazi, pamwe chete.', 'Umsebenzi wepulazi, sindawonye.'], intro: ['Ronga basa. Nyora zvinoitika. Chengeta zvawakaita.', 'Hlela umsebenzi. Bhala okwenzakalayo. Gcina okwenzileyo.'],
   returnToApp: ['Dzokera muSmart Farmer', 'Buyela ku-Smart Farmer'],
+  signInCancelled: ['Wakanzura kupinda. Unogona kuedza zvakare.', 'Ukumisile ukungena. Ungazama futhi.'],
+  deletionTitle: ['Kudzima akaundi yeSmart Farmer', 'Susa i-akhawunti yeSmart Farmer'],
+  deletionInfo: ['Pinda kuti ukumbire kudzima akaundi yako yeSmart Farmer nemashoko ako. Chikumbiro chichaongororwa. Akaundi yako yeOnesa icharamba iripo.', 'Ngena ukuze ucele ukuthi i-akhawunti yakho yeSmart Farmer lolwazi lwakho kususwe. Isicelo sizahlolwa. I-akhawunti yakho ye-Onesa izahlala ikhona.'],
+  deletionConfirm: ['Ndinoda kukumbira kuti akaundi yangu nemashoko angu zvidzimwe.', 'Ngifuna ukucela ukususwa kwe-akhawunti yami lolwazi lwami.'],
+  deletionSubmit: ['Tumira chikumbiro chekudzima', 'Thumela isicelo sokususa'],
+  deletionPending: ['Chikumbiro chako chagamuchirwa. Chakamirira kuongororwa.', 'Isicelo sakho samukelwe. Silindele ukuhlolwa.'],
+  deletionReview: ['Chikumbiro chako chiri kuongororwa.', 'Isicelo sakho siyahlolwa.'],
+  request_in_review: ['Chikumbiro chava kuongororwa.', 'Isicelo sesihlolwa.'],
+  deletionWithdraw: ['Kanzura chikumbiro', 'Yesula isicelo'],
   onesaSignIn: ['Pinda neOnesa', 'Ngena nge-Onesa'], onesa_unavailable: ['Onesa haisi kuwanikwa pari zvino.', 'I-Onesa ayitholakali okwamanje.'],
   signIn: ['Pinda', 'Ngena'], register: ['Gadzira purazi', 'Dala ipulazi'], username: ['Zita rekupinda', 'Ibizo lokungena'], password: ['Pasiwedhi', 'Igama lokudlula'], farmName: ['Zita repurazi', 'Ibizo lepulazi'],
-  invalid_response: ['Mhinduro ye server haina kuverengeka. Edza zvakare uchishandisa chikumbiro chimwe chete.', 'Impendulo yeseva ayifundeki. Zama futhi usebenzisa isicelo esifanayo.'],
+  createFirstFarm: ['Gadzira purazi', 'Dala ipulazi'],
   noFarmMembership: ['Hausati uri nhengo yepurazi. Isa kodhi yekukokwa kuti ubatane nepurazi.', 'Awukabi lilunga lepulazi. Faka ikhodi yesimemo ukuze ujoyine ipulazi.'],
   passwordHint: ['Mavara 12 kana kupfuura.', 'Izinhlamvu ezingu-12 kumbe ngaphezulu.'], continue: ['Enderera', 'Qhubeka'], logout: ['Buda muakaundi', 'Phuma ku-akhawunti'], lock: ['Kiya', 'Khiya'],
   offlineUnlock: ['Vhura zvakachengetwa', 'Vula okugciniweyo'], offlineUnlockHint: ['Shandisa zita nepasiwedhi zvawakapedzisira kupinda nazvo pachishandiso chino. Zvinyorwa zvinoramba zvakavharirwa.', 'Sebenzisa ibizo legama lokudlula owacina ukungena ngalo kule divayisi. Imibhalo ihlala ivikelwe.'],

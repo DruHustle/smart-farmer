@@ -28,6 +28,9 @@ check_distribution_identity() {
 case "$action" in
   check|archive)
     test ! -e "$archive" || { echo 'Choose a new archive path.' >&2; exit 1; }
+    # The app fails closed if its release bundle has no API origin.
+    export EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-https://farmer.onesa.eu}
+    node --import tsx --input-type=commonjs -e "require('./src/api.ts').apiOrigin(process.env.EXPO_PUBLIC_API_URL, false)"
     options=()
     if [[ "$action" == check ]]; then
       options+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)

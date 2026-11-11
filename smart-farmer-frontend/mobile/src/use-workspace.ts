@@ -13,6 +13,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   const synchronizer = useMemo(() => new Synchronizer(repository, api), [repository, api]);
   const network = useNetworkState();
   const online = network.isConnected === true && network.isInternetReachable !== false;
+  const [farmsLoaded, setFarmsLoaded] = useState(false);
   const [farms, setFarms] = useState<Farm[]>([]);
   const [farmId, setFarmId] = useState('');
   const [snapshot, setSnapshot] = useState<FarmSnapshot | null>(null);
@@ -84,6 +85,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
     try {
       const result = await api.request<Items<Farm>>('/v1/farms');
       if (!alive.current) return;
+      setFarmsLoaded(true);
       const revoked = currentFarms.current.filter(previous => !result.items.some(farm => farm.id === previous.id && farm.role === previous.role));
       if (revoked.some(previous => previous.id === currentFarm.current)) {
         setFarmId(''); setSnapshot(null); setMutations([]); setAttachments([]); setNotice(''); setProgress(null);
@@ -190,7 +192,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   }, [language, repository]);
 
   const selectedFarm = farms.find(farm => farm.id === farmId);
-  return { api, repository, session, farms, farmId, selectedFarm, snapshot, mutations, attachments, busy, online, network,
+  return { api, repository, session, farms, farmsLoaded, farmId, selectedFarm, snapshot, mutations, attachments, busy, online, network,
     error, setError: reportError, notice, setNotice, progress, dataSaver, setDataSaver, reminders, setReminders,
     selectFarm, reloadLocal, refresh, sync, onlineAction, canManage: selectedFarm?.role === 'owner' || selectedFarm?.role === 'manager' };
 }

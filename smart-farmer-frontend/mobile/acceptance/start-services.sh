@@ -3,6 +3,7 @@ set -euo pipefail
 NATIVE_PLATFORM="${1:?Pass android or ios}"
 case "$NATIVE_PLATFORM" in android|ios) ;; *) exit 2 ;; esac
 mkdir -p "$RUNNER_TEMP/native-evidence"
+export MEDIA_ROOT="$RUNNER_TEMP/native-private-media"
 npm run migrate --prefix smart-farmer-backend
 npm run build --prefix smart-farmer-backend
 if [[ "$NATIVE_PLATFORM" == ios ]]; then

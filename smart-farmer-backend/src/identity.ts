@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ApiError, audit, type Context, manageRoles} from './context.js';
 import {hashPassword, verifyPassword, sha256, token} from './security.js';
+import {idempotent} from './product/common.js';
 import {NODE_RED_CAPABILITY} from './node-red/types.js';
 
 const uuid=z.string().uuid();
@@ -97,9 +98,19 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   });
   app.get('/v1/farms',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const r=await db.query('SELECT f.id,f.name,f.timezone,m.role FROM farms f JOIN memberships m ON m.farm_id=f.id WHERE m.user_id=$1 ORDER BY f.name',[id]);return {items:r.rows,capabilities:[NODE_RED_CAPABILITY]};});
   app.post('/v1/farms',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const b=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(80).default('Africa/Harare')}).strict().parse(req.body);
-    try{new Intl.DateTimeFormat('en',{timeZone:b.timezone});}catch{throw new ApiError('invalid_timezone');}
-    const farmId=randomUUID();await transaction(async c=>{await c.query('INSERT INTO farms(id,name,timezone) VALUES($1,$2,$3)',[farmId,b.name,b.timezone]);await c.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[id,farmId]);});return reply.code(201).send({id:farmId});
+    const actor = await user(req,reply);
+    if (!actor) return;
+    const body = z.object({id:uuid.optional(), name:z.string().trim().min(1).max(100), timezone:z.string().max(80).default('Africa/Harare')}).strict().parse(req.body);
+    try { new Intl.DateTimeFormat('en',{timeZone:body.timezone}); } catch { throw new ApiError('invalid_timezone'); }
+    const result = await idempotent(ctx, null, actor, body.id ?? randomUUID(),
+      {operation:'create-farm', name:body.name, timezone:body.timezone}, async client => {
+        const farmId = randomUUID();
+        await client.query('INSERT INTO farms(id,name,timezone) VALUES($1,$2,$3)',[farmId,body.name,body.timezone]);
+        await client.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[actor,farmId]);
+        return {id:farmId};
+      });
+    if (result.replayed && !await member(result.body.id,actor)) throw new ApiError('not_found',404);
+    return reply.code(result.replayed ? 200 : 201).send(result.body);
   });
   app.get('/v1/farms/:farmId/members',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id))throw new ApiError('not_found',404);const r=await db.query('SELECT u.id,u.username,m.role FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.farm_id=$1 ORDER BY u.username',[farmId]);return {items:r.rows};});
   app.post('/v1/farms/:farmId/invitations',async(req,reply)=>{

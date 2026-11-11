@@ -110,7 +110,7 @@ async function digest(file) {
 }
 
 async function referencedObjects(db) {
-  const tables = ["private_media", "camera_segments", "camera_snapshots"];
+  const tables = ["private_media", "accounting_documents", "camera_segments", "camera_snapshots"];
   const rows = [];
   for (const table of tables)
     if (

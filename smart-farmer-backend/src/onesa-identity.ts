@@ -52,19 +52,22 @@ async function provider(config: Config, path: string, body: URLSearchParams | { 
   }
 }
 
-export async function currentAdmin(config: Config, grant: string, expectedSubject?: string) {
+export async function currentFarmerAccount(config: Config, grant: string, expectedSubject?: string) {
   const raw = await provider(config, '/session', {token:grant});
   const result = z.object({
     active:z.literal(true), iss:z.literal(config.issuer), aud:z.literal(config.clientId), sub:z.uuid(),
     email_verified:z.literal(true), exp:z.number().int(), auth_time:z.number().int().positive(),
     amr:z.array(z.string()), onesa_roles:z.array(z.string()),
+    onesa_applications:z.array(z.string()), onesa_product_roles:z.object({farmer:z.enum(['user','admin'])}),
   }).safeParse(raw);
   const now = Math.floor(Date.now()/1000);
   if (!result.success) throw new ApiError('unauthorized',401);
   const claims = result.data;
   if ((expectedSubject && claims.sub !== expectedSubject) || claims.exp <= now || claims.exp > now+86400 ||
-      claims.auth_time > now+30 || !claims.onesa_roles.includes('global_admin') ||
-      !claims.amr.some(method => method === 'otp' || method === 'mfa')) throw new ApiError('unauthorized',401);
+      claims.auth_time > now+30 || !claims.onesa_applications.includes('farmer')) throw new ApiError('unauthorized',401);
+  const globalAdmin = claims.onesa_roles.includes('global_admin');
+  if (globalAdmin !== (claims.onesa_product_roles.farmer === 'admin') ||
+      (globalAdmin && !claims.amr.some(method => method === 'otp' || method === 'mfa'))) throw new ApiError('unauthorized',401);
   return claims;
 }
 
@@ -99,7 +102,7 @@ export function registerOnesa(app: FastifyInstance, ctx: Context, config: Config
     const exchange = z.object({token_type:z.string(), access_token:z.string().min(20).max(4096)}).safeParse(reply);
     if (!exchange.success || exchange.data.token_type.toLowerCase() !== 'bearer') throw new ApiError('onesa_unavailable',503);
     const grant = exchange.data.access_token;
-    const claims = await currentAdmin(config, grant);
+    const claims = await currentFarmerAccount(config, grant);
     const value = token();
     return ctx.transaction(async client => {
       const id = randomUUID();

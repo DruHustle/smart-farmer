@@ -1,0 +1,40 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: tab-more
+- assertVisible:
+    id: tab-more
+    selected: true
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: more-finance
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: more-finance
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: finance-tabs
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: finance-tabs
+- tapOn:
+    id: finance-tabs-option-accounting
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: accounting-tabs
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: accounting-tabs
+- tapOn:
+    id: accounting-tabs-option-scanInvoice
