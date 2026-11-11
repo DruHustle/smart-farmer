@@ -11,6 +11,7 @@ import {completionJourneys} from './browser-completion.mjs';
 import {forumJourneys} from './browser-forum.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
+import {appStoreListings} from '../src/components/app-store-listings.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backend = resolve(web, '../..', 'smart-farmer-backend');
@@ -88,7 +89,19 @@ try {
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');
-  await page.goto(ui); await page.getByRole('button', {name: sn.register, exact: true}).click();
+  await page.goto(ui);
+  const apps = page.getByRole('region', {name:sn.farmerApps});
+  for (const {device, store, url} of appStoreListings) {
+    const platform = apps.getByRole('listitem').filter({hasText:device});
+    assert.ok((await platform.innerText()).includes(store));
+    if (url) {
+      assert.equal(await platform.getByRole('link').getAttribute('href'), url);
+    } else {
+      assert.ok((await platform.innerText()).includes(sn.notPublished));
+      assert.equal(await platform.getByRole('link').count(), 0);
+    }
+  }
+  await page.getByRole('button', {name: sn.register, exact: true}).click();
   await page.getByLabel(sn.username, {exact: true}).fill(username); await page.getByLabel(sn.password, {exact: true}).fill(password); await page.getByLabel(sn.farmName, {exact: true}).fill('Browser acceptance farm');
   await page.getByRole('button', {name: sn.continue, exact: true}).click();
   await expectVisible(page.getByRole('heading', {name: sn.recoveryCode, exact: true}));

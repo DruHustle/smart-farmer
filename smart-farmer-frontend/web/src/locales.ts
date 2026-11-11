@@ -6,6 +6,8 @@ import {nodeRedPhrases} from './node-red-locales.ts';
 export const phrases = {
   ...validationPhrases, ...completionPhrases, ...nodeRedPhrases,
   language: ['Mutauro', 'Ulimi'],
+  farmerApps: ['Maapp eSmart Farmer', 'Ama-app eSmart Farmer'],
+  notPublished: ['Haisati yaburitswa', 'Ayikakhitshwa'],
   forum: ['Dare', 'Inkundla'],
   forum_already_reported: ['Watotumira chichemo chemashoko aya.', 'Usuthumele isikhalazo ngalo mbhalo.'],
   forum_content_removed: ['Mashoko aya akabviswa. Vandudza dare.', 'Lo mbhalo ususiwe. Vuselela inkundla.'],
