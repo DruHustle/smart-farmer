@@ -28,6 +28,26 @@ if config['scheme'] not in schemes:
 for key in ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription', 'NSPhotoLibraryUsageDescription', 'NSFaceIDUsageDescription'):
     if not info.get(key, '').strip():
         sys.exit(f'The device app is missing {key}')
+privacy = plistlib.loads(Path(sys.argv[1]).with_name('PrivacyInfo.xcprivacy').read_bytes())
+configured = config['ios']['privacyManifests']
+declared = configured['NSPrivacyCollectedDataTypes']
+collected = {row['NSPrivacyCollectedDataType']: row for row in privacy.get('NSPrivacyCollectedDataTypes', [])}
+if not declared or privacy.get('NSPrivacyTracking') != configured['NSPrivacyTracking']:
+    sys.exit('The archive is missing the configured privacy declarations')
+for row in declared:
+    name = row['NSPrivacyCollectedDataType']
+    if collected.get(name) != row:
+        sys.exit(f'The archive privacy declaration differs for {name}')
+# CocoaPods incorporates the required reasons declared by React Native into the app manifest.
+reasons = {row['NSPrivacyAccessedAPIType']: set(row['NSPrivacyAccessedAPITypeReasons'])
+           for row in privacy.get('NSPrivacyAccessedAPITypes', [])}
+react_native = Path('node_modules/react-native')
+for path in ('React/Resources/PrivacyInfo.xcprivacy', 'ReactCommon/react/timing/PrivacyInfo.xcprivacy'):
+    for row in plistlib.loads((react_native / path).read_bytes())['NSPrivacyAccessedAPITypes']:
+        category = row['NSPrivacyAccessedAPIType']
+        if not set(row['NSPrivacyAccessedAPITypeReasons']).issubset(reasons.get(category, set())):
+            sys.exit(f'The archive is missing React Native privacy reasons for {category}')
+print(f'Verified {len(declared)} app data declarations and {len(reasons)} required-reason API categories')
 print(f"Verified {expected['CFBundleIdentifier']} {config['version']} build {expected['CFBundleVersion']} with SDK {info['DTSDKName']} and Xcode {info['DTXcode']}")
 PY
   binary="$app/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
