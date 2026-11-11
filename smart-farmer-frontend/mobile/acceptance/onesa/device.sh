@@ -10,6 +10,11 @@ case "$platform" in
     device=$(xcrun simctl list devices available -j | node -e "let t='';process.stdin.on('data',s=>t+=s).on('end',()=>console.log(Object.values(JSON.parse(t).devices).flat().find(d=>d.isAvailable&&d.name.startsWith('iPhone')).udid))")
     ;;
   android)
+    # Exercise the dedicated Portal run at a 360x640dp compact phone viewport.
+    # Both commands operate on this fresh CI emulator. Record what it applied.
+    adb shell wm size 720x1280
+    adb shell wm density 320
+    { adb shell wm size; adb shell wm density; } | tee "$evidence/android-display.txt"
     for port in 8081 46501 46502 46504; do adb reverse tcp:"$port" tcp:"$port"; done
     if ! bash "$dir/android-trust/install.sh" "$RUNNER_TEMP/onesa-device/ca.crt"; then
       echo 'FAIL Android user CA installation in Settings. Portal sign-in scenarios UNTESTED.' > "$evidence/android-results.txt"
@@ -59,8 +64,8 @@ for role in cancel member admin; do
       echo "$role $state FAIL" | tee -a "$evidence/$platform-results.txt"
       # List the matching visible controls (never screen text, tokens or input).
       maestro --device "$device" hierarchy > "$private/hierarchy.json" 2>/dev/null || true
-      node "$dir/redact.mjs" "$private" >> "$evidence/$platform-results.txt"
-      if [[ "$state" == cold ]]; then echo "$role active UNTESTED (cold did not complete)" >> "$evidence/$platform-results.txt"; fi
+      node "$dir/redact.mjs" "$private" | tee -a "$evidence/$platform-results.txt"
+      if [[ "$state" == cold ]]; then echo "$role active UNTESTED (cold did not complete)" | tee -a "$evidence/$platform-results.txt"; fi
       break
     fi
   done

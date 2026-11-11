@@ -19,7 +19,16 @@ stop_native_log() {
     NATIVE_LOG_PID=''
   fi
 }
-trap stop_native_log EXIT
+finish_native_run() {
+  local result=$?
+  stop_native_log
+  if (( result != 0 )); then
+    # Only enumerated markers, without preceding or following OS/JS log data.
+    node "$NATIVE_DIR/acceptance/onesa/signout-phases.mjs" "$EVIDENCE/ios-phone-startup.log" "$EVIDENCE/metro.log"
+  fi
+  return "$result"
+}
+trap finish_native_run EXIT
 start_native_log() {
   local native_device="$1" native_label="$2" native_thread_output native_log
   case "$native_label" in

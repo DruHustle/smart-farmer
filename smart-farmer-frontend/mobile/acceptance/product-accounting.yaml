@@ -105,10 +105,26 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "invoice-line-0-description"
 - inputText: "Native accepted crop produce"
+# Gboard can resize the sheet until the first invoice line is offscreen.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow: dismiss-keyboard.yaml
+      - scrollUntilVisible:
+          element:
+            id: "invoice-line-0-description"
+          direction: DOWN
+          visibilityPercentage: 100
+          timeout: 30000
 - assertVisible:
     id: "invoice-line-0-description"
     text: '(?-i)^Native accepted crop produce$'
-- runFlow: dismiss-keyboard.yaml
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
     centerElement: true
     element:

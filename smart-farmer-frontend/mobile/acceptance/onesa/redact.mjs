@@ -9,3 +9,10 @@ const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation',
   'Dzokera muSmart Farmer','Buyela ku-Smart Farmer','Use without an account','Your connection is not private',
   'Development servers','Continue','Close','Open','No thanks','Chrome','Save password','Sign in to Onesa'];
 console.log('Visible screen landmarks: '+landmarks.filter(s=>text.includes(s)).join(', '));
+const runFile = join(process.argv[2],'run.log');
+if (existsSync(runFile)) {
+  const lines = readFileSync(runFile,'utf8').split('\n').filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed/i.test(line));
+  const failed = lines.at(-1) || '';
+  const targets = [...landmarks,'Password','first-farm-join','Remember this browser','Morning irrigation inspection','Device Qualification Farm','Android driver','XCTest','Keyboard','Scroll','Submit'];
+  console.log('Failed command landmarks: '+(targets.filter(item=>failed.toLowerCase().includes(item.toLowerCase())).join(', ') || 'none identified'));
+}
