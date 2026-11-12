@@ -1,0 +1,30 @@
+appId: eu.onesa.smartfarmer
+---
+# device.sh supplies the phase; a YAML default would override its CLI value.
+- assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
+- runFlow:
+    when:
+      true: ${FLOW_STATE !== 'active'}
+    commands:
+      - runFlow: entry.yaml
+      - runFlow: open.yaml
+      - extendedWaitUntil:
+          visible: '^Email address$'
+          timeout: 45000
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'active'}
+    commands:
+      - stopApp
+      - runFlow: launch.yaml
+      - extendedWaitUntil:
+          visible: {id: device-reauthenticate}
+          timeout: 120000
+      - tapOn: {id: device-reauthenticate}
+      - extendedWaitUntil:
+          visible: {id: auth-onesa}
+          timeout: 30000
+      - runFlow: open.yaml
+      - extendedWaitUntil:
+          visible: '^(Continue as .*|Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+          timeout: 45000

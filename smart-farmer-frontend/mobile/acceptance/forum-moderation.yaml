@@ -5,7 +5,8 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element:
       id: forum-report-.*
-    centerElement: true
+    # At the end of a short discussion the fully visible action cannot move
+    # to the viewport center. Visibility is the required interaction boundary.
     direction: DOWN
     timeout: 30000
 - assertNotVisible:

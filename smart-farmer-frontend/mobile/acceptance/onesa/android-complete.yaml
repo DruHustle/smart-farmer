@@ -1,0 +1,66 @@
+appId: eu.onesa.smartfarmer
+---
+# device.sh supplies the phase; a YAML default would override its CLI value.
+- assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
+- tapOn:
+    text: '^Open$'
+    optional: true
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'cancel'}
+    commands:
+      - extendedWaitUntil:
+          visible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.])$'
+          timeout: 30000
+      - assertVisible: {id: auth-onesa}
+      - assertNotVisible: {id: tab-forum}
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'cold'}
+    commands:
+      - extendedWaitUntil:
+          visible: {id: first-farm-invitation}
+          timeout: 45000
+      - assertNotVisible: {id: tab-forum}
+      - tapOn: {id: first-farm-invitation}
+      - inputText: ${INVITE}
+      - runFlow: ../dismiss-keyboard.yaml
+      - scrollUntilVisible:
+          element: {id: first-farm-join}
+          direction: DOWN
+      - tapOn: {id: first-farm-join}
+      - extendedWaitUntil:
+          visible: {id: tab-forum}
+          timeout: 45000
+      - assertVisible: ${FARM_NAME}
+      - runFlow: ../forum-open.yaml
+      - scrollUntilVisible:
+          element:
+            id: '^forum-open-.*$'
+            text: '^${FORUM_TITLE}$'
+          direction: DOWN
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'active'}
+    commands:
+      - extendedWaitUntil:
+          visible: {id: tab-forum, selected: true}
+          timeout: 45000
+      - assertVisible: {id: tab-forum, selected: true}
+      # Preserve the protected return assertion before any navigation. On a
+      # compact display, the localized audience notice pushes forum-new below
+      # the viewport; scroll the already-selected forum to inspect its content.
+      - scrollUntilVisible:
+          element: {id: workspace-language}
+          direction: UP
+          timeout: 30000
+      - assertVisible: ${FARM_NAME}
+      - scrollUntilVisible:
+          element: {id: forum-new, enabled: true}
+          direction: DOWN
+          timeout: 30000
+      - scrollUntilVisible:
+          element:
+            id: '^forum-open-.*$'
+            text: '^${FORUM_TITLE}$'
+          direction: DOWN

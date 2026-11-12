@@ -1,0 +1,51 @@
+# Smart Farmer engineering
+
+The canonical source is `DruHustle/smart-farmer`. Keep the web, native, backend
+and edge applications independently buildable. Read the affected README,
+`smart-farmer-backend/docs/status.md` and release workflow before changes.
+Preserve existing work, histories, memberships, encrypted offline queues and
+physical actuation interlocks. Use synthetic records for tests. Never store
+credentials, private farm records, signing keys or provisioning profiles in Git.
+
+Keep extra worktrees in `local-tools/worktrees`, deployment evidence in
+`local-tools/deployment-evidence`, verification evidence in
+`local-tools/release-verification`, and migration records in
+`local-tools/migrations`. Keep these artifacts local unless explicitly reviewed
+for publication. Do not create a workspace-root `release-verification` directory.
+
+Use Node 24 and committed npm lockfiles. Backend checks require an explicitly
+isolated PostgreSQL database ending in `_test`; invoice checks also require
+Tesseract and Poppler. Run backend `npm test`, web `npm test && npm run build`,
+native `npm test && npm run typecheck`, and the affected real browser journeys.
+`smart-farmer-frontend/web/test/browser.mjs` exercises actual API/database flows.
+Native JavaScript export does not prove an APK/AAB, signed iPhone archive,
+physical device, Apple Pay/Google Pay, or store acceptance.
+Local qualification on 11 November 2026 also compiled ARM64 Android release
+APK/AAB and debug builds with Java 21, an unsigned iPhoneOS archive, and an
+ad-hoc iOS Simulator build with Xcode 27.2. The installed Android app passed
+startup, language persistence, real API login, SQLCipher, offline restart and
+exactly-once reconciliation checks. Exact artifact hashes and scope are in
+`local-tools/deployment-evidence/2026-11-11` and the matching verification folder.
+Keep generated CocoaPods and Metro configuration changes separate from intended
+source changes; restore only generated files after preserving build evidence.
+
+Onesa Portal is the identity authority. Bind identities by issuer and subject,
+never email alone. Approved ordinary accounts receive farm access only through
+explicit memberships; global administrators still require current MFA.
+Preserve PKCE/state, live revocation, return destinations and retry identifiers.
+An explicit central authority rejection permanently retires the local session;
+restoring access requires a fresh sign-in. Provider unavailability remains
+retryable and must not be treated as a revoked grant.
+Native signing, physical commissioning, provider integrations and fluent human
+language approval need actual evidence and their named owners.
+
+API 37 gates Expo debug bundle access with `ACCESS_LOCAL_NETWORK`; native
+acceptance grants it after install and each disposable app-data reset. Keep
+native browser interactions and permission setup separate from product auth
+rules. Record actual OS callback, scoped membership, restart and live-authority
+evidence; a successful web or JavaScript check does not establish those journeys.
+
+As of 11 November 2026, customer/native qualification is in draft PR #24;
+inspect its exact head and any stacked native PRs before duplicating work.
+Do not treat prior CI or a candidate branch as production deployment evidence.
+Record the exact tested revision, environment, command and remaining blocker.

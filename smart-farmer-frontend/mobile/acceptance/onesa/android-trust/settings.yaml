@@ -20,7 +20,15 @@ appId: com.android.settings
     commands:
       - tapOn:
           text: '^(Show roots|Open navigation drawer|Open from)$'
-      - tapOn: '^Onesa test issuer$'
+      # DocumentsUI also exposes an identically named app tile behind the
+      # drawer. Select only the provider row in the open roots list.
+      - tapOn:
+          text: '^Onesa test issuer$'
+          childOf:
+            id: 'com[.](google[.])?android[.]documentsui:id/roots_list'
+- extendedWaitUntil:
+    visible: '^farmer-device-ca[.]crt$'
+    timeout: 30000
 - tapOn: '^farmer-device-ca[.]crt$'
 - runFlow: unlock.yaml
 - tapOn:

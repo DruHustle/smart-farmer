@@ -20,7 +20,36 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: forum-search
-- eraseText
+- copyTextFrom:
+    id: forum-search
+- runFlow:
+    when:
+      true: ${!['', 'Tsvaga muhurukuro', 'Dinga ezingxoxweni'].includes(maestro.copiedText)}
+    commands:
+      # A retained search may place the caret in the middle when tapped.
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - longPressOn:
+                id: forum-search
+            - tapOn: '^Select All$'
+            - eraseText: 1
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            # Keep the caret after this short fixture query without depending
+            # on the iOS selection menu appearing after a long press.
+            - tapOn:
+                id: forum-search
+                point: '95%,50%'
+            - eraseText: 100
+- copyTextFrom:
+    id: forum-search
+# An empty field can expose its accessibility label in either supported language.
+# Check that empty state before typing, then assert the exact resulting query.
+- assertTrue: ${['', 'Tsvaga muhurukuro', 'Dinga ezingxoxweni'].includes(maestro.copiedText)}
 - inputText: Native community discussion
 - assertVisible:
     id: forum-search

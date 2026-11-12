@@ -7,8 +7,10 @@ appId: eu.onesa.smartfarmer
     timeout: 45000
 - tapOn: '^Email address$'
 - inputText: ${EMAIL}
+- assertVisible: '^${EMAIL}$'
 - tapOn: '^Password$'
 - inputText: ${PASSWORD}
+- runFlow: dismiss-browser-keyboard.yaml
 # Remembering the browser is a normal Portal control. The active test must use
 # the OS browser cookies. It never supplies another password or recovery code.
 - scrollUntilVisible:
@@ -28,6 +30,7 @@ appId: eu.onesa.smartfarmer
           timeout: 30000
       - tapOn: '^Authenticator or recovery code$'
       - inputText: ${MFA}
+      - runFlow: dismiss-browser-keyboard.yaml
       - scrollUntilVisible:
           element: '^Continue$'
           direction: DOWN

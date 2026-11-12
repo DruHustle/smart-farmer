@@ -19,10 +19,20 @@ export function createContext(db: pg.Pool, central: ReturnType<typeof identityCo
     if (!result.rowCount) { reply.code(401).send({error:'unauthorized'}); return null; }
     const account = result.rows[0];
     if (account.onesa_subject) {
-      if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
-      await currentFarmerAccount(central, openGrant(account.onesa_grant, value), account.onesa_subject);
-      const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
-      if (!live.rowCount) throw new ApiError('unauthorized',401);
+      try {
+        if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
+        await currentFarmerAccount(central, openGrant(account.onesa_grant, value), account.onesa_subject);
+        const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
+        if (!live.rowCount) throw new ApiError('unauthorized',401);
+      } catch (error) {
+        // Restored central access requires a fresh sign-in after an explicit
+        // rejection. Delete only this session and its encrypted grant; a
+        // temporary issuer outage remains retryable on the same bearer.
+        if (error instanceof ApiError && [401,403].includes(error.status)) {
+          await db.query('DELETE FROM sessions WHERE token_hash=$1', [sha256(value)]);
+        }
+        throw error;
+      }
     }
     return account.user_id as string;
   }

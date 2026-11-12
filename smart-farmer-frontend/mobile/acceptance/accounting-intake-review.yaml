@@ -25,12 +25,28 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: 'invoice-scan-review-${DOCUMENT_ID}'
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: invoice-source-preview
-    direction: DOWN
-    timeout: 30000
+# On Android this first-card control can be above the current sheet viewport.
+# Navigate toward the source; do not retry upload or draft actions.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: invoice-source-preview
+          direction: UP
+          timeout: 30000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: invoice-source-preview
+          direction: DOWN
+          timeout: 30000
 - tapOn:
     id: invoice-source-preview
 - extendedWaitUntil:

@@ -1,7 +1,17 @@
 appId: eu.onesa.smartfarmer
 ---
-- tapOn:
-    id: tab-more
+# The OS can cancel the first navigation touch after media import or AutoFill.
+# Bound only this read-only navigation; upload and financial actions are never retried.
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: tab-more
+        selected: true
+    commands:
+      - tapOn:
+          id: tab-more
+          enabled: true
 - assertVisible:
     id: tab-more
     selected: true

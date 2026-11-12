@@ -18,6 +18,9 @@ appId: eu.onesa.smartfarmer
     element:
       id: media-camera
     direction: DOWN
+    # One observed iOS XCTest swipe took 22s; allow the driver to recheck the
+    # visible control after that gesture instead of expiring its 20s default.
+    timeout: 45000
 - tapOn:
     id: media-camera
 - runFlow:
@@ -29,6 +32,13 @@ appId: eu.onesa.smartfarmer
       - tapOn:
           id: '^(com[.]android|com[.]google[.]android)[.]permissioncontroller:id/permission_deny(_and_dont_ask_again)?_button$'
           optional: true
+# Wait for the native permission result before moving the workspace. An upward
+# search while the request is pending can reach pull-to-refresh as it resolves.
+- extendedWaitUntil:
+    visible:
+      id: media-camera
+      enabled: true
+    timeout: 45000
 - scrollUntilVisible:
     element:
       text: '.*Mvumo haina kupiwa.*'
