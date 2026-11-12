@@ -35,7 +35,9 @@ appId: eu.onesa.smartfarmer
       - assertVisible: ${FARM_NAME}
       - runFlow: ../forum-open.yaml
       - scrollUntilVisible:
-          element: ${FORUM_TITLE}
+          element:
+            id: '^forum-open-.*$'
+            text: '^${FORUM_TITLE}$'
           direction: DOWN
 - runFlow:
     when:
@@ -58,5 +60,7 @@ appId: eu.onesa.smartfarmer
           direction: DOWN
           timeout: 30000
       - scrollUntilVisible:
-          element: ${FORUM_TITLE}
+          element:
+            id: '^forum-open-.*$'
+            text: '^${FORUM_TITLE}$'
           direction: DOWN
