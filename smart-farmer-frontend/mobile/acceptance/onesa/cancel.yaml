@@ -1,10 +1,5 @@
 appId: eu.onesa.smartfarmer
 ---
-- runFlow: entry.yaml
-- runFlow: open.yaml
-- extendedWaitUntil:
-    visible: '^Email address$'
-    timeout: 45000
 - scrollUntilVisible:
     element: '^Cancel sign-in$'
     direction: DOWN

@@ -1,0 +1,24 @@
+appId: eu.onesa.smartfarmer
+---
+# Start Farmer once. A fresh Maestro phase will inspect the system browser
+# without relaunching the app or sending another authorization request.
+- assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
+- runFlow:
+    when:
+      true: ${FLOW_STATE !== 'active'}
+    commands:
+      - runFlow: entry.yaml
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'active'}
+    commands:
+      - stopApp
+      - runFlow: launch.yaml
+      - extendedWaitUntil:
+          visible: {id: device-reauthenticate}
+          timeout: 120000
+      - tapOn: {id: device-reauthenticate}
+      - extendedWaitUntil:
+          visible: {id: auth-onesa}
+          timeout: 30000
+- runFlow: open.yaml

@@ -51,12 +51,52 @@ start_native_log() {
   node "$NATIVE_DIR/acceptance/darwin-thread-watch.cjs" "$native_label" > "$native_thread_output" 2>/dev/null &
   NATIVE_THREAD_WATCH_PID=$!
 }
+run_native_login() {
+  local device="$1" layout="$2" label="$3"
+  local report="$EVIDENCE/$label.xml" prompt_image="$RUNNER_TEMP/$layout-current-password-sheet.png" prompt_point
+  if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/login.yaml"; then
+    return 0
+  fi
+  # Capture the current system UI. Accept only the specific blocked assertion
+  # and full matching AutoFill sheet; never replay the completed sign-in.
+  xcrun simctl io "$device" screenshot "$prompt_image"
+  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py"
+  local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
+  if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
+    # The completed XCTest run may have yielded focus. Require the exact
+    # blocking sheet in the assertion's own frame before returning to Farmer.
+    local failed_frames=("$EVIDENCE/$label/login/screenshots"/step-*-assertCondition-tab-record.png)
+    if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
+       ! python3 "$check" "$report" "${failed_frames[0]}" "$layout" > /dev/null; then
+      rm -f "$prompt_image"
+      return 1
+    fi
+    xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
+    xcrun simctl io "$device" screenshot "$prompt_image" || return 1
+    if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
+      # Never tap coordinates from the old frame. Only the original record
+      # assertions may continue if the app now shows its signed-in workspace.
+      resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+    fi
+  fi
+  set --
+  if [[ -n "$prompt_point" ]]; then
+    set -- -e NOT_NOW_POINT="$prompt_point"
+    mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+  else
+    rm -f "$prompt_image"
+  fi
+  mv "$report" "$EVIDENCE/$label-before-password-sheet.xml"
+  maestro --device "$device" test --no-reinstall-driver "$@" \
+    --format junit --output "$report" --test-output-dir "$EVIDENCE/$label-after-password-sheet" \
+    "$resume"
+}
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
+run_native_login "$NATIVE_PHONE" iphone ios-login
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
@@ -74,6 +114,6 @@ xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
 start_native_log "$NATIVE_TABLET" ios-tablet
-maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --flatten-debug-output --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
+run_native_login "$NATIVE_TABLET" ipad ipad-large-font
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"

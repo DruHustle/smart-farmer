@@ -34,6 +34,13 @@ appId: eu.onesa.smartfarmer
       - tapOn:
           id: PXGGridLayout-Info
           index: 0
+      # iOS returns focus before its selected image has finished processing.
+      # The capture control re-enables after local persistence and refresh.
+      - extendedWaitUntil:
+          visible:
+            id: invoice-library
+            enabled: true
+          timeout: 120000
 - scrollUntilVisible:
     element:
       id: invoice-local-source-image

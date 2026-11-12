@@ -12,12 +12,18 @@ import android.provider.DocumentsContract.Document;
 import android.provider.DocumentsContract.Root;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.security.KeyStore;
+import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.Collections;
 
 /** Checks resolver discovery, selective projections, the exact file bytes, and denied writes on the AVD. */
 public final class ProviderCheck extends Instrumentation {
+    private boolean verifyInstalled;
+
     @Override public void onCreate(Bundle args) {
         super.onCreate(args);
+        verifyInstalled = args != null && "true".equals(args.getString("verifyInstalled"));
         start();
     }
 
@@ -28,6 +34,24 @@ public final class ProviderCheck extends Instrumentation {
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (verifyInstalled) {
+                KeyStore trust = KeyStore.getInstance("AndroidCAStore");
+                trust.load(null);
+                byte[] expected;
+                MessageDigest sha = MessageDigest.getInstance("SHA-256");
+                try (InputStream cert = getTargetContext().getAssets().open(IssuerDocuments.CERT_ID)) {
+                    expected = sha.digest(cert.readAllBytes());
+                }
+                for (String alias : Collections.list(trust.aliases())) {
+                    if (alias.startsWith("user:") && MessageDigest.isEqual(expected,
+                            sha.digest(trust.getCertificate(alias).getEncoded()))) {
+                        result.putString("trustedIssuerProof", "exact-user-ca-sha256");
+                        finish(Activity.RESULT_OK, result);
+                        return;
+                    }
+                }
+                throw new IllegalStateException("Bundled CA missing from user trust");
+            }
             String authority = IssuerDocuments.AUTHORITY;
             ContentResolver resolver = getTargetContext().getContentResolver();
             try (Cursor roots = resolver.query(DocumentsContract.buildRootsUri(authority),

@@ -1,6 +1,15 @@
 appId: eu.onesa.smartfarmer
 ---
-- runFlow: launch.yaml
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runFlow: ../ios-launch-bundle.yaml
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow: launch.yaml
 - extendedWaitUntil:
     visible: '^Continue$'
     timeout: 120000

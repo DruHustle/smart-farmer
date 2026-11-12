@@ -15,13 +15,21 @@ appId: eu.onesa.smartfarmer
     when:
       visible: '^Enter URL manually$'
     commands:
-      - assertVisible: '^Development Build$'
-      - takeScreenshot: ios-expo-launcher-fallback-before-retry
-      # initialUrlFromProcessInfo applies only to a fresh process. No auth or
-      # product mutation has occurred when these launcher landmarks are present.
-      - stopApp: eu.onesa.smartfarmer
-      - launchApp:
-          stopApp: false
-          permissions: {}
-          arguments:
-            "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1"
+      # The launcher can finish opening the app between snapshots. Only tap
+      # the known local bundle if it is still offered, then recheck the chooser.
+      - tapOn:
+          text: '^http://127\.0\.0\.1:8081/index\.bundle\?platform=ios&dev=true&hot=false&lazy=true&transform\.engine=hermes&transform\.bytecode=1&transform\.routerRoot=app&unstable_transformProfile=hermes-stable$'
+          optional: true
+      - runFlow:
+          when:
+            visible: '^Enter URL manually$'
+          commands:
+            - takeScreenshot: ios-expo-launcher-fallback-before-retry
+            # initialUrlFromProcessInfo applies only to a fresh process. No auth or
+            # product mutation has occurred when these launcher landmarks are present.
+            - stopApp: eu.onesa.smartfarmer
+            - launchApp:
+                stopApp: false
+                permissions: {}
+                arguments:
+                  "--initialUrl": "smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1"

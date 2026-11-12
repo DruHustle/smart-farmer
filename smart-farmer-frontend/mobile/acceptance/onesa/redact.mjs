@@ -14,7 +14,7 @@ const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation',
 console.log('Visible screen landmarks: '+landmarks.filter(s=>text.includes(s)).join(', '));
 // Android uses separate native/browser/native phases. Only these fixed file
 // names and allowlisted labels can leave the private runner directory.
-for (const phase of ['run','entry','browser','complete']) {
+for (const phase of ['run','entry','email','browser','complete']) {
   const runFile = join(process.argv[2],phase+'.log');
   if (!existsSync(runFile)) continue;
   const lines = readFileSync(runFile,'utf8').split('\n').filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed|AssertionError|Error:/i.test(line));

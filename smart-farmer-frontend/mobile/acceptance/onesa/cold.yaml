@@ -1,13 +1,5 @@
 appId: eu.onesa.smartfarmer
 ---
-- runFlow: entry.yaml
-- runFlow: open.yaml
-- extendedWaitUntil:
-    visible: '^Email address$'
-    timeout: 45000
-- tapOn: '^Email address$'
-- inputText: ${EMAIL}
-- assertVisible: '^${EMAIL}$'
 - tapOn: '^Password$'
 - inputText: ${PASSWORD}
 - runFlow: dismiss-browser-keyboard.yaml
