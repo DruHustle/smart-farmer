@@ -1,0 +1,13 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn:
+    id: device-reauthenticate
+- extendedWaitUntil:
+    visible:
+      id: auth-username
+    timeout: 20000
+- runFlow: credentials.yaml
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+    timeout: 45000

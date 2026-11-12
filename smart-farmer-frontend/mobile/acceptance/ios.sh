@@ -52,9 +52,9 @@ start_native_log() {
   NATIVE_THREAD_WATCH_PID=$!
 }
 run_native_login() {
-  local device="$1" layout="$2" label="$3"
+  local device="$1" layout="$2" label="$3" flow="${4:-login}"
   local report="$EVIDENCE/$label.xml" prompt_image="$RUNNER_TEMP/$layout-current-password-sheet.png" prompt_point
-  if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/login.yaml"; then
+  if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
   # Capture the current system UI. Accept only the specific blocked assertion
@@ -65,7 +65,7 @@ run_native_login() {
   if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
     # The completed XCTest run may have yielded focus. Require the exact
     # blocking sheet in the assertion's own frame before returning to Farmer.
-    local failed_frames=("$EVIDENCE/$label/login/screenshots"/step-*-assertCondition-tab-record.png)
+    local failed_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-tab-record.png)
     if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
        ! python3 "$check" "$report" "${failed_frames[0]}" "$layout" > /dev/null; then
       rm -f "$prompt_image"
@@ -102,7 +102,10 @@ maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-off
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
 python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_CONTAINER" > "$EVIDENCE/ios-encryption.txt"
 rm "$NATIVE_OFFLINE_FLAG"
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
+# AutoFill can offer to save the password again when the offline workspace is
+# unlocked. Recover only at the post-sign-in checkpoint, before any record work.
+run_native_login "$NATIVE_PHONE" iphone ios-reconcile-login reconcile-signin
+maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile-records.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/ios-exactly-once.txt"
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
 bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"

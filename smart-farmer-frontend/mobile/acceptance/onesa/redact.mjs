@@ -2,6 +2,7 @@
 // failure details can contain PKCE values or synthetic credentials.
 import {readFileSync,existsSync,readdirSync,statSync} from 'node:fs';
 import {join} from 'node:path';
+import {chromeFailureStages} from './chrome-tab.mjs';
 const file = join(process.argv[2],'hierarchy.json');
 const text = existsSync(file) ? readFileSync(file,'utf8') : '';
 const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation','tab-forum','forum-new',
@@ -17,7 +18,13 @@ console.log('Visible screen landmarks: '+landmarks.filter(s=>text.includes(s)).j
 for (const phase of ['run','entry','email','browser','complete']) {
   const runFile = join(process.argv[2],phase+'.log');
   if (!existsSync(runFile)) continue;
-  const lines = readFileSync(runFile,'utf8').split('\n').filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed|AssertionError|Error:/i.test(line));
+  const privateLines = readFileSync(runFile,'utf8').split('\n');
+  if (phase === 'browser') {
+    const tag = 'ONESA_BROWSER_FAILED_STAGE ';
+    const stage = privateLines.find(line => line.startsWith(tag) && chromeFailureStages.has(line.slice(tag.length)));
+    if (stage) console.log('Failed Chrome stage: '+stage.slice(tag.length));
+  }
+  const lines = privateLines.filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed|AssertionError|Error:/i.test(line));
   const failed = lines.at(-1) || '';
   if (!failed) continue;
   const targets = [...landmarks,'Password','first-farm-join','Remember this browser','Morning irrigation inspection','Device Qualification Farm','Android driver','XCTest','Keyboard','Scroll','Submit'];
