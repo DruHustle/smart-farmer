@@ -18,6 +18,9 @@ appId: eu.onesa.smartfarmer
     element:
       id: media-camera
     direction: DOWN
+    # One observed iOS XCTest swipe took 22s; allow the driver to recheck the
+    # visible control after that gesture instead of expiring its 20s default.
+    timeout: 45000
 - tapOn:
     id: media-camera
 - runFlow:
