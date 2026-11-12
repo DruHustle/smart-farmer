@@ -23,7 +23,7 @@ try {
   await form.locator('select[name="kind"]').selectOption('observation');
   await form.locator('textarea[name="note"]').fill(note);
   await form.locator('input[name="quantity"]').fill('3');
-  await form.locator('[name="unit"]').fill('kg');
+  await form.locator('select[name="unit"]').selectOption('kg');
   const accepted = page.waitForResponse(res => res.url().endsWith('/activities') && res.request().method() === 'POST');
   await form.locator('button[type="submit"]').click();
   const created = await accepted;
