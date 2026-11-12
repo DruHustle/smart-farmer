@@ -14,11 +14,17 @@ const portalOrigin=origin('PORTAL_TEST_ORIGIN','https://localhost:46501');
 const farmerOrigin=origin('FARMER_TEST_ORIGIN','https://127.0.0.1:46502');
 const adb=(...args)=>execFileSync('adb',['-s',device,...args],{encoding:'utf8',timeout:20000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function keyboardShown(){
+  const current=adb('shell','dumpsys input_method | sed -n "/mInputShown=/p"').trim();
+  const match=/^mInputShown=(true|false)$/.exec(current);
+  assert(match,'Expected exactly one current Android keyboard-state field');
+  return match[1]==='true';
+}
 async function dismissObservedKeyboard(){
-  if(!/mInputShown=true/.test(adb('shell','dumpsys','input_method')))return;
+  if(!keyboardShown())return;
   adb('shell','input','keyevent','4');
   const until=Date.now()+5000;
-  while(Date.now()<until){if(!/mInputShown=true/.test(adb('shell','dumpsys','input_method')))return;await pause(100);}
+  while(Date.now()<until){if(!keyboardShown())return;await pause(100);}
   throw Error('Observed Android browser keyboard did not dismiss');
 }
 let port;
@@ -56,7 +62,7 @@ async function run(){
   await link.click();
   const until=Date.now()+20000;let activated=false;
   while(Date.now()<until){
-    if(/topResumedActivity=.*eu\.onesa\.smartfarmer\/\.MainActivity/.test(adb('shell','dumpsys','activity','activities'))){activated=true;break;}
+    if(/topResumedActivity=.*eu\.onesa\.smartfarmer\/\.MainActivity/.test(adb('shell','dumpsys activity activities | sed -n "/topResumedActivity=/p"'))){activated=true;break;}
     await pause(250);
   }
   assert(activated,'Actual browser link must activate the registered Farmer app');
