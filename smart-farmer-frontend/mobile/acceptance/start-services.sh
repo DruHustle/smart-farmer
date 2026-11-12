@@ -33,7 +33,8 @@ node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("htt
 curl --fail --show-error --silent --max-time 180 --output /dev/null "http://127.0.0.1:8081/index.bundle?platform=$NATIVE_PLATFORM&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
 if [[ "$NATIVE_PLATFORM" == ios ]]; then
   # Retain separate manifest diagnostics. iOS acceptance launches the warmed
-  # bundle directly so this SDK development lookup is not a startup dependency.
+  # bundle directly, avoiding dynamic manifest resolution. Expo still performs
+  # a HEAD content-type probe against that exact bundle URL.
   NATIVE_MANIFEST_URL='http://127.0.0.1:8081/'
   NATIVE_MANIFEST_HEADERS=(
     --header 'expo-platform: ios'

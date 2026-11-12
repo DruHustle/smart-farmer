@@ -12,10 +12,15 @@ const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation',
   'Show roots','Open navigation drawer','Open from','Onesa test issuer','farmer-device-ca.crt',
   'Onesa temporary device fixture','com.google.android.documentsui','com.android.documentsui'];
 console.log('Visible screen landmarks: '+landmarks.filter(s=>text.includes(s)).join(', '));
-const runFile = join(process.argv[2],'run.log');
-if (existsSync(runFile)) {
-  const lines = readFileSync(runFile,'utf8').split('\n').filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed/i.test(line));
+// Android uses separate native/browser/native phases. Only these fixed file
+// names and allowlisted labels can leave the private runner directory.
+for (const phase of ['run','entry','browser','complete']) {
+  const runFile = join(process.argv[2],phase+'.log');
+  if (!existsSync(runFile)) continue;
+  const lines = readFileSync(runFile,'utf8').split('\n').filter(line => /\[Failed\]|Element not found|Assertion is false|Timeout|Unable to|XCTest.*failed|AssertionError|Error:/i.test(line));
   const failed = lines.at(-1) || '';
+  if (!failed) continue;
   const targets = [...landmarks,'Password','first-farm-join','Remember this browser','Morning irrigation inspection','Device Qualification Farm','Android driver','XCTest','Keyboard','Scroll','Submit'];
+  console.log('Failed phase: '+phase);
   console.log('Failed command landmarks: '+(targets.filter(item=>failed.toLowerCase().includes(item.toLowerCase())).join(', ') || 'none identified'));
 }
