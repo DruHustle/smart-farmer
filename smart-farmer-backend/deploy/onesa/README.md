@@ -34,7 +34,23 @@ After deployment, `GET /v1/onesa/config` should return the registered public cli
 
 ## Ingress and safety gate
 
-The static web intentionally returns 404 for `/v1`; a reviewed HTTPS ingress must route `/v1/` to the loopback API and other web requests to the loopback web service, without SPA fallback for API responses. Verify the Cloudflare zone, DNS, tunnel, TLS and origin before adding or changing routes. There is no public database port.
+The public site uses the existing dedicated Farmer tunnel. The Portal monitor requests `/health`. The API owns that exact path, `/ready`, `/version`, `/v1` and its descendants. Send these paths to the loopback API. Send the homepage, `/healthz`, `/release.json`, `/auth/onesa/callback` and other application paths to the static web server. The public API paths must retain their full path and query. The static server returns a browser shell on several unmatched paths, so an HTML HTTP 200 cannot verify API health or a revision.
+
+[Cloudflare ingress example](cloudflared-ingress.example.yml) uses the candidate Compose defaults of 18131 for the API and 18132 for web. Confirm the installed ports, VM loopback namespace, zone, TLS and existing tunnel identity. An operator can compare the ordered rules with the dedicated tunnel's current configuration and preserve existing credentials and origin settings. A remotely managed connector takes its rules from its existing dashboard or API configuration. A locally managed connector takes them from its existing file. Validate this example without starting a connector:
+
+```sh
+cloudflared tunnel --config cloudflared-ingress.example.yml ingress validate
+cloudflared tunnel --config cloudflared-ingress.example.yml ingress rule https://farmer.onesa.eu/health
+cloudflared tunnel --config cloudflared-ingress.example.yml ingress rule https://farmer.onesa.eu/auth/onesa/callback
+```
+
+After switching the reviewed routing to the qualified origins, run the read-only check from outside the VM. Supply the full reviewed source SHA shared by the web and API builds. The check requires the API health/readiness JSON, matching web and API revisions, and Farmer's configured client, expected Company Portal issuer and callback. The optional third argument identifies the expected issuer for an isolated qualification deployment.
+
+```sh
+node verify-web-ingress.mjs https://farmer.onesa.eu "$FARMER_RELEASE_SHA"
+```
+
+Then open the site in a new browser, follow Company Portal sign-in, create a synthetic farm record and reopen it through the same account in a second browser. Check the recorded owner and that a lost-response retry produced one record before releasing to farmers.
 
 `TRUST_PROXY_IPS` is empty by default. When using a proxy, configure only its verified exact source IP address(es), not a subnet or a blanket trust setting. The ingress must replace untrusted forwarded-client headers and the API port must remain reachable only from the trusted ingress. Test spoofed and genuine client addresses, per-client authentication and global rate limits through the actual tunnel before allowing public traffic. A wrong proxy identity can collapse all users into one rate limit or trust a forged address. Do not enable this setting based only on container assumptions.
 

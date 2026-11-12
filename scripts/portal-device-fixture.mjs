@@ -249,7 +249,7 @@ async function listen(origin, isPortal) {
       request.pipe(upstream);
       return;
     }
-    if (!isPortal && path === "/auth/onesa/callback") {
+    if (!isPortal && ["/", "/auth/onesa/callback", "/account-deletion"].includes(path)) {
       response.setHeader("content-type", "text/html");
       response.end(readFileSync(join(temp, "farmer.html")));
       return;

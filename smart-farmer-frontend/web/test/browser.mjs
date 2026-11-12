@@ -19,7 +19,7 @@ const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backend = resolve(web, '../..', 'smart-farmer-backend');
 const api = 'http://127.0.0.1:3000'; const ui = 'http://127.0.0.1:4173';
 if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL must point at an isolated disposable database.');
-const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
+const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, NODE_ENV: 'test', WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
 env.MEDIA_ROOT = resolve(artifacts, 'private-media');
@@ -90,7 +90,8 @@ try {
   checkpoint('Build applications and migrate isolated database');
   await command('npm', ['run', 'build'], backend);
   await command('npm', ['run', 'migrate'], backend);
-  await command('npm', ['run', 'build'], web, {VITE_API_URL: api});
+  // Exercise the service worker shipped to farmers while the API uses an isolated test database.
+  await command('npm', ['run', 'build'], web, {NODE_ENV: 'production', VITE_API_URL: api});
   server(['--import', resolve(backend, 'node_modules/tsx/dist/loader.mjs'), resolve(web, 'test/browser-server.mjs')], backend);
   server(['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], web);
   await Promise.all([waitUrl(`${api}/ready`), waitUrl(ui)]);

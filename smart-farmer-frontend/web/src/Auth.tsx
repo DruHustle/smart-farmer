@@ -16,6 +16,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
 
   const [nativeLink, setNativeLink] = useState<string | null>(null);
   const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
+  const [localCredentials, setLocalCredentials] = useState(false);
   const [configFailure, setConfigFailure] = useState(false);
   const [configAttempt, setConfigAttempt] = useState(0);
   const afterLogin = useRef(onLogin);
@@ -40,9 +41,13 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     let active = true;
     const reload = () => setConfigAttempt(attempt => attempt + 1);
     window.addEventListener('online', reload);
-    void request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
-      if (active) {setConfigFailure(false); setOnesa('issuer' in config ? config : null);}
-    }).catch(() => {if (active) setConfigFailure(true);});
+    void request<(OnesaConfig | {enabled:false}) & {local_credentials?:boolean}>('/v1/onesa/config').then(config => {
+      if (!active) return;
+      const local = config.local_credentials === true && ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+      setLocalCredentials(local);
+      setConfigFailure(!('issuer' in config) && !local);
+      setOnesa('issuer' in config ? config : null);
+    }).catch(() => {if (active) {setOnesa(null); setLocalCredentials(false); setConfigFailure(true);}});
     return () => {active = false; window.removeEventListener('online', reload);};
   }, [configAttempt]);
 
@@ -78,6 +83,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
         if (vault.snapshot().requiresAuth) throw new Error('unauthorized');
         onLogin(vault); return;
       }
+      if (!localCredentials) throw new Error('onesa_sign_in_required');
       if (mode === 'recover') {await request('/v1/recover', '', jsonBody({username, password, recoveryCode: String(form.get('recoveryCode'))})); setMessage(t.recovered); setMode('signIn'); return;}
       if (mode === 'register' || mode === 'join') {
         const created = mode === 'register'
@@ -94,18 +100,19 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   if (challenge) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoverDrafts}</h1><p className="muted">{t.recoveryArchiveHint}</p><form className="form-grid" onSubmit={async e => {e.preventDefault(); const previous = String(new FormData(e.currentTarget).get('previousPassword')); setBusy(true); setMessage(''); try {const v = await Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial, previous); onLogin(v);} catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}}}><Field label={t.previousPassword}><input name="previousPassword" type="password" required autoComplete="current-password"/></Field><button className="primary" disabled={busy}>{t.recoverDrafts}</button><button type="button" className="secondary" disabled={busy} onClick={() => {setBusy(true); void Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial).then(onLogin).catch(error => setMessage(errorLabel(t, error))).finally(() => setBusy(false));}}>{t.freshCache}</button>{message && <p className="notice error" role="alert">{message}</p>}</form></section></main></div>;
   return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select></Field></header>
     <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div><AppAvailability heading={t.farmerApps} unpublished={t.notPublished}/></section>
-      <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>
+      <section className="auth-card">{localCredentials && <div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>}
         <h2>{t[mode]}</h2>{destination(location).page === 'account-deletion' && <div className="notice"><strong>{t.deletionTitle}</strong><p>{t.deletionInfo}</p></div>}
-        {mode === 'signIn' && configFailure && <p role="status">{t.onesa_unavailable} <button className="text-button" onClick={() => setConfigAttempt(n => n + 1)}>{t.retry}</button></p>}{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
-        {mode === 'signIn' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
+        {mode !== 'offlineUnlock' && configFailure && <p role="status">{t.onesa_unavailable} <a href="https://portal.onesa.eu/account">{t.onesaAccountEntry}</a> <button className="text-button" onClick={() => setConfigAttempt(n => n + 1)}>{t.retry}</button></p>}{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
+        {mode !== 'offlineUnlock' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
           setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
-        }}>{t.onesaSignIn}</button>}
-        <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
+        }}>{t.onesaAccountEntry}</button>}
+        {!localCredentials && mode !== 'offlineUnlock' && message && <p className="notice error" role="alert">{message}</p>}
+        {(localCredentials || mode === 'offlineUnlock') && <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}
           {mode === 'recover' && <Field label={t.recoveryCode}><input name="recoveryCode" required autoComplete="off" spellCheck={false}/></Field>}
           <Field label={mode === 'recover' ? t.newPassword : t.password} hint={t.passwordHint}><input name="password" type="password" required minLength={12} maxLength={128} autoComplete={mode === 'register' || mode === 'recover' || mode === 'join' ? 'new-password' : 'current-password'}/></Field>
           {mode === 'register' && <Field label={t.farmName}><input name="farmName" required maxLength={100} placeholder="Lawfield Farm"/></Field>}
           {message && <p className="notice error" role="alert">{message}</p>}<button className="primary" disabled={busy}>{busy ? t.working : t.continue}<Icon name="chevron" size={18}/></button>
-        </form><div className="auth-links">{(['join', 'recover', 'offlineUnlock'] as const).map(item => <button type="button" key={item} className="text-button" onClick={() => {setMode(item); setMessage('');}}>{t[item]}</button>)}</div>
+        </form>}<div className="auth-links">{(localCredentials ? ['join', 'recover', 'offlineUnlock'] as const : mode === 'offlineUnlock' ? ['signIn'] as const : ['offlineUnlock'] as const).map(item => <button type="button" key={item} className="text-button" onClick={() => {setMode(item); setMessage('');}}>{t[item]}</button>)}</div>
       </section></main><footer className="auth-footer">{t.translationNote} · <a href="/account-deletion">{t.deletionTitle}</a></footer></div>;
 }

@@ -36,6 +36,8 @@ export const phrases = {
   deletionReview: ['Chikumbiro chako chiri kuongororwa.', 'Isicelo sakho siyahlolwa.'],
   request_in_review: ['Chikumbiro chava kuongororwa.', 'Isicelo sesihlolwa.'],
   deletionWithdraw: ['Kanzura chikumbiro', 'Yesula isicelo'],
+  onesaAccountEntry: ['Pinda kana gadzira akaundi paOnesa', 'Ngena kumbe uvule i-akhawunti ku-Onesa'],
+  onesa_sign_in_required: ['Shandisa akaundi yako yeOnesa.', 'Sebenzisa i-akhawunti yakho ye-Onesa.'],
   onesaSignIn: ['Pinda neOnesa', 'Ngena nge-Onesa'], onesa_unavailable: ['Onesa haisi kuwanikwa pari zvino.', 'I-Onesa ayitholakali okwamanje.'],
   signIn: ['Pinda', 'Ngena'], register: ['Gadzira purazi', 'Dala ipulazi'], username: ['Zita rekupinda', 'Ibizo lokungena'], password: ['Pasiwedhi', 'Igama lokudlula'], farmName: ['Zita repurazi', 'Ibizo lepulazi'],
   createFirstFarm: ['Gadzira purazi', 'Dala ipulazi'],

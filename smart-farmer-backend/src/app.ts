@@ -112,9 +112,12 @@ export function buildApp(
       }
     });
     const central = identityConfig(origin);
-    const ctx = createContext(db, central);
-    registerOnesa(app, ctx, central);
-    registerIdentity(app, ctx);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
+    const testRuntime = process.env.NODE_ENV === "test" || (process.env.NODE_ENV !== "production" && Boolean(process.env.NODE_TEST_CONTEXT));
+    const localCredentials = loopback && testRuntime;
+    const ctx = createContext(db, central, localCredentials);
+    registerOnesa(app, ctx, central, localCredentials);
+    registerIdentity(app, ctx, localCredentials);
     registerAccountDeletion(app, ctx);
     registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
     registerNodeRedPackages(app, ctx, nodeRed);
