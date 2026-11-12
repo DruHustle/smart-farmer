@@ -1,0 +1,11 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn: {id: tab-today}
+- extendedWaitUntil:
+    visible: {id: tab-today, selected: true}
+    timeout: 30000
+- scrollUntilVisible:
+    element: {text: '${ROW}'}
+    direction: DOWN
+    timeout: 30000
+- assertVisible: '${ROW}'

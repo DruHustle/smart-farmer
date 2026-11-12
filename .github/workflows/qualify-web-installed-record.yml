@@ -1,0 +1,128 @@
+name: Web record to installed Smart Farmer
+on:
+  push:
+    branches: [qualify/web-installed-record-20261112]
+permissions:
+  contents: read
+env:
+  CI: 'true'
+  EXPO_NO_TELEMETRY: '1'
+  EXPO_PUBLIC_API_URL: http://127.0.0.1:3001
+  WEB_ORIGIN: http://127.0.0.1:4173
+  LOG_LEVEL: silent
+  NODE_ENV: test
+  NATIVE_FIXTURE_PATH: /tmp/smart-farmer-native-fixture.json
+  NATIVE_OFFLINE_FLAG: /tmp/smart-farmer-native-offline
+jobs:
+  android:
+    name: Record a web observation and open it in the installed Android app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgresql://smart_farmer:test-only@127.0.0.1:5432/smart_farmer_test
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: smart_farmer
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: smart_farmer_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U smart_farmer -d smart_farmer_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - name: Reserve disk for Android compilation and emulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          df -h "$RUNNER_TEMP" > "$RUNNER_TEMP/native-evidence/android-disk.txt"
+          # These unrelated preinstalled toolchains belong only to this disposable runner.
+          # Keep Android SDK/NDK, Java, Node and PostgreSQL intact.
+          sudo rm -rf /usr/share/dotnet /usr/local/.ghcup /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
+      - run: npm ci --prefix smart-farmer-frontend/mobile
+      - run: npm ci --prefix smart-farmer-backend
+      - name: Cache Android compiler dependencies for this native configuration
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: native-gradle-${{ runner.os }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Restore matching native Android debug binary
+        id: android-binary
+        uses: actions/cache/restore@v4
+        with:
+          path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          key: native-android-debug-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
+      - name: Compile native SQLCipher Android debug application
+        if: steps.android-binary.outputs.cache-hit != 'true'
+        working-directory: smart-farmer-frontend/mobile
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          npx expo prebuild --no-install --platform android
+          cd android
+          ./gradlew assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 2>&1 | tee "$RUNNER_TEMP/native-evidence/android-build.log"
+      - name: Save successful Android compilation before UI journeys
+        if: steps.android-binary.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          key: ${{ steps.android-binary.outputs.cache-primary-key }}
+      - name: Release compiler intermediates before installing emulator
+        run: |
+          set -euo pipefail
+          rm -rf smart-farmer-frontend/mobile/android/app/.cxx smart-farmer-frontend/mobile/android/app/build/intermediates/cxx smart-farmer-frontend/mobile/node_modules/react-native/ReactAndroid/.cxx
+          df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
+      - name: Start Farmer with isolated PostgreSQL and Expo services
+        run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh android
+      - name: Create an observation in the real web form and confirm its database row
+        env:
+          VITE_API_URL: http://127.0.0.1:3000
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/record-proof"
+          npm ci --prefix smart-farmer-frontend/web
+          npm run build --prefix smart-farmer-frontend/web
+          (cd smart-farmer-frontend/web && node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4173 --strictPort) > "$RUNNER_TEMP/web-preview.log" 2>&1 &
+          curl --fail --silent --retry 8 --retry-connrefused "$WEB_ORIGIN" > /dev/null
+          node qualification/web-note.mjs
+      - name: Install pinned Maestro CLI
+        run: |
+          curl --fail --location --retry 3 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Read the web observation on the installed app
+        uses: reactivecircus/android-emulator-runner@b530d96654c385303d652368551fb075bc2f0b6b # v2.35.0
+        with:
+          api-level: 36
+          target: google_apis_playstore
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          script: bash qualification/installed-record.sh
+      - name: Preserve the redacted customer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-to-installed-android-observation
+          path: ${{ runner.temp }}/record-proof
+          if-no-files-found: warn
+          retention-days: 7
