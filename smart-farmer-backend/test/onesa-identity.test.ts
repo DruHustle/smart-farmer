@@ -46,7 +46,7 @@ test('Approved Onesa users keep their farm membership and administrators require
   t.after(async()=>{await db.end();await admin.query('DROP SCHEMA '+schema+' CASCADE');await admin.end();});
   for(const sql of (await readdir(new URL('../migrations/',import.meta.url))).sort()) await db.query(await readFile(new URL('../migrations/'+sql,import.meta.url),'utf8'));
   const app=buildApp(db,origin);t.after(()=>app.close());
-  assert.deepEqual((await app.inject('/v1/onesa/config')).json(),{issuer,clientId,callback});
+  assert.deepEqual((await app.inject('/v1/onesa/config')).json(),{issuer,clientId,callback,local_credentials:true});
   let syntheticClient=1;
   // Distinct loopback clients keep this authority matrix independent of the
   // separately tested per-client sign-in rate limit.
@@ -135,4 +135,17 @@ test('Approved Onesa users keep their farm membership and administrators require
   assert.equal(finalIdentity.userId,a.userId);
   assert.equal((await app.inject({method:'DELETE',url:'/v1/sessions/current',headers:finalHeaders})).statusCode,204);
   assert.equal((await app.inject({url:'/v1/me',headers:finalHeaders})).statusCode,401);
+});
+
+test('Public Farmer requires Portal even when its issuer is unavailable', async t => {
+  // Database access would indicate a legacy credential operation ran.
+  const db = {query: async () => {throw Error('Unexpected credential query');}} as unknown as pg.Pool;
+  const app = buildApp(db, 'https://farmer.onesa.eu');
+  t.after(() => app.close());
+  assert.equal((await app.inject('/v1/onesa/config')).json().local_credentials, undefined);
+  for (const url of ['/v1/register','/v1/sessions','/v1/recover','/v1/recovery-codes','/v1/invitations/accept']) {
+    const response = await app.inject({method:'POST',url,payload:{}});
+    assert.equal(response.statusCode, 403, url);
+    assert.equal(response.json().error, 'onesa_sign_in_required');
+  }
 });

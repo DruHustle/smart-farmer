@@ -13,6 +13,8 @@ Smart Farmer supports crop and livestock work, offline field records, connected 
 
 Use Node 24 and the committed lockfiles. The backend uses PostgreSQL 17; native builds require the documented Android/iOS toolchains. iPad uses the same iOS application. There is no shared application runtime package across backend, web or mobile.
 
+Sign in or create an account in Company Portal. Smart Farmer uses the approved Portal identity and the memberships granted to it. Existing records and pending offline work are preserved. A deployment with unavailable Portal configuration cannot create a Farmer password account. Password fixtures are confined to a test runtime with a loopback web origin.
+
 ## Workflows
 
 The application includes active or new crop seasons; sourced planning and approved task templates; broilers, layers, chicken breeding/hatching, rabbit breeding/grow-out and fish nursery/hatchery/grow-out; inventory, expenses, budgets, sales, recorded receipts and reports; versioned corrections and traceability; stock/animal marketplace reservations; service quotes, deposits, schedules, work and completion; private camera events and viewing; maintenance and verified equipment controls.

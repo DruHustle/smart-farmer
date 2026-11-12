@@ -62,10 +62,10 @@ test('authentication limits separate trusted clients and ignore forged headers f
     headers:{'x-forwarded-for':forwarded}, payload:{}
   });
   try {
-    for (let i=0; i<10; i++) assert.equal((await post('192.0.2.10','198.51.100.1')).statusCode,400);
+    for (let i=0; i<10; i++) assert.equal((await post('192.0.2.10','198.51.100.1')).statusCode,403);
     assert.equal((await post('192.0.2.10','198.51.100.1')).statusCode,429);
-    assert.equal((await post('192.0.2.10','198.51.100.2')).statusCode,400);
-    for (let i=0; i<10; i++) assert.equal((await post('192.0.2.11',`203.0.113.${i+1}`)).statusCode,400);
+    assert.equal((await post('192.0.2.10','198.51.100.2')).statusCode,403);
+    for (let i=0; i<10; i++) assert.equal((await post('192.0.2.11',`203.0.113.${i+1}`)).statusCode,403);
     assert.equal((await post('192.0.2.11','203.0.113.99')).statusCode,429);
   } finally {
     await app.close();

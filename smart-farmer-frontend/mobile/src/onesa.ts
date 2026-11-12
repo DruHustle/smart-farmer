@@ -44,5 +44,5 @@ export async function redeemOnesa(incoming:string,origin:string):Promise<Session
   const reply=await createApi(origin).request<Omit<Session,'origin'>>('/v1/onesa/sessions','POST',
     {code,verifier:pending.verifier,language:pending.language});
   // Native storage supplies its own account-bound database key.
-  return {origin,token:reply.token,userId:reply.userId,username:reply.username,language:reply.language,expiresAt:reply.expiresAt};
+  return {origin,portalAccountUrl:new URL('/account',pending.issuer).href,token:reply.token,userId:reply.userId,username:reply.username,language:reply.language,expiresAt:reply.expiresAt};
 }

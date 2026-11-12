@@ -102,6 +102,21 @@ assert.equal((await (await fetch(base+'/version')).json()).revision,process.argv
 assert.deepEqual(await (await fetch(base+'/v1/onesa/config')).json(),{
   clientId:'arm64-fixture',issuer:'https://portal.onesa.eu/api/v1/identity',callback:'https://farmer.onesa.eu/auth/onesa/callback',
 })
+for (const route of ['/v1/register','/v1/sessions','/v1/recover','/v1/invitations/accept']) {
+  const response=await fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  assert.equal(response.status,403,route)
+  assert.equal((await response.json()).error,'onesa_sign_in_required',route)
+}
+JS
+
+# Seed and exercise the media/restore journey in a separate, loopback-only test process.
+start --memory 384m --read-only --tmpfs /tmp "${app_env[@]}" "${mount[@]}" \
+  -e NODE_ENV=test -e WEB_ORIGIN=http://127.0.0.1:3000 -e HOST=127.0.0.1 "${images[api]}"
+fixture_api=$container
+wait_ok fixture-api "$fixture_api" node -e "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1))"
+docker exec -i "$fixture_api" node --input-type=module - <<'JS'
+import assert from 'node:assert/strict'
+const base='http://127.0.0.1:3000'
 async function post(route, body, expected, token) {
   const headers={'Content-Type':'application/json'}
   if(token) headers.Authorization='Bearer '+token

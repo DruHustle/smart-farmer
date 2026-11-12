@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Linking, Platform, ScrollView, Text, View } from 
 import * as ScreenCapture from 'expo-screen-capture';
 import { openOnesa, redeemOnesa, type OnesaConfig } from '../onesa';
 import { PolicyLink } from '../PolicyLink';
-import { createApi } from '../api';
+import { createApi, isLocalApiHost } from '../api';
 import { errorText, textFor } from '../i18n';
 import type { Language, Session } from '../types';
 import { Button, Card, Choice, Field, Notice, styles } from '../ui';
@@ -20,7 +20,10 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
   const [receipt, setReceipt] = useState<{ code: string; session?: Session } | null>(null);
   const [recoveringUsername, setRecoveringUsername] = useState('');
   const submitting = useRef(false);
-  const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
+  const [portal, setPortal] = useState<{origin: string; config: OnesaConfig} | null>(null);
+  const onesa = portal?.origin === origin ? portal.config : null;
+  const [localOrigin, setLocalOrigin] = useState<string | null>(null);
+  const allowLocal = localOrigin === origin;
   const [configFailed, setConfigFailed] = useState(false);
   const [configAttempt, setConfigAttempt] = useState(0);
   const onSessionRef = useRef(onSession);
@@ -28,9 +31,14 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
   useEffect(() => {
     let mounted = true;
     let returning = false;
-    setOnesa(null); setConfigFailed(false);
-    void createApi(origin).request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
-      if (mounted && 'issuer' in config) setOnesa(config);
+    setPortal(null); setLocalOrigin(null); setConfigFailed(false);
+    void createApi(origin).request<(OnesaConfig | {enabled:false}) & {local_credentials?:boolean}>('/v1/onesa/config').then(config => {
+      if (!mounted) return;
+      const local = __DEV__ && config.local_credentials === true && isLocalApiHost(new URL(origin).hostname);
+      if (local) setLocalOrigin(origin);
+      if ('issuer' in config && typeof config.issuer === 'string' && config.clientId && config.callback) {
+        setPortal({origin, config});
+      } else if (!local) setConfigFailed(true);
     }).catch(() => { if (mounted) setConfigFailed(true); });
     const handle = async (url: string | null | undefined) => {
       if (!mounted || !url?.startsWith('smartfarmer://onesa/callback?') || returning) return;
@@ -52,7 +60,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
   }, [receipt]);
 
   async function submit() {
-    if (submitting.current) return;
+    if (!allowLocal || submitting.current) return;
     if (!receipt && (!username.trim() || password.length < 12 || (mode === 'register' && !farmName.trim()) || ((mode === 'join' || mode === 'recover') && !code.trim()))) { setError(new Error('required')); return; }
     submitting.current = true;
     setBusy(true); setError(null);
@@ -73,7 +81,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
         setMode('signIn'); setRecoveringUsername(username.trim().toLowerCase()); setCode('');
       }
       const identity = await api.request<Omit<Session, 'origin'>>('/v1/sessions', 'POST', { username: username.trim(), password, deviceName: `Smart Farmer · ${Platform.OS}` });
-      const session = { ...identity, origin };
+      const session: Session = { ...identity, origin, localFixture: true };
       if (mode === 'recover' || recoveringUsername === identity.username) {
         const renewed = await createApi(origin, session.token).request<{ recoveryCode: string }>('/v1/recovery-codes', 'POST', { password });
         setReceipt({ code: renewed.recoveryCode, session }); setRecoveringUsername(''); setPassword('');
@@ -86,20 +94,27 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
   return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { maxWidth: 580, paddingTop: 28 }]}>
     <View style={styles.between}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} value={language} onChange={onLanguage} closeLabel={t.close} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /></View>
     <Text style={styles.title} accessibilityRole="header">{t.welcome}</Text><Text style={styles.muted}>{t.intro}</Text>
-    {configFailed && !receipt && mode === 'signIn' && <Card><Notice error text={t.onesa_unavailable}/><Button secondary title={t.retry} onPress={() => setConfigAttempt(value => value + 1)}/></Card>}
-    {onesa && !receipt && mode === 'signIn' && <Button testID="auth-onesa" title={t.onesaSignIn} disabled={busy} onPress={() => {
+    {!configFailed && !onesa && !allowLocal && <Text style={styles.muted} accessibilityRole="text">{t.loading}</Text>}
+    {configFailed && <Card>
+      <Notice error text={t.onesa_unavailable}/>
+      <Button secondary title={t.retry} onPress={() => setConfigAttempt(value => value + 1)}/>
+      <Button secondary title={t.onesaAccount} onPress={() => {
+        void Linking.openURL('https://portal.onesa.eu/account').catch(setError);
+      }}/>
+    </Card>}
+    {onesa && <Button testID="auth-onesa" title={t.onesaSignIn} disabled={busy} onPress={() => {
       if (submitting.current) return;
       submitting.current=true; setBusy(true); setError(null);
       void openOnesa(origin,onesa,language).then(async session => { if (session) await onSessionRef.current(session); }).catch(setError).finally(() => {submitting.current=false;setBusy(false);});
     }}/>}
     {error ? <Notice text={errorText(language, error)} error /> : null}
-    {receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
+    {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
       <Choice label={t.choose} value={mode} onChange={value => { setMode(value); setError(null); setCode(''); setRecoveringUsername(''); }} closeLabel={t.close} options={(['signIn', 'register', 'join', 'recover'] as const).map(value => ({ value, label: t[value] }))} />
       <Field testID="auth-username" label={t.username} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} autoComplete="username" maxLength={80} />
       <Field testID="auth-password" label={t.password} hint={t.passwordHint} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'} maxLength={128} />
       {mode === 'register' ? <Field label={t.farmName} value={farmName} onChangeText={setFarmName} maxLength={100} /> : null}
       {mode === 'join' || mode === 'recover' ? <Field label={mode === 'join' ? t.invitationCode : t.recoveryCode} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} secureTextEntry /> : null}
       <Button testID="auth-submit" title={t.submit} busy={busy} onPress={() => { void submit(); }} />
-    </Card>}<Text style={styles.caption}>{t.translations}</Text><PolicyLink language={language}/>
+    </Card>)}<Text style={styles.caption}>{t.translations}</Text><PolicyLink language={language}/>
   </ScrollView></KeyboardAvoidingView>;
 }

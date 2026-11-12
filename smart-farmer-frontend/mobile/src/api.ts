@@ -2,11 +2,15 @@ export class ApiError extends Error {
   constructor(public readonly status: number, public readonly code: string) { super(code); }
 }
 
+export function isLocalApiHost(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '10.0.2.2', '[::1]'].includes(hostname);
+}
+
 export function apiOrigin(value: string | undefined, development: boolean): string {
   if (!value) throw new Error('api_unconfigured');
   let url: URL;
   try { url = new URL(value); } catch { throw new Error('api_unconfigured'); }
-  const local = ['localhost', '127.0.0.1', '10.0.2.2', '[::1]'].includes(url.hostname);
+  const local = isLocalApiHost(url.hostname);
   if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) throw new Error('api_unconfigured');
   if (url.protocol !== 'https:' && !(development && local && url.protocol === 'http:')) throw new Error('https_required');
   return url.origin;
