@@ -1,0 +1,14 @@
+appId: eu.onesa.smartfarmer
+---
+- stopApp
+- launchApp:
+    stopApp: false
+- openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
+- tapOn:
+    text: '^Open$'
+    optional: true
+- extendedWaitUntil:
+    visible: {id: device-unlock}
+    timeout: 90000
+- assertVisible: {id: device-reauthenticate}
+- assertNotVisible: {id: tab-today}

@@ -1,0 +1,19 @@
+appId: eu.onesa.smartfarmer
+---
+- tapOn: {id: device-unlock}
+- extendedWaitUntil:
+    visible: '(?i).*(enter|confirm|verify|use).*(pin|screen lock).*'
+    timeout: 15000
+- runFlow:
+    when:
+      visible: '(?i)^use (pin|screen lock)$'
+    commands:
+      - tapOn: '(?i)^use (pin|screen lock)$'
+- extendedWaitUntil:
+    visible: '(?i).*(enter|confirm|verify).*pin.*'
+    timeout: 15000
+- inputText: ${TEST_LOCK}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: {id: tab-today}
+    timeout: 30000
