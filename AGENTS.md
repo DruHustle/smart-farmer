@@ -33,8 +33,17 @@ Onesa Portal is the identity authority. Bind identities by issuer and subject,
 never email alone. Approved ordinary accounts receive farm access only through
 explicit memberships; global administrators still require current MFA.
 Preserve PKCE/state, live revocation, return destinations and retry identifiers.
+An explicit central authority rejection permanently retires the local session;
+restoring access requires a fresh sign-in. Provider unavailability remains
+retryable and must not be treated as a revoked grant.
 Native signing, physical commissioning, provider integrations and fluent human
 language approval need actual evidence and their named owners.
+
+API 37 gates Expo debug bundle access with `ACCESS_LOCAL_NETWORK`; native
+acceptance grants it after install and each disposable app-data reset. Keep
+native browser interactions and permission setup separate from product auth
+rules. Record actual OS callback, scoped membership, restart and live-authority
+evidence; a successful web or JavaScript check does not establish those journeys.
 
 As of 11 November 2026, customer/native qualification is in draft PR #24;
 inspect its exact head and any stacked native PRs before duplicating work.

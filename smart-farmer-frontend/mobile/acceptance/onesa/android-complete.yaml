@@ -1,0 +1,54 @@
+appId: eu.onesa.smartfarmer
+env:
+  FLOW_STATE: cold
+---
+- tapOn:
+    text: '^Open$'
+    optional: true
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'cancel'}
+    commands:
+      - extendedWaitUntil:
+          visible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.])$'
+          timeout: 30000
+      - assertVisible: {id: auth-onesa}
+      - assertNotVisible: {id: tab-forum}
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'cold'}
+    commands:
+      - extendedWaitUntil:
+          visible: {id: first-farm-invitation}
+          timeout: 45000
+      - assertNotVisible: {id: tab-forum}
+      - tapOn: {id: first-farm-invitation}
+      - inputText: ${INVITE}
+      - runFlow: ../dismiss-keyboard.yaml
+      - scrollUntilVisible:
+          element: {id: first-farm-join}
+          direction: DOWN
+      - tapOn: {id: first-farm-join}
+      - extendedWaitUntil:
+          visible: {id: tab-forum}
+          timeout: 45000
+      - assertVisible: ${FARM_NAME}
+      - tapOn: {id: tab-forum}
+      - extendedWaitUntil:
+          visible: {id: forum-new}
+          timeout: 30000
+      - scrollUntilVisible:
+          element: ${FORUM_TITLE}
+          direction: DOWN
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'active'}
+    commands:
+      - extendedWaitUntil:
+          visible: {id: forum-new}
+          timeout: 45000
+      - assertVisible: {id: tab-forum, selected: true}
+      - assertVisible: ${FARM_NAME}
+      - scrollUntilVisible:
+          element: ${FORUM_TITLE}
+          direction: DOWN

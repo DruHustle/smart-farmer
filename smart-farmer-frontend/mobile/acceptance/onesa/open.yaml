@@ -14,7 +14,7 @@ appId: eu.onesa.smartfarmer
       platform: Android
     commands:
       - tapOn:
-          text: '^(Use without an account|Accept & continue|Continue without an account)$'
+          text: '^(Use without an account|Accept & continue|Continue without an account|Stay signed out)$'
           optional: true
       - tapOn:
           text: '^(No thanks|Got it)$'

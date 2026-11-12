@@ -5,6 +5,13 @@ dir="$PWD/smart-farmer-frontend/mobile/acceptance/onesa"
 fixture="$RUNNER_TEMP/onesa-device/ready.json"
 evidence="$RUNNER_TEMP/onesa-evidence"
 mkdir -p "$evidence"
+grant_android_debug_network() {
+  # API 37 gates Expo's localhost bundle behind this runtime grant.
+  # Clearing the disposable debug app removes it; older images lack the permission.
+  if [[ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 37 ]]; then
+    adb shell pm grant eu.onesa.smartfarmer android.permission.ACCESS_LOCAL_NETWORK
+  fi
+}
 case "$platform" in
   ios)
     device=$(xcrun simctl list devices available -j | node -e "let t='';process.stdin.on('data',s=>t+=s).on('end',()=>console.log(Object.values(JSON.parse(t).devices).flat().find(d=>d.isAvailable&&d.name.startsWith('iPhone')).udid))")
@@ -23,6 +30,7 @@ case "$platform" in
     done
     adb install -r smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
     device=$(adb get-serialno)
+    grant_android_debug_network
     # Reading the actual app's sign-in config needs only the local debug API;
     # its signed-out screenshot can survive a separate OS trust failure.
     private="$RUNNER_TEMP/onesa-device/before-trust"
@@ -49,6 +57,20 @@ esac
 # Each role starts with a freshly cleared browser and Farmer data. Keep every
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
+run_identity_flow() {
+  local phase_state="$1" phase_role="$2" phase_dir="$3"
+  shift 3
+  if [[ "$platform" == android ]]; then
+    # One UI driver at a time. Chrome DOM interaction uses the already-open OS
+    # browser and its real cookies; it never extracts or injects a callback.
+    mkdir -p "$phase_dir/entry" "$phase_dir/complete"
+    maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/android-entry.yaml" > "$phase_dir/entry.log" 2>&1 &&
+      node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" > "$phase_dir/browser.log" 2>&1 &&
+      maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
+  else
+    maestro --device "$device" test "$@" --test-output-dir "$phase_dir" --debug-output "$phase_dir" "$dir/$phase_state.yaml" > "$phase_dir/run.log" 2>&1
+  fi
+}
 status=0
 for role in cancel member admin; do
   if [[ "$platform" == ios ]]; then
@@ -60,6 +82,7 @@ for role in cancel member admin; do
   else
     adb shell pm clear com.android.chrome
     adb shell pm clear eu.onesa.smartfarmer
+    grant_android_debug_network
     adb shell am start -n eu.onesa.smartfarmer/.MainActivity
   fi
   states=(cancel)
@@ -76,7 +99,7 @@ for role in cancel member admin; do
     # Add arguments through positional parameters, including the empty cancel set
     # on the older Bash shipped by macOS runners.
     set -- ${opts[@]+"${opts[@]}"}
-    if maestro --device "$device" test "$@" --test-output-dir "$private" --debug-output "$private" "$dir/$state.yaml" > "$private/run.log" 2>&1 &&
+    if run_identity_flow "$state" "$role" "$private" "$@" &&
        { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; }; then
       reference="${mapped:-}"
       echo "$role $state PASS" | tee -a "$evidence/$platform-results.txt"
