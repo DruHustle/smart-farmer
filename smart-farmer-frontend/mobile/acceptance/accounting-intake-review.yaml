@@ -10,6 +10,32 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: invoice-documents-refresh
+# A previously cached list can still report this upload as queued on iOS.
+# Repeating this read-only refresh does not resubmit the image or draft.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'invoice-scan-review-${DOCUMENT_ID}'
+          direction: DOWN
+          timeout: 30000
+      - runFlow:
+          when:
+            visible:
+              id: 'invoice-scan-(queued|processing)'
+          commands:
+            - scrollUntilVisible:
+                centerElement: true
+                element:
+                  id: invoice-documents-refresh
+                  enabled: true
+                direction: UP
+                timeout: 30000
+            - tapOn:
+                id: invoice-documents-refresh
+                enabled: true
 - scrollUntilVisible:
     element:
       id: invoice-scan-ready
