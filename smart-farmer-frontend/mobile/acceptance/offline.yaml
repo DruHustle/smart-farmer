@@ -70,8 +70,9 @@ appId: eu.onesa.smartfarmer
           # Pass the same URI on this cold launch without an external Open dialog.
           arguments:
             "--initialUrl": smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1
-      # A cold debug launch can stop in Expo after the queue is already saved.
-      # Open only the warmed local bundle when the development chooser is visible.
+      # Expo may briefly show the recent local bundle while opening it itself.
+      # If the chooser persists, resume that exact bundle. A direct transition
+      # to the locked workspace needs no tap; both lock checks below still apply.
       - extendedWaitUntil:
           visible: '^(Pinda zvakare paindaneti|Ngena futhi nge-inthanethi|Enter URL manually)$'
           timeout: 120000
@@ -79,9 +80,9 @@ appId: eu.onesa.smartfarmer
           when:
             visible: '^Enter URL manually$'
           commands:
-            - assertVisible: '^Development Build$'
             - tapOn:
                 text: '^http://127\.0\.0\.1:8081/index\.bundle\?platform=ios&dev=true&hot=false&lazy=true&transform\.engine=hermes&transform\.bytecode=1&transform\.routerRoot=app&unstable_transformProfile=hermes-stable$'
+                optional: true
 - extendedWaitUntil:
     visible:
       id: device-reauthenticate
