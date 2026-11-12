@@ -22,3 +22,14 @@ appId: eu.onesa.smartfarmer
       - tapOn:
           text: '^Open$'
           optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # The real return link above completes the browser-to-app transition.
+      # Target the expected live app before the next native hierarchy query;
+      # do not stop it, clear private state, change permissions or inject a URL.
+      - launchApp:
+          appId: eu.onesa.smartfarmer
+          stopApp: false
+          permissions: {}
