@@ -23,6 +23,7 @@ function Root() {
   const [repository, setRepository] = useState<LocalRepository | null>(null);
   const [locked, setLocked] = useState(true);
   const [expired, setExpired] = useState(false);
+  const accessInvalidated = useRef(false);
   const [starting, setStarting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [sessionGate] = useState(() => createSessionGate(setBusy, traceSession));
@@ -35,7 +36,11 @@ function Root() {
   let configurationError: unknown = null;
   try { origin = apiOrigin(process.env.EXPO_PUBLIC_API_URL, __DEV__); } catch (value) { configurationError = value; }
 
-  const expire = useCallback(() => { setExpired(true); setLocked(true); }, []);
+  const expire = useCallback(() => {
+    accessInvalidated.current = true;
+    setExpired(true);
+    setLocked(true);
+  }, []);
 
   async function getRepository(value: Session) {
     const key = `${value.origin}\n${value.userId}`;
@@ -88,6 +93,7 @@ function Root() {
   async function authenticated(value: Session) {
     const local = await getRepository(value);
     await saveLanguage(value.language); await saveSession(value);
+    accessInvalidated.current = false;
     setSession(value); setRepository(local); setLanguage(value.language); setExpired(false); setLocked(false); setError(null);
   }
 
@@ -96,10 +102,13 @@ function Root() {
     try {
       await sessionGate.run('unlock', async () => {
         setError(null);
-        if (await deviceUnlock(t.unlock, t.cancel)) {
-          setRepository(await getRepository(session));
-          setLocked(false);
-        }
+        if (!await deviceUnlock(t.unlock, t.cancel)) return;
+        const canUnlock = () => !accessInvalidated.current && Date.parse(session.expiresAt) > Date.now();
+        if (!canUnlock()) { expire(); return; }
+        const local = await getRepository(session);
+        if (!canUnlock()) { expire(); return; }
+        setRepository(local);
+        setLocked(false);
       });
     } catch (value) { setError(value); }
   }
@@ -150,8 +159,8 @@ function Root() {
   if (configurationError) return <ScrollView contentContainerStyle={styles.content}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} closeLabel={t.close} value={language} onChange={changeLanguage} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /><Notice text={errorText(language, configurationError)} error /></ScrollView>;
   if (!session) return <AuthScreen origin={origin} language={language} onLanguage={changeLanguage} onSession={authenticated} />;
   return <View style={styles.page}>
-    {repository && !locked ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
-    <Sheet title={t.locked} visible={locked} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
+    {repository && !locked && !expired ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
+    <Sheet title={t.locked} visible={locked || expired} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
       <Text style={styles.heading}>{session.username}</Text><Text style={styles.text}>{expired ? t.sessionExpired : t.unlockHint}</Text>
       {error ? <Notice text={errorText(language, error)} error /> : null}
       {!expired ? <Button testID="device-unlock" title={t.unlock} busy={busy} onPress={() => { void unlock(); }} /> : null}
