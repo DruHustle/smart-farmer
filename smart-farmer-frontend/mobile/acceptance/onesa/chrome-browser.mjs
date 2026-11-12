@@ -59,7 +59,10 @@ async function run(){
   const link=page.getByRole('link',{name:/^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$/});
   await link.waitFor({state:'visible'});
   assert.equal(new URL(page.url()).origin,farmerOrigin);
-  await link.click();
+  // This link hands control to another app, not a completed web navigation.
+  // Older OS Chrome can keep that navigation pending after MainActivity opens.
+  // The foreground-app fence below and native completion flow verify the return.
+  await link.click({noWaitAfter:true});
   const until=Date.now()+20000;let activated=false;
   while(Date.now()<until){
     if(/topResumedActivity=.*eu\.onesa\.smartfarmer\/\.MainActivity/.test(adb('shell','dumpsys activity activities | sed -n "/topResumedActivity=/p"'))){activated=true;break;}
