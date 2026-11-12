@@ -51,7 +51,11 @@ if __name__ == "__main__":
     if len(sys.argv) != 4 or sys.argv[3] not in ("iphone", "ipad"):
         sys.exit("Specify the test report, screenshot and iPhone or iPad layout.")
     failures = [e.text for e in ET.parse(sys.argv[1]).findall(".//failure")]
-    if failures != ["Assertion is false: id: tab-record is visible"]:
+    record_checkpoints = {
+        "Assertion is false: id: tab-record is visible",
+        "Assertion is false: id: tab-record, selected is visible",
+    }
+    if len(failures) != 1 or failures[0] not in record_checkpoints:
         sys.exit("The device did not stop at the expected post-login assertion.")
     point = not_now_point(sys.argv[2], sys.argv[3])
     if not point:
