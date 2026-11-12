@@ -1,6 +1,6 @@
 // Emit a fixed vocabulary of screen landmarks. Browser hierarchies and Maestro
 // failure details can contain PKCE values or synthetic credentials.
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync,existsSync,readdirSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 const file = join(process.argv[2],'hierarchy.json');
 const text = existsSync(file) ? readFileSync(file,'utf8') : '';
@@ -24,3 +24,58 @@ for (const phase of ['run','entry','browser','complete']) {
   console.log('Failed phase: '+phase);
   console.log('Failed command landmarks: '+(targets.filter(item=>failed.toLowerCase().includes(item.toLowerCase())).join(', ') || 'none identified'));
 }
+
+// Preserve only known failure classes and unfinished command categories. iOS
+// driver failures can leave commands RUNNING and emit no useful console line.
+// These private files are never copied or printed; values are not output labels.
+const categories = new Set();
+const unfinished = new Set();
+const errorKinds = [
+  ['driver-unreachable', /DeviceUnreachable|XCUITestServerError|XCTestServerError|ConnectException|Connection refused|SocketTimeoutException/i],
+  ['ios-snapshot', /Failed to get matching snapshots|Timed out while evaluating UI query|SafariViewService is not running/i],
+  ['assertion', /Assertion is false|No visible element found|Element not found/i],
+  ['timeout', /TimeoutException|timed out/i],
+];
+const commandKinds = {assertConditionCommand:'assert-visibility',tapOnElement:'tap',inputTextCommand:'input',scrollUntilVisible:'scroll',runFlowCommand:'run-flow',launchAppCommand:'launch'};
+function commandStage(command) {
+  const text = JSON.stringify(command);
+  const assertion = command.assertConditionCommand?.condition?.visible?.textRegex;
+  if (typeof assertion==='string' && (assertion==='^${EMAIL}$' || /^\^[^\s@^$"/<>]+@[^\s@^$"/<>]+\$$/.test(assertion))) return 'auth-email-readback';
+  if (/Authenticator or recovery code/.test(text)) return 'auth-mfa';
+  if (/Wants to Use.*to Sign In/.test(text)) return 'browser-consent';
+  if (/Dzokera muSmart Farmer|Buyela ku-Smart Farmer/.test(text)) return 'callback-return';
+  if (/first-farm-invitation|first-farm-join|tab-forum|forum-new/.test(text)) return 'native-workspace';
+  if (/auth-onesa/.test(text)) return 'native-sign-in';
+  if (/Continue as/.test(text)) return 'browser-sso';
+  if (/Email address/.test(text)) return 'auth-email-field';
+  if (/Password/.test(text)) return 'auth-password-field';
+  return 'unclassified';
+}
+let inspected = 0;
+function inspectPrivate(directory,depth=0) {
+  if (depth>4 || inspected>=24) return;
+  for (const entry of readdirSync(directory,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))) {
+    if (inspected>=24) break;
+    const file = join(directory,entry.name);
+    if (entry.isDirectory()) { inspectPrivate(file,depth+1); continue; }
+    if (!entry.isFile() || !/^(commands[.]json|maestro[.]log|device-xctest[.]log|xctest_runner_[0-9_-]+[.]log)$/.test(entry.name)) continue;
+    inspected++;
+    if (statSync(file).size>16*1024*1024) continue;
+    const text = readFileSync(file,'utf8');
+    if (entry.name==='commands.json') {
+      let commands; try { commands=JSON.parse(text); } catch { categories.add('invalid-command-diagnostic'); continue; }
+      if (!Array.isArray(commands)) { categories.add('invalid-command-diagnostic'); continue; }
+      for (const row of commands) {
+        const status=row?.metadata?.status;
+        if (!['FAILED','RUNNING'].includes(status)) continue;
+        const command=row?.command;
+        if (!command || typeof command!=='object') continue;
+        const kind=Object.keys(commandKinds).find(key=>Object.hasOwn(command,key));
+        unfinished.add((kind ? commandKinds[kind] : 'unclassified')+' / '+commandStage(command)+' / '+status.toLowerCase());
+      }
+    } else for (const [label,pattern] of errorKinds) if (pattern.test(text)) categories.add(label);
+  }
+}
+try { inspectPrivate(process.argv[2]); } catch { categories.add('unreadable-private-diagnostic'); }
+if (categories.size) console.log('Diagnostic failure categories: '+[...categories].sort().join(', '));
+if (unfinished.size) console.log('Unfinished command categories: '+[...unfinished].sort().join(', '));
