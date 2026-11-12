@@ -1,13 +1,15 @@
 // Qualification only: operate the already-open OS Chrome tab, never inject a callback.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {isAbsolute,basename} from 'node:path';
 const {chromium}=createRequire(new URL('../../../web/package.json',import.meta.url))('playwright');
-const [role,state,ready,device]=process.argv.slice(2);
+const [role,state,ready,device,targetReceipt]=process.argv.slice(2);
 assert(['cancel','member','admin'].includes(role));
 assert(['cancel','cold','active'].includes(state));
 assert(/^emulator-\d+$/.test(device||''),'Use the isolated qualification emulator');
+assert(isAbsolute(targetReceipt||'')&&basename(targetReceipt)==='browser-target.json','Expected private phase receipt path');
 const fixture=JSON.parse(readFileSync(ready,'utf8'));
 function origin(name,fallback){const value=process.env[name]||fallback,url=new URL(value);assert(url.origin===value&&url.protocol==='https:'&&url.port&&['localhost','127.0.0.1'].includes(url.hostname),'Expected exact fixture HTTPS loopback origin');return value;}
 const portalOrigin=origin('PORTAL_TEST_ORIGIN','https://localhost:46501');
@@ -58,7 +60,15 @@ async function run(){
   }
   const link=page.getByRole('link',{name:/^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$/});
   await link.waitFor({state:'visible'});
-  assert.equal(new URL(page.url()).origin,farmerOrigin);
+  const returnLocation=new URL(page.url());
+  assert.equal(returnLocation.origin,farmerOrigin);
+  assert.equal(returnLocation.pathname,'/auth/onesa/callback');
+  const targetSession=await page.context().newCDPSession(page);
+  const {targetInfo}=await targetSession.send('Target.getTargetInfo');
+  await targetSession.detach();
+  // Only an opaque debugging ID is retained. Cleanup is invoked by the runner
+  // after native UI, membership and stable-identity assertions have all passed.
+  writeFileSync(targetReceipt,JSON.stringify({version:1,device,targetId:targetInfo.targetId,origin:farmerOrigin,pathname:returnLocation.pathname}),{mode:0o600,flag:'wx'});
   // This link hands control to another app, not a completed web navigation.
   // Older OS Chrome can keep that navigation pending after MainActivity opens.
   // The foreground-app fence below and native completion flow verify the return.

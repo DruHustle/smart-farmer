@@ -65,7 +65,7 @@ run_identity_flow() {
     # browser and its real cookies; it never extracts or injects a callback.
     mkdir -p "$phase_dir/entry" "$phase_dir/complete"
     maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/android-entry.yaml" > "$phase_dir/entry.log" 2>&1 &&
-      node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" > "$phase_dir/browser.log" 2>&1 &&
+      node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" "$phase_dir/browser-target.json" > "$phase_dir/browser.log" 2>&1 &&
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
     maestro --device "$device" test "$@" --test-output-dir "$phase_dir" --debug-output "$phase_dir" "$dir/$phase_state.yaml" > "$phase_dir/run.log" 2>&1
@@ -100,7 +100,8 @@ for role in cancel member admin; do
     # on the older Bash shipped by macOS runners.
     set -- ${opts[@]+"${opts[@]}"}
     if run_identity_flow "$state" "$role" "$private" "$@" &&
-       { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; }; then
+       { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; } &&
+       { [[ "$platform" != android ]] || node "$dir/chrome-complete.mjs" "$device" "$private/browser-target.json" > "$private/browser-cleanup.log" 2>&1; }; then
       reference="${mapped:-}"
       echo "$role $state PASS" | tee -a "$evidence/$platform-results.txt"
     else
