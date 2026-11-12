@@ -124,7 +124,11 @@ for role in cancel member admin; do
       status=1
       echo "$role $state FAIL" | tee -a "$evidence/$platform-results.txt"
       # List the matching visible controls (never screen text, tokens or input).
-      maestro --device "$device" hierarchy > "$private/hierarchy.json" 2>/dev/null || true
+      if [[ "$platform" == ios ]]; then
+        maestro --device "$device" hierarchy --no-reinstall-driver > "$private/hierarchy.json" 2>/dev/null || true
+      else
+        maestro --device "$device" hierarchy > "$private/hierarchy.json" 2>/dev/null || true
+      fi
       node "$dir/redact.mjs" "$private" | tee -a "$evidence/$platform-results.txt"
       if [[ "$state" == cold ]]; then echo "$role active UNTESTED (cold did not complete)" | tee -a "$evidence/$platform-results.txt"; fi
       break

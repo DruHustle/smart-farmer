@@ -60,15 +60,36 @@ run_native_login() {
   # Capture the current system UI. Accept only the specific blocked assertion
   # and full matching AutoFill sheet; never replay the completed sign-in.
   xcrun simctl io "$device" screenshot "$prompt_image"
-  if ! prompt_point=$(python3 "$NATIVE_DIR/acceptance/ios-password-sheet.py" "$report" "$prompt_image" "$layout"); then
-    rm -f "$prompt_image"
-    return 1
+  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py"
+  local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
+  if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
+    # The completed XCTest run may have yielded focus. Require the exact
+    # blocking sheet in the assertion's own frame before returning to Farmer.
+    local failed_frames=("$EVIDENCE/$label/login/screenshots"/step-*-assertCondition-tab-record.png)
+    if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
+       ! python3 "$check" "$report" "${failed_frames[0]}" "$layout" > /dev/null; then
+      rm -f "$prompt_image"
+      return 1
+    fi
+    xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
+    xcrun simctl io "$device" screenshot "$prompt_image" || return 1
+    if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
+      # Never tap coordinates from the old frame. Only the original record
+      # assertions may continue if the app now shows its signed-in workspace.
+      resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+    fi
   fi
-  mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+  set --
+  if [[ -n "$prompt_point" ]]; then
+    set -- -e NOT_NOW_POINT="$prompt_point"
+    mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+  else
+    rm -f "$prompt_image"
+  fi
   mv "$report" "$EVIDENCE/$label-before-password-sheet.xml"
-  maestro --device "$device" test --no-reinstall-driver -e NOT_NOW_POINT="$prompt_point" \
-    --format junit --output "$report" --test-output-dir "$EVIDENCE/$layout-after-password-sheet" \
-    "$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
+  maestro --device "$device" test --no-reinstall-driver "$@" \
+    --format junit --output "$report" --test-output-dir "$EVIDENCE/$label-after-password-sheet" \
+    "$resume"
 }
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
