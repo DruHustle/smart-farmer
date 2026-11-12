@@ -1,4 +1,4 @@
-"""Locate the decline button on the observed English iPad AutoFill sheet."""
+"""Locate the decline button on the observed English iOS AutoFill sheet."""
 import csv
 import io
 import subprocess
@@ -7,8 +7,10 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 
-def not_now_point(image):
-    tsv = subprocess.check_output(["tesseract", image, "stdout", "-l", "eng", "tsv"],
+def not_now_point(image, device):
+    # The iPhone uses separate same-row buttons. Sparse-text mode reads both.
+    mode = ["--psm", "11"] if device == "iphone" else []
+    tsv = subprocess.check_output(["tesseract", image, "stdout", "-l", "eng", *mode, "tsv"],
                                   text=True, stderr=subprocess.DEVNULL)
     words_by_line = defaultdict(list)
     page_size = None
@@ -36,16 +38,22 @@ def not_now_point(image):
         return None
     width, height = page_size
     title, save, decline = (matches[k] for k in ("save password?", "save", "not now"))
-    if not title[1] < save[1] < decline[1] or abs(save[0] - decline[0]) > width * 0.1:
+    if device == "iphone":
+        if not (title[1] < min(save[1], decline[1]) and decline[0] < save[0]
+                and abs(save[1] - decline[1]) <= height * 0.02):
+            return None
+    elif not (title[1] < save[1] < decline[1] and abs(save[0] - decline[0]) <= width * 0.1):
         return None
     return f"{round(100 * decline[0] / width)}%,{round(100 * decline[1] / height)}%"
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 4 or sys.argv[3] not in ("iphone", "ipad"):
+        sys.exit("Specify the test report, screenshot and iPhone or iPad layout.")
     failures = [e.text for e in ET.parse(sys.argv[1]).findall(".//failure")]
     if failures != ["Assertion is false: id: tab-record is visible"]:
-        sys.exit("The iPad did not stop at the expected post-login assertion.")
-    point = not_now_point(sys.argv[2])
+        sys.exit("The device did not stop at the expected post-login assertion.")
+    point = not_now_point(sys.argv[2], sys.argv[3])
     if not point:
-        sys.exit("The current iPad screenshot does not identify the system password sheet.")
+        sys.exit("The current screenshot does not identify the system password sheet.")
     print(point)

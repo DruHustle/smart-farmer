@@ -51,12 +51,31 @@ start_native_log() {
   node "$NATIVE_DIR/acceptance/darwin-thread-watch.cjs" "$native_label" > "$native_thread_output" 2>/dev/null &
   NATIVE_THREAD_WATCH_PID=$!
 }
+run_native_login() {
+  local device="$1" layout="$2" label="$3"
+  local report="$EVIDENCE/$label.xml" prompt_image="$RUNNER_TEMP/$layout-current-password-sheet.png" prompt_point
+  if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/login.yaml"; then
+    return 0
+  fi
+  # Capture the current system UI. Accept only the specific blocked assertion
+  # and full matching AutoFill sheet; never replay the completed sign-in.
+  xcrun simctl io "$device" screenshot "$prompt_image"
+  if ! prompt_point=$(python3 "$NATIVE_DIR/acceptance/ios-password-sheet.py" "$report" "$prompt_image" "$layout"); then
+    rm -f "$prompt_image"
+    return 1
+  fi
+  mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+  mv "$report" "$EVIDENCE/$label-before-password-sheet.xml"
+  maestro --device "$device" test --no-reinstall-driver -e NOT_NOW_POINT="$prompt_point" \
+    --format junit --output "$report" --test-output-dir "$EVIDENCE/$layout-after-password-sheet" \
+    "$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
+}
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
+run_native_login "$NATIVE_PHONE" iphone ios-login
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
@@ -74,21 +93,6 @@ xcrun simctl bootstatus "$NATIVE_TABLET" -b
 xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
 xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
 start_native_log "$NATIVE_TABLET" ios-tablet
-if ! maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --flatten-debug-output --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"; then
-  # The iPad AutoFill sheet is rendered outside the app's accessibility tree.
-  # Only recover the matching failed assertion when the live system image agrees.
-  prompt_image="$RUNNER_TEMP/ipad-current-password-sheet.png"
-  xcrun simctl io "$NATIVE_TABLET" screenshot "$prompt_image"
-  if ! prompt_point=$(python3 "$NATIVE_DIR/acceptance/ipad-password-sheet.py" \
-      "$EVIDENCE/ipad-large-font.xml" "$prompt_image"); then
-    rm -f "$prompt_image"
-    exit 1
-  fi
-  mv "$prompt_image" "$EVIDENCE/ipad-confirmed-system-password-sheet.png"
-  mv "$EVIDENCE/ipad-large-font.xml" "$EVIDENCE/ipad-large-font-before-password-sheet.xml"
-  maestro --device "$NATIVE_TABLET" test --no-reinstall-driver -e NOT_NOW_POINT="$prompt_point" \
-    --format junit --output "$EVIDENCE/ipad-large-font.xml" --test-output-dir "$EVIDENCE/ipad-after-password-sheet" \
-    "$NATIVE_DIR/acceptance/ipad-resume-after-password-sheet.yaml"
-fi
+run_native_login "$NATIVE_TABLET" ipad ipad-large-font
 read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
 maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
