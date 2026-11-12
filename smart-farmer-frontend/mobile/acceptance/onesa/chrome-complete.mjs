@@ -16,7 +16,7 @@ try{
 }finally{closeSync(fd);}
 const origin=process.env.FARMER_TEST_ORIGIN||'https://127.0.0.1:46502',url=new URL(origin);
 assert(url.origin===origin&&url.protocol==='https:'&&url.port&&['localhost','127.0.0.1'].includes(url.hostname));
-assert(receipt.version===1&&receipt.device===device&&receipt.origin===origin&&receipt.pathname==='/auth/onesa/callback');
+assert(receipt.version===1&&receipt.device===device&&receipt.origin===origin&&receipt.pathname==='/');
 assert(typeof receipt.targetId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(receipt.targetId));
 const adb=(...args)=>execFileSync('adb',['-s',device,...args],{encoding:'utf8',timeout:20000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});
 let port,failed=false;
@@ -31,7 +31,7 @@ try{
   assert(matches.length<=1);
   if(matches.length){
     const target=matches[0],location=new URL(target.url);
-    assert(target.type==='page'&&location.origin===origin&&location.pathname==='/auth/onesa/callback','Only the recorded completed Farmer bridge may close');
+    assert(target.type==='page'&&location.origin===origin&&location.pathname==='/'&&!location.search&&!location.hash,'Only the recorded completed Farmer bridge may close');
     const result=await session.send('Target.closeTarget',{targetId:receipt.targetId});
     assert.equal(result.success,true);
   }

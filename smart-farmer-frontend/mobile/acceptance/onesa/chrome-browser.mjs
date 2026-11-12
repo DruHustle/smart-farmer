@@ -62,7 +62,9 @@ async function run(){
   await link.waitFor({state:'visible'});
   const returnLocation=new URL(page.url());
   assert.equal(returnLocation.origin,farmerOrigin);
-  assert.equal(returnLocation.pathname,'/auth/onesa/callback');
+  // Auth.tsx clears the callback URL to / before displaying the native bridge.
+  assert.equal(returnLocation.pathname,'/');
+  assert.equal(returnLocation.search+returnLocation.hash,'');
   const targetSession=await page.context().newCDPSession(page);
   const {targetInfo}=await targetSession.send('Target.getTargetInfo');
   await targetSession.detach();
