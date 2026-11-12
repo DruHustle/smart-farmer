@@ -59,15 +59,47 @@ appId: eu.onesa.smartfarmer
       id: workspace-language
     direction: UP
     timeout: 20000
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: more-sync
-    direction: DOWN
-    timeout: 20000
-- tapOn:
-    id: more-sync
-    enabled: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: more-sync
+          direction: DOWN
+          timeout: 20000
+      - tapOn:
+          id: more-sync
+          enabled: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # Stop scrolling once the read-only queue entry is completely visible.
+      - scrollUntilVisible:
+          element:
+            id: more-sync
+          visibilityPercentage: 100
+          centerElement: false
+          direction: DOWN
+          timeout: 20000
+      - tapOn:
+          id: more-sync
+          enabled: true
+      # A moving list can absorb a tap. The same navigation row may be tapped
+      # once more only while the outbox panel is still absent.
+      - runFlow:
+          when:
+            notVisible: '^Zvakamirira kuenderaniswa$'
+          commands:
+            - tapOn:
+                id: more-sync
+                enabled: true
+                optional: true
+      - extendedWaitUntil:
+          visible: '^Zvakamirira kuenderaniswa$'
+          timeout: 20000
 - extendedWaitUntil:
     visible:
       text: '^Hapana chakamirira kutumirwa[.]$'
