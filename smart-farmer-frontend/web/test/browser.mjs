@@ -90,7 +90,8 @@ try {
   checkpoint('Build applications and migrate isolated database');
   await command('npm', ['run', 'build'], backend);
   await command('npm', ['run', 'migrate'], backend);
-  await command('npm', ['run', 'build'], web, {VITE_API_URL: api});
+  // Exercise the service worker shipped to farmers while the API uses an isolated test database.
+  await command('npm', ['run', 'build'], web, {NODE_ENV: 'production', VITE_API_URL: api});
   server(['--import', resolve(backend, 'node_modules/tsx/dist/loader.mjs'), resolve(web, 'test/browser-server.mjs')], backend);
   server(['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], web);
   await Promise.all([waitUrl(`${api}/ready`), waitUrl(ui)]);
