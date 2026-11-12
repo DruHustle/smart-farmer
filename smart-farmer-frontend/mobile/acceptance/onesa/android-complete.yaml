@@ -1,7 +1,7 @@
 appId: eu.onesa.smartfarmer
-env:
-  FLOW_STATE: cold
 ---
+# device.sh supplies the phase; a YAML default would override its CLI value.
+- assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
 - tapOn:
     text: '^Open$'
     optional: true
