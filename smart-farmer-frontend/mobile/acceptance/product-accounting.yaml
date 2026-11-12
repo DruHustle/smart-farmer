@@ -222,7 +222,12 @@ appId: eu.onesa.smartfarmer
 - assertVisible: "Synthetic native acceptance farm"
 - takeScreenshot: accounting-draft-preview
 - tapOn:
-    id: "sheet-close"
+    id: "invoice-preview-close"
+    enabled: true
+- extendedWaitUntil:
+    notVisible:
+      id: "invoice-preview-close"
+    timeout: 15000
 - runFlow:
     file: accounting-finalize.yaml
     env:
