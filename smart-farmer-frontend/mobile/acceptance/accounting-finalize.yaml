@@ -25,12 +25,34 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "invoice-reviewed"
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: "invoice-confirm-finalize"
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: "invoice-confirm-finalize"
+          direction: DOWN
+          timeout: 30000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # A fully visible footer cannot always be centered in the review sheet.
+      # Scroll only when the reviewed confirmation is not already available.
+      - runFlow:
+          when:
+            notVisible:
+              id: "invoice-confirm-finalize"
+              enabled: true
+          commands:
+            - scrollUntilVisible:
+                element:
+                  id: "invoice-confirm-finalize"
+                  enabled: true
+                direction: DOWN
+                timeout: 30000
 - tapOn:
     id: "invoice-confirm-finalize"
 - extendedWaitUntil:
