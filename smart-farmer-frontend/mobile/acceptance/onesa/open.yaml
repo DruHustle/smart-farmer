@@ -6,9 +6,20 @@ appId: eu.onesa.smartfarmer
     when:
       platform: iOS
     commands:
-      - tapOn:
-          text: "^Continue$"
-          optional: true
+      # The OS consent alert is asynchronous. A generic optional Continue tap
+      # can run before it appears, leaving the browser unopened. Match the
+      # observed native alert, while allowing a retained browser outcome.
+      - extendedWaitUntil:
+          visible: '^(“SmartFarmer” Wants to Use “localhost” to Sign In|Email address|Continue as .*|Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+          timeout: 45000
+      - runFlow:
+          when:
+            visible: '^“SmartFarmer” Wants to Use “localhost” to Sign In$'
+          commands:
+            - tapOn:
+                text: '^Continue$'
+                below: '^“SmartFarmer” Wants to Use “localhost” to Sign In$'
+            - assertNotVisible: '^“SmartFarmer” Wants to Use “localhost” to Sign In$'
 - runFlow:
     when:
       platform: Android
