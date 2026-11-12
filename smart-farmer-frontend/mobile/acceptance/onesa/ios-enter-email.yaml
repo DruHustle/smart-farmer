@@ -1,0 +1,15 @@
+appId: eu.onesa.smartfarmer
+---
+- extendedWaitUntil:
+    visible: '^Email address$'
+    timeout: 45000
+- tapOn: '^Email address$'
+# A newly erased iPhone can present its typing tutorial on first focus.
+- tapOn:
+    text: '^Continue$'
+    below: '^Speed up your typing by sliding your finger across the letters to compose a word\.$'
+    optional: true
+- assertNotVisible:
+    id: UIContinuousPathIntroductionView
+- inputText: ${EMAIL}
+- runFlow: dismiss-browser-keyboard.yaml

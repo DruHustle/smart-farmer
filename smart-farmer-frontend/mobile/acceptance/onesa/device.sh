@@ -68,7 +68,17 @@ run_identity_flow() {
       node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" "$phase_dir/browser-target.json" > "$phase_dir/browser.log" 2>&1 &&
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
-    maestro --device "$device" test "$@" --test-output-dir "$phase_dir" --debug-output "$phase_dir" "$dir/$phase_state.yaml" > "$phase_dir/run.log" 2>&1
+    mkdir -p "$phase_dir/entry" "$phase_dir/complete"
+    maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/ios-entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
+    if [[ "$phase_state" == cold ]]; then
+      mkdir -p "$phase_dir/email"
+      maestro --device "$device" test "$@" --test-output-dir "$phase_dir/email" --debug-output "$phase_dir/email" "$dir/ios-enter-email.yaml" > "$phase_dir/email.log" 2>&1 || return 1
+      # The pinned iOS driver exposes WebKit field values separately from the
+      # strings checked by assertVisible. Keep the raw snapshot on the runner.
+      maestro --device "$device" hierarchy > "$phase_dir/email-field.json" 2>/dev/null || return 1
+      node "$dir/verify-ios-email.mjs" "$phase_dir/email-field.json" "$fixture" "$phase_role" > "$phase_dir/browser.log" 2>&1 || return 1
+    fi
+    maestro --device "$device" test "$@" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/$phase_state.yaml" > "$phase_dir/complete.log" 2>&1
   fi
 }
 status=0
