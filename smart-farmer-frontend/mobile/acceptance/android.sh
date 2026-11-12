@@ -26,5 +26,6 @@ else
   exit "$native_receipt_status"
 fi
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" android
+bash "$NATIVE_DIR/acceptance/accounting-intake.sh" android
 # Never upload raw databases, session credentials, or key material as evidence.
 rm -rf "$RUNNER_TEMP/native-encryption"

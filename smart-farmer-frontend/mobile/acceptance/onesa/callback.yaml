@@ -1,0 +1,35 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # Safari can cover the successful callback with its password-save sheet.
+      # Wait for an observed outcome, then dismiss only that exact OS sheet.
+      - extendedWaitUntil:
+          visible: '^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer|Save Password[?])$'
+          timeout: 45000
+      - runFlow: ../dismiss-password-save.yaml
+      - assertNotVisible: '^Save Password[?]$'
+- extendedWaitUntil:
+    visible: '^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+    timeout: 45000
+- tapOn: '^(Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          text: '^Open$'
+          optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # The real return link above completes the browser-to-app transition.
+      # Target the expected live app before the next native hierarchy query;
+      # do not stop it, clear private state, change permissions or inject a URL.
+      - launchApp:
+          appId: eu.onesa.smartfarmer
+          stopApp: false
+          permissions: {}

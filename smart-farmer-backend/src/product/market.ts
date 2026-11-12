@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import sharp from "sharp";
+import { guardAccountingSource, managedSourceBalance } from "../accounting/bridge.js";
 import { ApiError, audit, manageRoles, type Context } from "../context.js";
 import {
   uuid,
@@ -53,8 +54,8 @@ const listingInput = z
     (b) => !!b.stockItemId !== !!b.animalProjectId,
     "one_listing_source_required",
   );
-const publicSelect = `SELECT l.id,l.title,l.price,l.currency,l.collection_area,l.terms,l.category,l.grade,l.condition,l.price_basis,l.price_quantity,l.availability_at,l.expires_at,l.expected_harvest,l.photo_media_ids,l.version,l.created_at,f.name AS seller_name,CASE WHEN l.animal_project_id IS NOT NULL THEN p.count_basis ELSE NULL END AS count_basis,CASE WHEN l.animal_project_id IS NOT NULL THEN CASE WHEN p.enterprise_type LIKE 'fish%' THEN 'fish' WHEN p.enterprise_type LIKE 'rabbit%' THEN 'rabbit' ELSE 'bird' END ELSE s.unit END AS unit,CASE WHEN l.expected_harvest THEN 0 ELSE GREATEST(0,LEAST(l.remaining_quantity,CASE WHEN l.animal_project_id IS NOT NULL THEN p.current_count-p.reserved_count ELSE s.quantity-s.reserved_quantity END)) END AS available_quantity,CASE WHEN l.expected_harvest THEN l.remaining_quantity ELSE NULL END AS expected_quantity FROM market_listings l JOIN farms f ON f.id=l.farm_id LEFT JOIN stock_items s ON s.id=l.stock_item_id LEFT JOIN projects p ON p.id=l.animal_project_id`;
-const publicWhere = `l.status='active' AND (l.expires_at IS NULL OR l.expires_at>clock_timestamp()) AND NOT EXISTS(SELECT 1 FROM treatment_restrictions r WHERE r.farm_id=l.farm_id AND r.project_id=COALESCE(l.animal_project_id,s.project_id) AND r.starts_at<=clock_timestamp() AND r.ends_at>clock_timestamp() AND r.scope IN('all','sale'))`;
+export const publicSelect = `SELECT l.id,l.farm_id AS seller_farm_id,l.title,l.price,l.currency,l.collection_area,l.terms,l.category,l.grade,l.condition,l.price_basis,l.price_quantity,l.availability_at,l.expires_at,l.expected_harvest,l.photo_media_ids,l.version,l.created_at,f.name AS seller_name,CASE WHEN l.animal_project_id IS NOT NULL THEN p.count_basis ELSE NULL END AS count_basis,CASE WHEN l.animal_project_id IS NOT NULL THEN CASE WHEN p.enterprise_type LIKE 'fish%' THEN 'fish' WHEN p.enterprise_type LIKE 'rabbit%' THEN 'rabbit' ELSE 'bird' END ELSE s.unit END AS unit,CASE WHEN l.expected_harvest THEN 0 ELSE GREATEST(0,LEAST(l.remaining_quantity,CASE WHEN l.animal_project_id IS NOT NULL THEN p.current_count-p.reserved_count ELSE s.quantity-s.reserved_quantity END)) END AS available_quantity,CASE WHEN l.expected_harvest THEN l.remaining_quantity ELSE NULL END AS expected_quantity FROM market_listings l JOIN farms f ON f.id=l.farm_id LEFT JOIN stock_items s ON s.id=l.stock_item_id LEFT JOIN projects p ON p.id=l.animal_project_id`;
+export const publicWhere = `l.status='active' AND (l.expires_at IS NULL OR l.expires_at>clock_timestamp()) AND NOT EXISTS(SELECT 1 FROM treatment_restrictions r WHERE r.farm_id=l.farm_id AND r.project_id=COALESCE(l.animal_project_id,s.project_id) AND r.starts_at<=clock_timestamp() AND r.ends_at>clock_timestamp() AND r.scope IN('all','sale'))`;
 async function validatePhotos(c: PoolClient, farmId: string, ids: string[]) {
   if (new Set(ids).size !== ids.length) throw new ApiError("duplicate_photo");
   for (const id of ids)
@@ -97,13 +98,27 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
       .extend({
         q: z.string().max(100).default(""),
         category: category.optional(),
+        area: z.string().trim().max(150).default(""),
+        condition: z.string().trim().max(100).default(""),
+        currency: currency.optional(),
+        minPrice: z.coerce.number().finite().min(0).max(999999999).optional(),
+        maxPrice: z.coerce.number().finite().min(0).max(999999999).optional(),
       })
       .parse(req.query);
+    if(q.minPrice!==undefined && q.maxPrice!==undefined && q.minPrice>q.maxPrice)
+      throw new ApiError("invalid_price_range");
     return page(
       (
         await ctx.db.query(
-          `${publicSelect} WHERE ${publicWhere} AND l.title ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR l.id<$2) AND ($3::text IS NULL OR l.category=$3) ORDER BY l.id DESC LIMIT $4`,
-          [q.q, q.cursor ?? null, q.category ?? null, q.limit + 1],
+          `${publicSelect} WHERE ${publicWhere} AND l.title ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR l.id<$2)
+            AND ($3::text IS NULL OR l.category=$3)
+            AND ($4::text='' OR l.collection_area ILIKE '%'||$4||'%')
+            AND ($5::text='' OR l.condition ILIKE '%'||$5||'%')
+            AND ($6::text IS NULL OR l.currency=$6)
+            AND ($7::numeric IS NULL OR l.price>=$7)
+            AND ($8::numeric IS NULL OR l.price<=$8)
+            ORDER BY l.id DESC LIMIT $9`,
+          [q.q, q.cursor ?? null, q.category ?? null, q.area, q.condition, q.currency??null, q.minPrice??null, q.maxPrice??null, q.limit + 1],
         )
       ).rows,
       q.limit,
@@ -459,15 +474,14 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
     const actor = await ctx.user(req, reply);
     if (!actor) return;
     const q = listQuery.parse(req.query);
-    return page(
-      (
-        await ctx.db.query(
-          "SELECT o.id,o.listing_id,l.title,o.quantity,o.unit,o.amount,o.currency,o.status,o.created_at,o.expires_at,o.cancellation_reason,o.identity_ids,(o.buyer_id=$1) AS is_buyer,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager')) AS is_seller,COALESCE((SELECT sum(p.amount) FROM commerce_payments p WHERE p.order_id=o.id),0) AS manually_recorded_paid FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE (o.buyer_id=$1 OR EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager'))) AND ($2::uuid IS NULL OR o.id<$2) ORDER BY o.id DESC LIMIT $3",
-          [actor, q.cursor ?? null, q.limit + 1],
-        )
-      ).rows,
-      q.limit,
-    );
+    const orders=(await ctx.db.query(
+      "SELECT o.id,o.listing_id,l.farm_id AS seller_farm_id,l.title,o.quantity,o.unit,o.amount,o.currency,o.status,o.created_at,o.expires_at,o.cancellation_reason,o.identity_ids,(o.buyer_id=$1) AS is_buyer,EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager')) AS is_seller,COALESCE((SELECT sum(p.amount) FROM commerce_payments p WHERE p.order_id=o.id),0) AS manually_recorded_paid FROM market_orders o JOIN market_listings l ON l.id=o.listing_id WHERE (o.buyer_id=$1 OR EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=l.farm_id AND m.user_id=$1 AND m.role IN('owner','manager'))) AND ($2::uuid IS NULL OR o.id<$2) ORDER BY o.id DESC LIMIT $3",
+      [actor,q.cursor??null,q.limit+1])).rows;
+    return page(await Promise.all(orders.map(async ({seller_farm_id,...order})=>{
+      // Buyers must not receive the seller's private bookkeeping identifiers or adjustments.
+      const managed=order.is_seller?await managedSourceBalance(ctx.db,seller_farm_id,'market_order',order.id):null;
+      return {...order,accountingInvoiceId:managed?.accountingInvoiceId??null,accountingFarmId:managed?seller_farm_id:null,accountingManaged:!!managed,...(managed?{manually_recorded_paid:managed.paid,accountingOutstanding:managed.balance,accountingCredited:managed.credited}:{})};
+    })),q.limit);
   });
   app.post("/v1/market/orders/:orderId/status", async (req, reply) => {
     const actor = await ctx.user(req, reply);
@@ -524,6 +538,7 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
       b.id,
       { operation: "market_payment", orderId, ...b },
       async (c) => {
+        await guardAccountingSource(c, snapshot.farm_id, 'market_order', orderId);
         const o = row(
           (
             await c.query(

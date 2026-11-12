@@ -1,0 +1,50 @@
+appId: eu.onesa.smartfarmer
+---
+# The OS can cancel the first navigation touch after media import or AutoFill.
+# Bound only this read-only navigation; upload and financial actions are never retried.
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: tab-more
+        selected: true
+    commands:
+      - tapOn:
+          id: tab-more
+          enabled: true
+- assertVisible:
+    id: tab-more
+    selected: true
+- scrollUntilVisible:
+    element:
+      id: workspace-language
+    direction: UP
+    timeout: 30000
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: more-finance
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: more-finance
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: finance-tabs
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: finance-tabs
+- tapOn:
+    id: finance-tabs-option-accounting
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: accounting-tabs
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: accounting-tabs
+- tapOn:
+    id: accounting-tabs-option-scanInvoice

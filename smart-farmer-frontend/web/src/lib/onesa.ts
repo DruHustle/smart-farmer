@@ -1,6 +1,7 @@
 import type {Lang, SessionIdentity, Snapshot} from '../types';
 import {apiOrigin, jsonBody, request} from './api';
 import {Vault} from './vault';
+import {destination} from './destination';
 
 export type OnesaConfig = {issuer: string; clientId: string; callback: string};
 const key = 'smart-farmer:onesa:login';
@@ -16,7 +17,7 @@ export async function beginOnesa(config: OnesaConfig, language: Lang) {
     response_type:'code', scope:'openid email profile onesa', client_id:config.clientId,
     redirect_uri:config.callback, state, nonce:random(), code_challenge:challenge, code_challenge_method:'S256',
   }).toString();
-  sessionStorage.setItem(key, JSON.stringify({state,verifier,issuer:config.issuer,language,expires:Date.now()+300_000}));
+  sessionStorage.setItem(key, JSON.stringify({state,verifier,issuer:config.issuer,language,returnTo:destination(location).path,expires:Date.now()+300_000}));
   location.assign(target.href);
 }
 
@@ -27,8 +28,14 @@ export async function finishOnesa(url: URL): Promise<Vault> {
   const saved = JSON.parse(transaction);
   const singleton = (name: string) => url.searchParams.getAll(name).length === 1 ? url.searchParams.get(name) : null;
   const code = singleton('code');
-  if (!code || url.searchParams.has('error') || singleton('state') !== saved.state || saved.expires <= Date.now()
+  if (singleton('state') !== saved.state || saved.expires <= Date.now()
     || (url.searchParams.has('iss') && singleton('iss') !== saved.issuer)) throw new Error('unauthorized');
+  if (typeof saved.returnTo === 'string') {
+    const target = new URL(saved.returnTo, location.origin);
+    if (target.origin === location.origin) history.replaceState(null, '', destination(target).path);
+  }
+  if (singleton('error') === 'access_denied') throw new Error('signInCancelled');
+  if (!code || url.searchParams.has('error')) throw new Error('unauthorized');
   const {vaultKey, ...identity} = await request<SessionIdentity & {vaultKey:string}>('/v1/onesa/sessions','',
     jsonBody({code,verifier:saved.verifier,language:saved.language}));
   const initial: Snapshot = {version:1,identity,farms:[],currentFarmId:'',data:{},outbox:[],language:identity.language};

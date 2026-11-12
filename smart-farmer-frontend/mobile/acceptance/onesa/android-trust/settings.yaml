@@ -1,0 +1,36 @@
+appId: com.android.settings
+---
+- scrollUntilVisible:
+    element: '^Encryption & credentials$'
+    direction: DOWN
+- tapOn: '^Encryption & credentials$'
+- scrollUntilVisible:
+    element: '^Install a certificate$'
+    direction: DOWN
+- tapOn: '^Install a certificate$'
+- tapOn: '^CA certificate$'
+- scrollUntilVisible:
+    element: '^Install anyway$'
+    direction: DOWN
+- tapOn: '^Install anyway$'
+- runFlow: unlock.yaml
+- runFlow:
+    when:
+      notVisible: '^farmer-device-ca[.]crt$'
+    commands:
+      - tapOn:
+          text: '^(Show roots|Open navigation drawer|Open from)$'
+      # DocumentsUI also exposes an identically named app tile behind the
+      # drawer. Select only the provider row in the open roots list.
+      - tapOn:
+          text: '^Onesa test issuer$'
+          childOf:
+            id: 'com[.](google[.])?android[.]documentsui:id/roots_list'
+- extendedWaitUntil:
+    visible: '^farmer-device-ca[.]crt$'
+    timeout: 30000
+- tapOn: '^farmer-device-ca[.]crt$'
+- runFlow: unlock.yaml
+- tapOn:
+    text: '^(OK|Install)$'
+    optional: true

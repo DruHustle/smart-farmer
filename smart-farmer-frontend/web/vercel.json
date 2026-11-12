@@ -1,6 +1,9 @@
 {
   "framework": "vite",
-  "rewrites": [{"source": "/auth/onesa/callback", "destination": "/index.html"}],
+  "rewrites": [
+    {"source": "/auth/onesa/callback", "destination": "/index.html"},
+    {"source": "/account-deletion", "destination": "/index.html"}
+  ],
   "headers": [{"source": "/auth/onesa/callback", "headers": [
     {"key": "Referrer-Policy", "value": "no-referrer"},
     {"key": "Cache-Control", "value": "no-store"}

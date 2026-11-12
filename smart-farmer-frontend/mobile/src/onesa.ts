@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
-import {Linking} from 'react-native';
+import {openAuthSessionAsync} from 'expo-web-browser';
 import {createApi} from './api';
 import {nativeCode, type PendingOnesa} from './onesa-callback';
 import type {Language,Session} from './types';
@@ -23,7 +23,16 @@ export async function openOnesa(origin:string, config:OnesaConfig, language:Lang
     redirect_uri:config.callback,code_challenge_method:'S256',code_challenge:challenge,state,nonce:random()});
   const pending:PendingOnesa={state,verifier,issuer:config.issuer,origin,language,expires:Date.now()+300_000};
   await SecureStore.setItemAsync(pendingKey,JSON.stringify(pending),options);
-  await Linking.openURL(target.href+'?'+params.toString());
+  try {
+    const response = await openAuthSessionAsync(target.href + '?' + params, 'smartfarmer://onesa/callback');
+    if (response.type === 'cancel' || response.type === 'dismiss') throw new Error('onesa_cancelled');
+    if (response.type !== 'success') throw new Error('onesa_unavailable');
+    return await redeemOnesa(response.url, origin);
+  } finally {
+    // Cold starts redeem from secure storage. Clear only the attempt owned by this sheet.
+    const raw = await SecureStore.getItemAsync(pendingKey, options);
+    if (raw && JSON.parse(raw).state === state) await SecureStore.deleteItemAsync(pendingKey, options);
+  }
 }
 
 export async function redeemOnesa(incoming:string,origin:string):Promise<Session | null> {

@@ -3,7 +3,7 @@ import {AssetOperations} from './AssetOperations';
 import {EquipmentObservations} from '../EquipmentObservations';
 import {NodeRedPackages} from '../NodeRedPackages';
 import {useFarm} from '../context';
-import {jsonBody} from '../lib/api';
+import {ApiError, jsonBody} from '../lib/api';
 import {allPages} from '../lib/pages';
 import {label} from '../locales';
 import {displayTime, farmTimeToUtc, localDateTime} from '../lib/time';
@@ -14,11 +14,41 @@ type CameraEvent = {id: string; name: string; kind: string; source: string; obse
 function AssetCard({asset}: {asset: Asset}) {
   const {t, farm, lang, manager, online, call, run, refresh} = useFarm(); const [commands, setCommands] = useState<Command[]>([]); const simulated = asset.integration_state === 'simulated';
   async function loadCommands() {if (!manager || !online) return; setCommands(await allPages<Command>(call, `/v1/farms/${farm.id}/assets/${asset.id}/commands`));}
-  async function send(command: string) {if (!online) throw new Error('online_required'); if (!window.confirm(`${asset.name}: ${label(t, command)}. ${t.commandConfirm}`)) return; await call(`/v1/farms/${farm.id}/assets/${asset.id}/commands`, jsonBody({id: crypto.randomUUID(), command, confirmed: true, expiresAt: new Date(Date.now() + 60_000).toISOString()})); await loadCommands();}
-  return <article className="asset-card"><div className="asset-top"><span className="project-icon"><Icon name={asset.category === 'camera' ? 'camera' : 'equipment'} size={23}/></span><div><h3>{asset.name}</h3><small>{label(t, asset.category)} · {asset.model || t.unknown}</small></div><Badge value={label(t, asset.integration_state)} tone={simulated ? 'warning' : ''}/></div><div className="asset-telemetry"><span className={`status-dot ${asset.fresh ? 'on' : ''}`}/><span>{asset.last_observed_at ? asset.fresh ? t.fresh : t.stale : t.telemetryUnavailable}</span>{asset.last_observed_at && <small>{displayTime(asset.last_observed_at, lang, farm.timezone)}</small>}</div>
+  const pending = useRef(new Map<string, {id: string; expiresAt: string}>());
+  const submitting = useRef(false);
+  function send(command: string) {
+    if (submitting.current || !online || !window.confirm(`${asset.name}: ${label(t, command)}. ${t.commandConfirm}`)) return;
+    submitting.current = true;
+    void run(async () => {
+      const intent = pending.current.get(command) ?? {id: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString()};
+      pending.current.set(command, intent);
+      try {
+        const receipt = await call<Command>(`/v1/farms/${farm.id}/assets/${asset.id}/commands`, jsonBody({...intent, command, confirmed: true}));
+        if (receipt?.id !== intent.id || typeof receipt.status !== 'string') throw new Error('invalid_response');
+        setCommands(previous => [receipt, ...previous.filter(row => row.id !== receipt.id)]);
+        pending.current.delete(command);
+      } catch (error) {
+        // An interrupted response can follow a committed command. An explicit retry
+        // must send the original identity and deadline, even if the deadline has passed.
+        if (error instanceof ApiError && ['command_expired', 'invalid_command_expiry', 'control_not_commissioned', 'telemetry_stale', 'command_in_progress', 'interlock_open'].includes(error.message)) pending.current.delete(command);
+        throw error;
+      }
+    }, t.commandSent).finally(() => { submitting.current = false; });
+  }
+  const observedAt = Date.parse(asset.last_observed_at ?? '');
+  const expiresAt = observedAt + Number(asset.stale_after_seconds) * 1000;
+  const [clock, setClock] = useState(Date.now);
+  useEffect(() => {
+    setClock(Date.now());
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return;
+    const timer = window.setTimeout(() => setClock(Date.now()), Math.min(expiresAt - Date.now() + 1, 2147483647));
+    return () => window.clearTimeout(timer);
+  }, [expiresAt, online]);
+  const fresh = online && asset.fresh && Number.isFinite(expiresAt) && expiresAt > Math.max(clock, Date.now());
+  return <article className="asset-card"><div className="asset-top"><span className="project-icon"><Icon name={asset.category === 'camera' ? 'camera' : 'equipment'} size={23}/></span><div><h3>{asset.name}</h3><small>{label(t, asset.category)} · {asset.model || t.unknown}</small></div><Badge value={label(t, asset.integration_state)} tone={simulated ? 'warning' : ''}/></div><div className="asset-telemetry"><span className={`status-dot ${fresh ? 'on' : ''}`}/><span>{asset.last_observed_at ? fresh ? t.fresh : t.stale : t.telemetryUnavailable}</span>{asset.last_observed_at && <small>{displayTime(asset.last_observed_at, lang, farm.timezone)}</small>}</div>
     {asset.latest_telemetry && <dl className="telemetry-grid">{Object.entries(asset.latest_telemetry).map(([key, value]) => <div key={key}><dt>{label(t, key)}</dt><dd>{typeof value === 'boolean' ? value ? t.yes : t.no : String(value)}</dd></div>)}</dl>}
     {manager && simulated && <ExpandForm title={t.simulation}><Form onSubmit={async f => {await run(async () => {if (!online) throw new Error('online_required'); await call(`/v1/farms/${farm.id}/assets/${asset.id}/simulate`, jsonBody({running: f.has('running'), interlockOk: f.has('interlockOk')})); await refresh();}, t.saved);}}><label className="check-label"><input type="checkbox" name="running"/>{t.running}</label><label className="check-label"><input type="checkbox" name="interlockOk"/>{t.interlockOk}</label><Submit>{t.simulate}</Submit></Form></ExpandForm>}
-    {manager && asset.capabilities.commands.length > 0 && <><div className="button-row">{asset.capabilities.commands.map(command => <button key={command} className="secondary" disabled={!online || !asset.fresh || !['simulated','verified-control-enabled'].includes(asset.integration_state)} onClick={() => void run(() => send(command), t.commandSent)}>{label(t, command)}</button>)}</div><details className="command-history" onToggle={e => {if (e.currentTarget.open) void run(loadCommands);}}><summary>{t.commands}</summary>{commands.length ? commands.map(command => <div className="command-row" key={command.id}><div className="split"><strong>{label(t, command.command)}</strong><Badge value={label(t, command.status)} tone={command.status === 'confirmed' ? 'success' : 'warning'}/></div><small>{t.expires}: {displayTime(command.expires_at, lang, farm.timezone)}</small>{simulated && ['authorized', 'dispatched', 'acknowledged'].includes(command.status) && <div className="button-row"><button className="text-button" disabled={!online} onClick={() => void run(async () => {await call(`/v1/farms/${farm.id}/assets/${asset.id}/commands/${command.id}/simulate`, jsonBody({status: 'acknowledged'})); await loadCommands();})}>{t.acknowledge}</button><button className="text-button" disabled={!online} onClick={() => void run(async () => {await call(`/v1/farms/${farm.id}/assets/${asset.id}/commands/${command.id}/simulate`, jsonBody({status: 'confirmed', feedback: {running: command.command === 'start', interlock_ok: true}})); await loadCommands(); await refresh();})}>{t.simulatedFeedback}</button></div>}</div>) : <p className="muted small">{t.noData}</p>}</details></>}
+    {manager && asset.capabilities.commands.length > 0 && <><div className="button-row">{asset.capabilities.commands.map(command => <button key={command} className="secondary" disabled={!fresh || !['simulated','verified-control-enabled'].includes(asset.integration_state)} onClick={() => send(command)}>{label(t, command)}</button>)}</div><details className="command-history" onToggle={e => {if (e.currentTarget.open) void run(loadCommands);}}><summary>{t.commands}</summary>{commands.length ? commands.map(command => <div className="command-row" key={command.id}><div className="split"><strong>{label(t, command.command)}</strong><Badge value={label(t, command.status)} tone={command.status === 'confirmed' ? 'success' : 'warning'}/></div><small>{t.expires}: {displayTime(command.expires_at, lang, farm.timezone)}</small>{simulated && ['authorized', 'dispatched', 'acknowledged'].includes(command.status) && <div className="button-row"><button className="text-button" disabled={!online} onClick={() => void run(async () => {await call(`/v1/farms/${farm.id}/assets/${asset.id}/commands/${command.id}/simulate`, jsonBody({status: 'acknowledged'})); await loadCommands();})}>{t.acknowledge}</button><button className="text-button" disabled={!online} onClick={() => void run(async () => {await call(`/v1/farms/${farm.id}/assets/${asset.id}/commands/${command.id}/simulate`, jsonBody({status: 'confirmed', feedback: {running: command.command === 'start', interlock_ok: true}})); await loadCommands(); await refresh();})}>{t.simulatedFeedback}</button></div>}</div>) : <p className="muted small">{t.noData}</p>}</details></>}
     <AssetOperations asset={asset}/>
   </article>;
 }

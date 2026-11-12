@@ -6,6 +6,7 @@ import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
 import {nativeReturnLink} from './lib/native-return';
 import {beginOnesa, finishOnesa, type OnesaConfig} from './lib/onesa';
+import {destination} from './lib/destination';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
@@ -15,6 +16,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
 
   const [nativeLink, setNativeLink] = useState<string | null>(null);
   const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
+  const [configFailure, setConfigFailure] = useState(false);
+  const [configAttempt, setConfigAttempt] = useState(0);
   const afterLogin = useRef(onLogin);
   const words = useRef(t);
   afterLogin.current = onLogin;
@@ -31,11 +34,17 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
         .catch(error => {if (mounted) setMessage(errorLabel(words.current,error));})
         .finally(() => {if (mounted) setBusy(false);});
     }
-    void request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
-      if (mounted && 'issuer' in config) setOnesa(config);
-    }).catch(() => {});
     return () => { mounted = false; };
   }, []);
+  useEffect(() => {
+    let active = true;
+    const reload = () => setConfigAttempt(attempt => attempt + 1);
+    window.addEventListener('online', reload);
+    void request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
+      if (active) {setConfigFailure(false); setOnesa('issuer' in config ? config : null);}
+    }).catch(() => {if (active) setConfigFailure(true);});
+    return () => {active = false; window.removeEventListener('online', reload);};
+  }, [configAttempt]);
 
   async function signIn(username: string, password: string) {
     const identity = await request<SessionIdentity>('/v1/sessions', '', jsonBody({username, password}));
@@ -86,8 +95,9 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select></Field></header>
     <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div><AppAvailability heading={t.farmerApps} unpublished={t.notPublished}/></section>
       <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>
-        <h2>{t[mode]}</h2>{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
-        {mode === 'signIn' && onesa && <button type="button" className="secondary" disabled={busy} onClick={() => {
+        <h2>{t[mode]}</h2>{destination(location).page === 'account-deletion' && <div className="notice"><strong>{t.deletionTitle}</strong><p>{t.deletionInfo}</p></div>}
+        {mode === 'signIn' && configFailure && <p role="status">{t.onesa_unavailable} <button className="text-button" onClick={() => setConfigAttempt(n => n + 1)}>{t.retry}</button></p>}{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
+        {mode === 'signIn' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
           setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
         }}>{t.onesaSignIn}</button>}
         <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
@@ -97,5 +107,5 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
           {mode === 'register' && <Field label={t.farmName}><input name="farmName" required maxLength={100} placeholder="Lawfield Farm"/></Field>}
           {message && <p className="notice error" role="alert">{message}</p>}<button className="primary" disabled={busy}>{busy ? t.working : t.continue}<Icon name="chevron" size={18}/></button>
         </form><div className="auth-links">{(['join', 'recover', 'offlineUnlock'] as const).map(item => <button type="button" key={item} className="text-button" onClick={() => {setMode(item); setMessage('');}}>{t[item]}</button>)}</div>
-      </section></main><footer className="auth-footer">{t.translationNote}</footer></div>;
+      </section></main><footer className="auth-footer">{t.translationNote} · <a href="/account-deletion">{t.deletionTitle}</a></footer></div>;
 }

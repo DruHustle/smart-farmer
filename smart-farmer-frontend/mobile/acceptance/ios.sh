@@ -19,7 +19,16 @@ stop_native_log() {
     NATIVE_LOG_PID=''
   fi
 }
-trap stop_native_log EXIT
+finish_native_run() {
+  local result=$?
+  stop_native_log
+  if (( result != 0 )); then
+    # Only enumerated markers, without preceding or following OS/JS log data.
+    node "$NATIVE_DIR/acceptance/onesa/signout-phases.mjs" "$EVIDENCE/ios-phone-startup.log" "$EVIDENCE/metro.log"
+  fi
+  return "$result"
+}
+trap finish_native_run EXIT
 start_native_log() {
   local native_device="$1" native_label="$2" native_thread_output native_log
   case "$native_label" in
@@ -56,6 +65,7 @@ rm "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/ios-exactly-once.txt"
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
+bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"
 stop_native_log
 xcrun simctl shutdown "$NATIVE_PHONE"
 NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')

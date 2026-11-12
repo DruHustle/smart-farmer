@@ -1,0 +1,153 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: activate-ios.yaml
+# The host has observed the ordinary queue reach ready, without retrying upload.
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-documents-refresh
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: invoice-documents-refresh
+- scrollUntilVisible:
+    element:
+      id: invoice-scan-ready
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-scan-ready
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: 'invoice-scan-review-${DOCUMENT_ID}'
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: 'invoice-scan-review-${DOCUMENT_ID}'
+# On Android this first-card control can be above the current sheet viewport.
+# Navigate toward the source; do not retry upload or draft actions.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: invoice-source-preview
+          direction: UP
+          timeout: 30000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element:
+            id: invoice-source-preview
+          direction: DOWN
+          timeout: 30000
+- tapOn:
+    id: invoice-source-preview
+- extendedWaitUntil:
+    visible:
+      id: invoice-source-image
+    timeout: 20000
+- tapOn:
+    id: sheet-close
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-use-extraction
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-use-extraction
+- scrollUntilVisible:
+    element:
+      id: invoice-party
+    direction: UP
+    timeout: 30000
+- assertVisible:
+    id: invoice-party
+    text: '^Synthetic Gallery Supplies$'
+- assertVisible:
+    id: invoice-reference
+    text: '^NATIVE-GALLERY-1042$'
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-line-0-price
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-line-0-price
+    text: '^12[.]50$'
+# Review deliberately corrects the OCR suggestion; printed USD25 is not trusted.
+- tapOn:
+    id: invoice-line-0-price
+- eraseText
+- inputText: '12.25'
+- runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-review-draft
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-review-draft
+- scrollUntilVisible:
+    element:
+      text: Ongorora mutero nemaoko.
+    direction: UP
+    timeout: 30000
+- assertVisible: Ongorora mutero nemaoko.
+- assertNotVisible:
+    id: invoice-confirm-draft
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-line-0-tax
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-line-0-tax
+- tapOn:
+    id: invoice-line-0-tax-option-0
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-review-draft
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-review-draft
+- scrollUntilVisible:
+    element:
+      id: invoice-total
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-total
+    text: 'USD 24.50'
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-confirm-draft
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-confirm-draft
+- extendedWaitUntil:
+    notVisible:
+      id: invoice-confirm-draft
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: invoice-balance
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-balance
+    text: 'USD 0.00'

@@ -1,0 +1,17 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: entry.yaml
+- runFlow: open.yaml
+- extendedWaitUntil:
+    visible: '^Email address$'
+    timeout: 45000
+- scrollUntilVisible:
+    element: '^Cancel sign-in$'
+    direction: DOWN
+- tapOn: '^Cancel sign-in$'
+- runFlow: callback.yaml
+- extendedWaitUntil:
+    visible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.])$'
+    timeout: 30000
+- assertVisible: {id: auth-onesa}
+- assertNotVisible: {id: tab-forum}

@@ -37,6 +37,8 @@ jobs:
       - run: npm ci --prefix smart-farmer-backend
       - run: npm ci --prefix smart-farmer-frontend/web
       - run: npm ci --prefix smart-farmer-backend/edge
+      - name: Install local invoice OCR and PDF tools
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr tesseract-ocr-eng poppler-utils
       - name: API and concurrency workflows against PostgreSQL
         run: npm test --prefix smart-farmer-backend
       - name: Offline storage, language and farm-time rules
@@ -150,6 +152,9 @@ jobs:
         run: |
           POSTGRES_PASSWORD=test-only docker compose -f smart-farmer-backend/compose.yml config --quiet
           docker build --tag smart-farmer-api:ci smart-farmer-backend
+          docker run --rm --entrypoint tesseract smart-farmer-api:ci --list-langs
+          docker run --rm --entrypoint pdftotext smart-farmer-api:ci -v
+          docker run --rm --entrypoint node smart-farmer-api:ci -e 'import("sharp").then(async ({default: sharp}) => { const image = await sharp({create:{width:1,height:1,channels:3,background:"red"}}).png().toBuffer(); if (!image.length) process.exit(1); })'
           docker build --tag smart-farmer-backup:ci --file smart-farmer-backend/Dockerfile.backup smart-farmer-backend
           docker run --rm --entrypoint node smart-farmer-backup:ci --version
           docker run --rm --entrypoint pg_dump smart-farmer-backup:ci --version

@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="eu.onesa.qualification.documents">
+    <uses-sdk android:minSdkVersion="35" android:targetSdkVersion="36" />
+    <application android:label="Onesa test issuer" android:testOnly="true" android:allowBackup="false">
+        <provider android:name=".IssuerDocuments" android:authorities="eu.onesa.qualification.documents"
+            android:permission="android.permission.MANAGE_DOCUMENTS" android:exported="true"
+            android:grantUriPermissions="true">
+            <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER" /></intent-filter>
+        </provider>
+    </application>
+    <instrumentation android:name=".ProviderCheck" android:targetPackage="eu.onesa.qualification.documents" />
+</manifest>

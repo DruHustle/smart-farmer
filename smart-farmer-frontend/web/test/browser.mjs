@@ -8,7 +8,9 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
+import {accountingJourneys} from './browser-accounting.mjs';
 import {forumJourneys} from './browser-forum.mjs';
+import {trackingJourneys} from './browser-tracking.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
 import {appStoreListings} from '../src/components/app-store-listings.ts';
@@ -20,6 +22,7 @@ if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL must poin
 const env = {...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, WEB_ORIGIN: ui, PORT: '3000', HOST: '127.0.0.1', LOG_LEVEL: 'warn'};
 const artifacts = process.env.TEST_ARTIFACTS_DIR || await mkdtemp(resolve(tmpdir(), 'smart-farmer-browser-'));
 await mkdir(artifacts, {recursive: true});
+env.MEDIA_ROOT = resolve(artifacts, 'private-media');
 const nodeRedControl = resolve(artifacts, 'node-red-control.json');
 await writeFile(nodeRedControl, JSON.stringify({enabled: false}));
 env.SMART_FARMER_BROWSER_NODE_RED_CONTROL = nodeRedControl;
@@ -72,7 +75,14 @@ async function expectText(locator, text) {
   await expectVisible(locator.filter({hasText: text}));
   assert.ok((await locator.textContent()).includes(text));
 }
-async function navigate(target, text = sn[target]) {await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();}
+async function navigate(target, text = sn[target]) {
+  await page.locator('.mobile-nav').getByRole('button', {name: text, exact: true}).click();
+  for (const selector of ['.mobile-nav', '.desktop-nav nav']) {
+    const current = page.locator(selector).locator('[aria-current="page"]');
+    assert.equal(await current.count(), 1, 'navigation exposes exactly one current page');
+    assert.equal(await current.textContent(), text);
+  }
+}
 async function more(target, text = sn[target]) {await navigate('more'); await page.locator('.menu-panel').getByRole('button', {name: text, exact: true}).click();}
 async function waitProject(name) {await expectVisible(page.getByRole('button', {name: new RegExp(name)}));}
 function pass(text) {steps.push(text); console.log(`PASS: ${text}`);}
@@ -175,15 +185,45 @@ try {
   await more('equipment'); await page.locator('summary').filter({hasText: sn.newAsset}).click();
   await page.getByLabel(sn.assetName, {exact: true}).fill('Pump simulator'); await page.getByLabel(sn.category, {exact: true}).selectOption('pump'); await page.getByLabel(sn.protocol, {exact: true}).selectOption('simulator'); await page.getByRole('button', {name: sn.save, exact: true}).click();
   const assetCard = page.locator('.asset-card').filter({hasText: 'Pump simulator'}); await expectVisible(assetCard); await assetCard.locator('summary').filter({hasText: sn.simulation}).click(); await assetCard.getByLabel(sn.interlockOk, {exact: true}).check(); await assetCard.getByRole('button', {name: sn.simulate, exact: true}).click();
-  await assetCard.getByRole('button', {name: sn.start, exact: true}).waitFor({state: 'visible'}); page.once('dialog', dialog => dialog.accept()); await assetCard.getByRole('button', {name: sn.start, exact: true}).click(); await assetCard.locator('summary').filter({hasText: sn.commands}).click(); await expectVisible(assetCard.locator('.command-row'));
+  const startPump = assetCard.getByRole('button', {name: sn.start, exact: true});
+  const assets = (await apiCall(`/v1/farms/${farm.id}/assets`, undefined, token)).items;
+  const sim = assets.find(asset => asset.name === 'Pump simulator');
+  const commandsPath = `/v1/farms/${farm.id}/assets/${sim.id}/commands`;
+  page.once('dialog', dialog => dialog.dismiss());
+  await startPump.click();
+  assert.equal((await apiCall(commandsPath, undefined, token)).items.length, 0);
+  assert.equal(await page.getByText(sn.commandSent, {exact: true}).count(), 0);
+  // Lose the HTTP response after the real server has accepted the command.
+  const postLost = page.waitForEvent('requestfailed', request => request.url() === api + commandsPath && request.method() === 'POST');
+  let firstIntent;
+  await page.route(api + commandsPath, async route => {
+    firstIntent = route.request().postDataJSON();
+    assert.equal((await route.fetch()).status(), 201);
+    await route.abort('connectionreset');
+  }, {times: 1});
+  page.once('dialog', dialog => dialog.accept());
+  await startPump.click();
+  await postLost;
+  await page.locator('.working-line').waitFor({state:'hidden'});
+  page.once('dialog', dialog => dialog.accept());
+  const replay = page.waitForResponse(response => response.url() === api + commandsPath && response.request().method() === 'POST');
+  await startPump.click();
+  const receipt = await replay;
+  assert.equal(receipt.status(), 200);
+  assert.deepEqual(receipt.request().postDataJSON(), firstIntent);
+  assert.equal((await receipt.json()).status, 'authorized');
+  assert.equal((await apiCall(commandsPath, undefined, token)).items.length, 1);
+  await assetCard.locator('summary').filter({hasText: sn.commands}).click();
+  await expectText(assetCard.locator('.command-row'), sn.authorized);
   await assetCard.getByRole('button', {name: sn.acknowledge, exact: true}).click(); await expectText(assetCard.locator('.command-row'), sn.acknowledged); await assetCard.getByRole('button', {name: sn.simulatedFeedback, exact: true}).click(); await expectText(assetCard.locator('.command-row'), sn.confirmed);
-  const assets = (await apiCall(`/v1/farms/${farm.id}/assets`, undefined, token)).items; const sim = assets.find(a => a.name === 'Pump simulator'); assert.equal(sim.latest_telemetry.running, true);
   assert.equal((await apiCall(`/v1/farms/${farm.id}/assets/${sim.id}/commands`, undefined, token)).items[0].status, 'confirmed');
   pass('Equipment simulator has explicit confirmation, separate acknowledgement and feedback-confirmed outcome');
 
   await nodeRedJourneys({page, context, api, farm, username, password, sn, nd, more, navigate, checkpoint, pass, artifacts, controlPath: nodeRedControl});
   await completionJourneys({page, context, browser, api, ui, apiCall, farm, project, token, username, password, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext});
+  await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
+  await trackingJourneys({page,context,api,apiCall,farm,token,sn,nd,unique,navigate,more,checkpoint,pass,artifacts});
 
   checkpoint('Phone and desktop notifications evidence');
   await more('notifications');

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
+import { ApiError } from '../api';
 import { Action, assetOptions, c, dateField, Facts, farmPath, Form, memberOptions, numericField, options, projectOptions, Records, selectField, textField, usePanel } from '../completion-ui';
 import { allPages, object, rows, string, type FormField, type Row } from '../product';
 import { textFor } from '../i18n';
@@ -67,6 +68,38 @@ function IntegrationForm({ work, language, asset, onSaved }: Props & { asset: Ro
 }
 
 function CommandButton({ work, language, asset, command, onSaved }: Props & { asset: Row; command: 'start' | 'stop'; onSaved: () => Promise<void> }) {
-  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const request = useRef<Row | null>(null);
-  return <><Button testID={`command-${command}`} title={c(language, command)} disabled={!work.online || command === 'start' && object(asset.latest_telemetry).interlock_ok !== true} onPress={() => { request.current = { id: Crypto.randomUUID(), command, confirmed: true, expiresAt: new Date(Date.now() + 90_000).toISOString() }; setOpen(true); }} /><Sheet title={`${asset.name} · ${c(language, command)}`} visible={open} onClose={() => setOpen(false)} closeLabel={textFor(language).cancel}><Notice text={c(language, 'commandHint')} /><Facts value={asset} fields={['name', 'model', 'integration_state', 'last_observed_at']} language={language} timezone={zone(work)} /><Button testID="command-confirm" title={c(language, 'confirm')} busy={busy} disabled={!work.online} onPress={() => { if (busy || !request.current) return; setBusy(true); void work.onlineAction(async () => { await work.api.request(farmPath(work, `/assets/${asset.id}/commands`), 'POST', request.current); setOpen(false); await onSaved(); }).finally(() => setBusy(false)); }} /></Sheet></>;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
+  const pending = useRef<{id: string; command: string; confirmed: true; expiresAt: string} | null>(null);
+  async function confirm() {
+    if (!work.online || sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    try {
+      await work.onlineAction(async () => {
+        const intent = pending.current ?? {id: Crypto.randomUUID(), command, confirmed: true as const, expiresAt: new Date(Date.now() + 90_000).toISOString()};
+        pending.current = intent;
+        try {
+          const receipt = await work.api.request<Row>(farmPath(work, `/assets/${asset.id}/commands`), 'POST', intent);
+          if (receipt?.id !== intent.id || typeof receipt.status !== 'string') throw new Error('invalid_response');
+          pending.current = null;
+        } catch (error) {
+          if (error instanceof ApiError && ['command_expired', 'invalid_command_expiry', 'control_not_commissioned', 'telemetry_stale', 'command_in_progress', 'interlock_open'].includes(error.code)) pending.current = null;
+          throw error;
+        }
+        setOpen(false);
+        await onSaved();
+      });
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+  return <><Button testID={`command-${command}`} title={c(language, command)} disabled={!work.online || command === 'start' && object(asset.latest_telemetry).interlock_ok !== true} onPress={() => setOpen(true)} />
+    <Sheet title={`${asset.name} · ${c(language, command)}`} visible={open} onClose={() => setOpen(false)} closeLabel={textFor(language).cancel}>
+      <Notice text={c(language, 'commandHint')} />
+      <Facts value={asset} fields={['name', 'model', 'integration_state', 'last_observed_at']} language={language} timezone={zone(work)} />
+      <Button testID="command-confirm" title={c(language, 'confirm')} busy={busy} disabled={!work.online} onPress={() => { void confirm(); }} />
+    </Sheet></>;
 }

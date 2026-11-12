@@ -1,0 +1,5 @@
+appId: com.android.settings
+---
+- extendedWaitUntil:
+    visible: '(?i).*Onesa temporary device fixture.*'
+    timeout: 10000

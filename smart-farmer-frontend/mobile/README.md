@@ -8,6 +8,8 @@ source-farm-owner moderation. It does not attach private farm data or media, and
 it does not queue or replay publication offline. Unsent composer text stays in
 memory only while the form is open. See the [sharing and authority model](../../smart-farmer-backend/docs/forum.md).
 
+Successful device archive and Android package workflows retain review binaries for three days under their Actions run. `ios-unsigned-validation-archive` contains the inspected unsigned ARM64 Xcode archive. `android-disposable-validation-bundle` contains the AAB whose generated APK was installed and relaunched. The workflow deletes its APKs and temporary signing key after the checks. Each review artifact includes its tested Git revision, tree, app version and SHA-256 digest. Store builds require the operator’s production policy URLs and signing identities.
+
 ## Setup and builds
 
 Use Node 24.3 or newer on the Node 24 line. Dependencies are locked to Expo SDK 58 (`expo` 58.0.23), React Native 0.88.1 and React 19.3.0.

@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
   pull_request:
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
 permissions:
   contents: read
 env:
@@ -19,11 +19,15 @@ env:
   NATIVE_OFFLINE_FLAG: /tmp/smart-farmer-native-offline
 jobs:
   android:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [farm, onesa]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Preserve each platform's compile/cache without blocking the other platform's UI feedback.
     concurrency:
-      group: native-android-${{ github.ref }}
+      group: native-android-${{ matrix.suite }}-${{ github.ref }}
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://smart_farmer:test-only@127.0.0.1:5432/smart_farmer_test
@@ -55,6 +59,8 @@ jobs:
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install supplier invoice extraction tools
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr tesseract-ocr-eng poppler-utils
       - name: Cache Android compiler dependencies for this native configuration
         uses: actions/cache@v4
         with:
@@ -92,7 +98,25 @@ jobs:
           set -euo pipefail
           rm -rf smart-farmer-frontend/mobile/android/app/.cxx smart-farmer-frontend/mobile/android/app/build/intermediates/cxx smart-farmer-frontend/mobile/node_modules/react-native/ReactAndroid/.cxx
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/native-evidence/android-disk.txt"
+      - name: Check out the tested Portal issuer
+        if: matrix.suite == 'onesa'
+        uses: actions/checkout@v4
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: 464661b2501554dad31697b0ac581dbdd6989917
+          path: qualification-portal
+          persist-credentials: false
+      - name: Install real Portal and browser callback dependencies
+        if: matrix.suite == 'onesa'
+        run: |
+          npm ci --prefix qualification-portal/onesa-company-portal-backend
+          npm ci --prefix qualification-portal/onesa-company-portal-frontend
+          npm ci --prefix smart-farmer-frontend/web
+      - name: Start real Portal, Farmer, native callback and Metro
+        if: matrix.suite == 'onesa'
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh android
       - name: Start isolated API and Metro
+        if: matrix.suite == 'farm'
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh android
       - name: Install pinned Maestro CLI
         run: |
@@ -104,25 +128,32 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Native Android restart, offline, encryption and permission journeys
+      - name: Native Android ${{ matrix.suite }} journeys
         uses: reactivecircus/android-emulator-runner@b530d96654c385303d652368551fb075bc2f0b6b # v2.35.0
         with:
           api-level: 36
-          target: google_apis
+          target: ${{ matrix.suite == 'onesa' && 'google_apis_playstore' || 'google_apis' }}
           arch: x86_64
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
-          script: bash smart-farmer-frontend/mobile/acceptance/android.sh
+          script: bash ${{ matrix.suite == 'onesa' && 'smart-farmer-frontend/mobile/acceptance/onesa/device.sh android' || 'smart-farmer-frontend/mobile/acceptance/android.sh' }}
+      - name: Retain native Portal role and session evidence
+        if: always() && matrix.suite == 'onesa'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-onesa-android
+          retention-days: 7
+          path: ${{ runner.temp }}/onesa-evidence
       - name: Retain android acceptance evidence
-        if: always()
+        if: always() && matrix.suite == 'farm'
         uses: actions/upload-artifact@v4
         with:
           name: native-android-acceptance
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
           path: ${{ runner.temp }}/native-evidence
       - name: Retain successful debug APK for review
-        if: success() && github.event_name != 'pull_request'
+        if: success() && matrix.suite == 'farm' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: native-android-preview
@@ -130,10 +161,14 @@ jobs:
           path: smart-farmer-frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   ios:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [farm, onesa]
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
-      group: native-ios-${{ github.ref }}
+      group: native-ios-${{ matrix.suite }}-${{ github.ref }}
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
@@ -152,6 +187,8 @@ jobs:
           "$NATIVE_PG_BIN/createdb" -h 127.0.0.1 -U native_ci smart_farmer_test
       - run: npm ci --prefix smart-farmer-frontend/mobile
       - run: npm ci --prefix smart-farmer-backend
+      - name: Install supplier invoice extraction tools
+        run: brew install tesseract poppler
       - name: Restore matching native iOS simulator binary
         id: ios-binary
         uses: actions/cache/restore@v4
@@ -180,27 +217,57 @@ jobs:
           mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
           ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
           codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
+      - name: Check out the tested Portal issuer
+        if: matrix.suite == 'onesa'
+        uses: actions/checkout@v4
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: 464661b2501554dad31697b0ac581dbdd6989917
+          path: qualification-portal
+          persist-credentials: false
+      - name: Install real Portal and browser callback dependencies
+        if: matrix.suite == 'onesa'
+        run: |
+          npm ci --prefix qualification-portal/onesa-company-portal-backend
+          npm ci --prefix qualification-portal/onesa-company-portal-frontend
+          npm ci --prefix smart-farmer-frontend/web
+      - name: Start real Portal, Farmer, native callback and Metro
+        if: matrix.suite == 'onesa'
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh ios
       - name: Start isolated API and Metro
+        if: matrix.suite == 'farm'
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh ios
       - name: Install pinned Maestro CLI
         run: |
           curl --fail --location --retry 3 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.12.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
-      - name: Native iPhone and iPad journeys
+      - name: Native iOS ${{ matrix.suite }} journeys
         # Allow measured cold XCTest startup; application flow timeouts stay unchanged.
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
-        run: bash smart-farmer-frontend/mobile/acceptance/ios.sh
+        run: bash ${{ matrix.suite == 'onesa' && 'smart-farmer-frontend/mobile/acceptance/onesa/device.sh ios' || 'smart-farmer-frontend/mobile/acceptance/ios.sh' }}
+      - name: Capture fresh simulator startup after a device failure
+        if: failure() && matrix.suite == 'onesa'
+        timeout-minutes: 4
+        continue-on-error: true
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/simulator-startup.sh
+      - name: Retain native Portal role and session evidence
+        if: always() && matrix.suite == 'onesa'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-onesa-ios
+          retention-days: 7
+          path: ${{ runner.temp }}/onesa-evidence
       - name: Retain ios acceptance evidence
-        if: always()
+        if: always() && matrix.suite == 'farm'
         uses: actions/upload-artifact@v4
         with:
           name: native-ios-acceptance
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
           path: ${{ runner.temp }}/native-evidence
       - name: Retain successful simulator app for review
-        if: success() && github.event_name != 'pull_request'
+        if: success() && matrix.suite == 'farm' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: native-ios-preview

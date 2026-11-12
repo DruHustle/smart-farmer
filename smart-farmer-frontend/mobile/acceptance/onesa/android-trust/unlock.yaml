@@ -1,0 +1,8 @@
+appId: com.android.settings
+---
+- runFlow:
+    when:
+      visible: '(?i).*(enter|confirm|verify).*(pin|screen lock).*'
+    commands:
+      - inputText: ${TEST_LOCK}
+      - pressKey: Enter

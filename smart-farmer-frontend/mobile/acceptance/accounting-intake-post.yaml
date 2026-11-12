@@ -1,0 +1,19 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: activate-ios.yaml
+- runFlow:
+    file: accounting-finalize.yaml
+    env:
+      FINAL_STATUS: Yakanyorwa mumabhuku
+- scrollUntilVisible:
+    element:
+      id: invoice-balance
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-balance
+    text: 'USD 24.50'
+- tapOn:
+    id: sheet-close
+- tapOn:
+    id: sheet-close

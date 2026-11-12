@@ -8,6 +8,18 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: forum-compose-name
 - inputText: NativeForumGrower
+- runFlow:
+    when:
+      platform: Android
+      notVisible:
+        id: forum-compose-title
+    commands:
+      - runFlow: dismiss-keyboard.yaml
+      - scrollUntilVisible:
+          element:
+            id: forum-compose-title
+          direction: DOWN
+          timeout: 20000
 - tapOn:
     id: forum-compose-title
 - inputText: Native shared farming notes
@@ -125,6 +137,18 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: forum-compose-name
 - inputText: NativeForumGrower
+- runFlow:
+    when:
+      platform: Android
+      notVisible:
+        id: forum-compose-body
+    commands:
+      - runFlow: dismiss-keyboard.yaml
+      - scrollUntilVisible:
+          element:
+            id: forum-compose-body
+          direction: DOWN
+          timeout: 20000
 - tapOn:
     id: forum-compose-body
 - inputText: Native farmer reply shared explicitly.

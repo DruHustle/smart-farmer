@@ -7,9 +7,10 @@ export function nativeCode(incoming: string, pending: PendingOnesa, origin: stri
   const p = url.searchParams;
   if (url.protocol !== 'smartfarmer:' || url.host !== 'onesa' || url.pathname !== '/callback' || url.username || url.password || url.hash
     || pending.origin !== origin || pending.expires <= now || p.getAll('state').length !== 1 || p.get('state') !== pending.state
-    || p.has('error') || (p.has('iss') && (p.getAll('iss').length !== 1 || p.get('iss') !== pending.issuer))) {
+    || (p.has('iss') && (p.getAll('iss').length !== 1 || p.get('iss') !== pending.issuer))) {
     throw new Error('unauthorized');
   }
+  if (p.has('error')) throw new Error(p.get('error') === 'access_denied' ? 'onesa_denied' : 'unauthorized');
   const code = p.get('code');
   if (!code || code.length > 4096 || p.getAll('code').length !== 1) throw new Error('unauthorized');
   return code;
