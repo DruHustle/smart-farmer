@@ -69,17 +69,20 @@ export function Action({ work, language, title, detail, action, onSaved, danger 
 export function usePanel<T>(work: Workspace, key: string, read: () => Promise<T>) {
   const [value, setValue] = useState<T | null>(null); const [loading, setLoading] = useState(false);
   const epoch = useRef(0); const reader = useRef(read); reader.current = read;
+  const revision = work.repository.farmRevision(work.farmId);
   const reload = useCallback(async () => {
     const generation = ++epoch.current; const cacheKey = `farm:${work.farmId}:panel:${key}`;
+    const current = () => generation === epoch.current && revision === work.repository.farmRevision(work.farmId);
+    if (!work.farmId || !current()) return;
     setLoading(true);
     try {
       const cached = await work.repository.preference<T>(cacheKey);
-      if (generation !== epoch.current) return;
+      if (!current()) return;
       setValue(cached);
-      if (work.online) { const next = await reader.current(); if (generation !== epoch.current) return; await work.repository.setPreference(cacheKey, next); if (generation === epoch.current) setValue(next); }
-    } catch (error) { if (generation === epoch.current) work.setError(error); }
+      if (work.online) { const next = await reader.current(); if (!current()) return; await work.repository.setPreference(cacheKey, next); if (current()) setValue(next); }
+    } catch (error) { if (current()) work.setError(error); }
     finally { if (generation === epoch.current) setLoading(false); }
-  }, [work.farmId, work.online, work.repository, key]);
+  }, [work.farmId, work.online, work.repository, key, revision]);
   useEffect(() => { setValue(null); void reload(); return () => { epoch.current++; }; }, [reload]);
   return { value, loading, reload };
 }

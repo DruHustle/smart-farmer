@@ -1,15 +1,66 @@
-import {useState, type FormEvent} from 'react';
+import {AppAvailability} from "./components/AppAvailability";
+import {useEffect, useRef, useState, type FormEvent} from 'react';
 import type {Lang, SessionIdentity, Snapshot} from './types';
 import {catalog, errorLabel} from './locales';
 import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
+import {nativeReturnLink} from './lib/native-return';
+import {beginOnesa, finishOnesa, type OnesaConfig} from './lib/onesa';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
   const [mode, setMode] = useState<Mode>('signIn'); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const t = catalog[language];
-  const [oneTimeCode, setOneTimeCode] = useState(''); const [pendingVault, setPendingVault] = useState<Vault | null>(null);
-  const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot; recoveryCode: string} | null>(null);
-  function finish(vault: Vault, code: string) {setChallenge(null); if (code) {setOneTimeCode(code); setPendingVault(vault);} else onLogin(vault);}
+  const [createdAccount, setCreatedAccount] = useState<{username: string; password: string; recoveryCode: string} | null>(null);
+  const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot} | null>(null);
+
+  const [nativeLink, setNativeLink] = useState<string | null>(null);
+  const [onesa, setOnesa] = useState<OnesaConfig | null>(null);
+  const afterLogin = useRef(onLogin);
+  const words = useRef(t);
+  afterLogin.current = onLogin;
+  words.current = t;
+  useEffect(() => {
+    let mounted = true;
+    if (location.pathname === '/auth/onesa/callback') {
+      const callback = new URL(location.href);
+      history.replaceState(null, '', '/');
+      const native = nativeReturnLink(callback);
+      if (native) { setNativeLink(native); return; }
+      setBusy(true);
+      void finishOnesa(callback).then(vault => {if (mounted) afterLogin.current(vault);})
+        .catch(error => {if (mounted) setMessage(errorLabel(words.current,error));})
+        .finally(() => {if (mounted) setBusy(false);});
+    }
+    void request<OnesaConfig | {enabled:false}>('/v1/onesa/config').then(config => {
+      if (mounted && 'issuer' in config) setOnesa(config);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  async function signIn(username: string, password: string) {
+    const identity = await request<SessionIdentity>('/v1/sessions', '', jsonBody({username, password}));
+    const initial: Snapshot = {version: 1, identity, farms: [], currentFarmId: '', data: {}, outbox: [], language: identity.language};
+    try {
+      onLogin(await Vault.unlock(apiOrigin, username, password, initial));
+    } catch (error) {
+      if (!(error instanceof Error && error.message === 'saved_data_locked')) throw error;
+      setCreatedAccount(null);
+      setChallenge({username, password, initial});
+    }
+  }
+
+  async function continueAfterRegistration() {
+    if (!createdAccount || busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await signIn(createdAccount.username, createdAccount.password);
+    } catch (error) {
+      setMessage(errorLabel(t, error));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); const invalid = [...e.currentTarget.elements].find(element => element instanceof HTMLInputElement && !element.validity.valid) as HTMLInputElement | undefined; if (invalid) {setMessage(t.invalid_input); invalid.focus(); return;} const form = new FormData(e.currentTarget); const username = String(form.get('username') ?? '').trim().toLowerCase(), password = String(form.get('password') ?? ''); setBusy(true); setMessage('');
     try {
@@ -19,20 +70,26 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
         onLogin(vault); return;
       }
       if (mode === 'recover') {await request('/v1/recover', '', jsonBody({username, password, recoveryCode: String(form.get('recoveryCode'))})); setMessage(t.recovered); setMode('signIn'); return;}
-      let recoveryCode = '';
-      if (mode === 'register') {const created = await request<{recoveryCode: string}>('/v1/register', '', jsonBody({username, password, language, farmName: String(form.get('farmName'))})); recoveryCode = created.recoveryCode;}
-      if (mode === 'join') {const created = await request<{recoveryCode?: string}>('/v1/invitations/accept', '', jsonBody({username, password, language, token: String(form.get('invitationToken'))})); recoveryCode = created.recoveryCode ?? '';}
-      const identity = await request<SessionIdentity>('/v1/sessions', '', jsonBody({username, password}));
-      const initial: Snapshot = {version: 1, identity, farms: [], currentFarmId: '', data: {}, outbox: [], language: identity.language};
-      try {const vault = await Vault.unlock(apiOrigin, username, password, initial); finish(vault, recoveryCode);} catch (error) {if (error instanceof Error && error.message === 'saved_data_locked') {setChallenge({username, password, initial, recoveryCode}); return;} throw error;}
+      if (mode === 'register' || mode === 'join') {
+        const created = mode === 'register'
+          ? await request<{recoveryCode: string}>('/v1/register', '', jsonBody({username, password, language, farmName: String(form.get('farmName'))}))
+          : await request<{recoveryCode: string}>('/v1/invitations/accept', '', jsonBody({username, password, language, token: String(form.get('invitationToken')).trim()}));
+        setCreatedAccount({username, password, recoveryCode: created.recoveryCode});
+        return;
+      }
+      await signIn(username, password);
     } catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}
   }
-  if (pendingVault && oneTimeCode) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoveryCode}</h1><p>{t.keepCode}</p><div className="secret-result"><code>{oneTimeCode}</code></div><p className="muted small">{t.recoveryHint}</p><button className="primary" onClick={() => {const saved = pendingVault; setOneTimeCode(''); setPendingVault(null); onLogin(saved);}}>{t.savedCode}</button></section></main></div>;
-  if (challenge) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoverDrafts}</h1><p className="muted">{t.recoveryArchiveHint}</p><form className="form-grid" onSubmit={async e => {e.preventDefault(); const previous = String(new FormData(e.currentTarget).get('previousPassword')); setBusy(true); setMessage(''); try {const v = await Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial, previous); finish(v, challenge.recoveryCode);} catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}}}><Field label={t.previousPassword}><input name="previousPassword" type="password" required autoComplete="current-password"/></Field><button className="primary" disabled={busy}>{t.recoverDrafts}</button><button type="button" className="secondary" disabled={busy} onClick={() => {setBusy(true); void Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial).then(v => finish(v, challenge.recoveryCode)).catch(error => setMessage(errorLabel(t, error))).finally(() => setBusy(false));}}>{t.freshCache}</button>{message && <p className="notice error" role="alert">{message}</p>}</form></section></main></div>;
+  if (nativeLink) return <main className="auth-screen"><section className="auth-card"><h1>Smart Farmer</h1><a className="primary" href={nativeLink}>{t.returnToApp}</a></section></main>;
+  if (createdAccount) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoveryCode}</h1><p>{t.keepCode}</p><div className="secret-result"><code>{createdAccount.recoveryCode}</code></div><p className="muted small">{t.recoveryHint}</p>{message && <p className="notice error" role="alert">{message}</p>}<button className="primary" disabled={busy} onClick={() => void continueAfterRegistration()}>{busy ? t.working : t.savedCode}</button></section></main></div>;
+  if (challenge) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoverDrafts}</h1><p className="muted">{t.recoveryArchiveHint}</p><form className="form-grid" onSubmit={async e => {e.preventDefault(); const previous = String(new FormData(e.currentTarget).get('previousPassword')); setBusy(true); setMessage(''); try {const v = await Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial, previous); onLogin(v);} catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}}}><Field label={t.previousPassword}><input name="previousPassword" type="password" required autoComplete="current-password"/></Field><button className="primary" disabled={busy}>{t.recoverDrafts}</button><button type="button" className="secondary" disabled={busy} onClick={() => {setBusy(true); void Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial).then(onLogin).catch(error => setMessage(errorLabel(t, error))).finally(() => setBusy(false));}}>{t.freshCache}</button>{message && <p className="notice error" role="alert">{message}</p>}</form></section></main></div>;
   return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select></Field></header>
-    <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div></section>
+    <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div><AppAvailability heading={t.farmerApps} unpublished={t.notPublished}/></section>
       <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>
         <h2>{t[mode]}</h2>{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
+        {mode === 'signIn' && onesa && <button type="button" className="secondary" disabled={busy} onClick={() => {
+          setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
+        }}>{t.onesaSignIn}</button>}
         <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}
           {mode === 'recover' && <Field label={t.recoveryCode}><input name="recoveryCode" required autoComplete="off" spellCheck={false}/></Field>}

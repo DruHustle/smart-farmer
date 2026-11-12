@@ -1,0 +1,33 @@
+.app-availability {
+  margin-top: 20px;
+  color: var(--ink);
+}
+.app-availability .store-listing > svg { color: var(--green); }
+.app-availability h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  line-height: 1.45;
+  letter-spacing: normal;
+}
+.app-availability ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.app-availability li { padding: 0; }
+.app-availability .store-listing {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px 0;
+}
+.app-availability .store-listing > svg { flex-shrink: 0; }
+.app-availability .store-listing strong,
+.app-availability .store-listing small { display: block; }
+.app-availability .store-listing strong { font-size: 0.875rem; }
+.app-availability .store-listing small { font-size: 0.8125rem; line-height: 1.4; }
+.app-availability a.store-listing { text-underline-offset: 3px; }

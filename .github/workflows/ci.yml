@@ -45,8 +45,45 @@ jobs:
         run: npm test --prefix smart-farmer-backend/edge
       - name: Python edge HMAC, replay and durable spool tests
         run: python3 -m unittest discover -s smart-farmer-backend/edge -p 'test_*.py' -v
+      - name: Validate isolated production candidate configuration
+        run: |
+          set -euo pipefail
+          export FARMER_RUNTIME_ENV_FILE="$RUNNER_TEMP/farm-runtime.env"
+          printf 'PGHOST=db\nPGUSER=farm\nPGPASSWORD=ci-only\nPGDATABASE=farm\n' > "$FARMER_RUNTIME_ENV_FILE"
+          chmod 600 "$FARMER_RUNTIME_ENV_FILE"
+          export FARMER_API_IMAGE="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          export FARMER_WEB_IMAGE="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          export FARMER_DB_IMAGE="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          export FARMER_SOURCE_REVISION="cccccccccccccccccccccccccccccccccccccccc"
+          export FARMER_WEB_ORIGIN="https://farmer.onesa.eu" FARMER_API_PORT=18131 FARMER_WEB_PORT=18132
+          export FARMER_POSTGRES_USER=farm FARMER_POSTGRES_PASSWORD=ci-only FARMER_POSTGRES_DB=farm
+          node smart-farmer-backend/deploy/onesa/validate.mjs
+          docker compose -f smart-farmer-backend/deploy/onesa/compose.yml --profile local-db --profile ops config --quiet
       - name: Validate Node-RED demonstration flow format
         run: python3 -m json.tool smart-farmer-backend/edge/node-red/flows.example.json > /dev/null
+      - name: Recover Ubuntu mirrors when the hosted runner cannot resolve them
+        if: runner.environment == 'github-hosted'
+        shell: bash
+        run: |
+          mirrors=/etc/apt/apt-mirrors.txt
+          [[ -f "$mirrors" ]] || exit 0
+          . /etc/os-release
+          [[ "$ID" == ubuntu && "$VERSION_CODENAME" == resolute ]] || exit 0
+          for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+            if timeout 4 getent ahostsv4 "$host" >/dev/null; then exit 0; fi
+          done
+          mirror=https://mirrors.edge.kernel.org/ubuntu
+          inrelease=$(mktemp "$RUNNER_TEMP/ubuntu-inrelease.XXXXXX")
+          trap 'rm -f "$inrelease"' EXIT
+          for suite in "$VERSION_CODENAME" "$VERSION_CODENAME-updates" "$VERSION_CODENAME-backports" "$VERSION_CODENAME-security"; do
+            curl --fail --silent --show-error --proto '=https' --retry 2 --retry-all-errors --connect-timeout 10 --max-time 25 \
+              "$mirror/dists/$suite/InRelease" -o "$inrelease"
+            gpgv --keyring /usr/share/keyrings/ubuntu-archive-keyring.gpg "$inrelease"
+            grep -Fxq 'Origin: Ubuntu' "$inrelease"
+            grep -Fxq "Suite: $suite" "$inrelease"
+          done
+          # Preserve source suites, signing options and the mirror priority fields.
+          sudo sed -E -i "s#^([[:space:]]*)https?://(azure\.archive|archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)#\1$mirror/\3#" "$mirrors"
       - name: Install browser
         working-directory: smart-farmer-frontend/web
         run: npx playwright install --with-deps chromium
@@ -147,3 +184,18 @@ jobs:
           node-version: 24.22.1
       - name: Build and verify the read-only static web and PWA image
         run: node smart-farmer-frontend/web/scripts/test-container.mjs
+
+  arm64-release:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify native ARM64 images and restore a private attachment
+        run: |
+          bash smart-farmer-backend/deploy/onesa/qualify-arm64.sh "$RUNNER_TEMP/farmer-arm64.env"
+          cat "$RUNNER_TEMP/farmer-arm64.env" >> "$GITHUB_STEP_SUMMARY"

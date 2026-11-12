@@ -1,6 +1,1 @@
-<resources>
-  <string name="NSCameraUsageDescription">"Tora mufananidzo webasa kana zvakaonekwa papurazi."</string>
-  <string name="NSPhotoLibraryUsageDescription">"Sarudza mufananidzo unobatana nebasa repapurazi."</string>
-  <string name="NSMicrophoneUsageDescription">"Rekodha shoko rezwi rinobatana nebasa repapurazi."</string>
-  <string name="NSFaceIDUsageDescription">"Vhura zvinyorwa zvepapurazi zvako zvakakiyiwa."</string>
-</resources>
+<resources/>

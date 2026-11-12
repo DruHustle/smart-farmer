@@ -1,7 +1,7 @@
 # Local development stack. No public database or unconfigured production deployment.
 x-backend: &backend
   build: .
-  environment:
+  environment: &backend-environment
     HOST: 0.0.0.0
     PORT: 3000
     PGHOST: db
@@ -58,6 +58,12 @@ services:
     restart: "no"
   api:
     <<: *backend
+    environment:
+      <<: *backend-environment
+      ONESA_IDENTITY_ENABLED: ${ONESA_IDENTITY_ENABLED:-false}
+      ONESA_IDENTITY_ISSUER: ${ONESA_IDENTITY_ISSUER:-}
+      ONESA_IDENTITY_CLIENT_ID: ${ONESA_IDENTITY_CLIENT_ID:-}
+      ONESA_IDENTITY_CLIENT_SECRET: ${ONESA_IDENTITY_CLIENT_SECRET:-}
     ports: ["127.0.0.1:3000:3000"]
     volumes: ["media_data:/data/media"]
     depends_on:

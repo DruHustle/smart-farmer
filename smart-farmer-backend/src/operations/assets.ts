@@ -667,7 +667,7 @@ export function registerAssetOperations(app: FastifyInstance, ctx: Context) {
         ).rows[0];
         if (nextId)
           await c.query(
-            "INSERT INTO asset_maintenance(id,farm_id,asset_id,project_id,actor_id,title,due_at,interval_days,instructions,assignee_id,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7::timestamptz+make_interval(days=>$8),$8,$9,$10,$11)",
+            "INSERT INTO asset_maintenance(id,farm_id,asset_id,project_id,actor_id,title,due_at,interval_days,instructions,assignee_id,payload_hash) VALUES($1,$2,$3,$4,$5,$6,$7::timestamptz+make_interval(days=>$8),$8,$9,(SELECT user_id FROM memberships WHERE farm_id=$2 AND user_id=$10 FOR KEY SHARE),$11)",
             [
               nextId,
               a.farmId,

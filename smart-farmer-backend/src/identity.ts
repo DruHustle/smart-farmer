@@ -1,4 +1,5 @@
 import type {FastifyInstance} from 'fastify';
+import type {PoolClient} from 'pg';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ApiError, audit, type Context, manageRoles} from './context.js';
@@ -12,6 +13,22 @@ const language=z.enum(['sn','nd']);
 const credentials=z.object({username,password});
 const dummyPassword=hashPassword(token());
 const farmParams=z.object({farmId:uuid});
+
+async function lockMembershipChange(client:PoolClient,farmId:string,actorId:string,userId:string,nextRole:string|null) {
+  // Serialize owner changes before checking the acting owner's current role.
+  await client.query('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE',[farmId]);
+  const target=await client.query(
+    `SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2
+     AND EXISTS (SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$3 AND role='owner')
+     FOR UPDATE`,[farmId,userId,actorId]
+  );
+  if(!target.rowCount)throw new ApiError('not_found',404);
+  if(target.rows[0].role==='owner'&&nextRole!=='owner'){
+    const otherOwner=await client.query("SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id<>$2 AND role='owner' LIMIT 1",[farmId,userId]);
+    if(!otherOwner.rowCount)throw new ApiError('last_owner',409);
+  }
+  return target.rows[0];
+}
 
 export function registerIdentity(app:FastifyInstance, ctx:Context) {
   const {db,user,member,transaction}=ctx;
@@ -118,19 +135,24 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     const b=z.object({role:z.enum(['owner','manager','worker','adviser'])}).strict().parse(req.body);
     await transaction(async c=>{
-      await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);
-      const previous=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!previous.rowCount)throw new ApiError('not_found',404);
-      if(previous.rows[0].role==='owner'&&b.role!=='owner'){const owners=await c.query("SELECT count(*) FROM memberships WHERE farm_id=$1 AND role='owner'",[farmId]);if(Number(owners.rows[0].count)<2)throw new ApiError('last_owner',409);}
-      await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);await audit(c,farmId,id,'membership',userId,'role_changed','owner_review',previous.rows[0],b);
+      const previous=await lockMembershipChange(c,farmId,id,userId,b.role);
+      await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);
+      await audit(c,farmId,id,'membership',userId,'role_changed','owner_review',previous,b);
     });return {userId,role:b.role};
   });
   app.delete('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
     const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     await transaction(async c=>{
-      await c.query('SELECT id FROM farms WHERE id=$1 FOR UPDATE',[farmId]);const m=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);if(!m.rowCount)throw new ApiError('not_found',404);
-      if(m.rows[0].role==='owner'){const owners=await c.query("SELECT count(*) FROM memberships WHERE farm_id=$1 AND role='owner'",[farmId]);if(Number(owners.rows[0].count)<2)throw new ApiError('last_owner',409);}
-      await c.query('UPDATE tasks SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',[farmId,userId]);
-      await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',[farmId,userId]);await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',[farmId,userId]);await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');
+      await lockMembershipChange(c,farmId,id,userId,null);
+      const assignment=[farmId,userId];
+      await c.query('UPDATE project_plans SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query('UPDATE tasks SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
+      await c.query("UPDATE asset_maintenance SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2 AND status='planned'",assignment);
+      await c.query('UPDATE assets SET responsible_id=NULL,version=version+1 WHERE farm_id=$1 AND responsible_id=$2',assignment);
+      await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',assignment);
+      await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',assignment);
+      await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');
     });return reply.code(204).send();
   });
 }

@@ -11,6 +11,7 @@ import {completionJourneys} from './browser-completion.mjs';
 import {forumJourneys} from './browser-forum.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
+import {appStoreListings} from '../src/components/app-store-listings.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backend = resolve(web, '../..', 'smart-farmer-backend');
@@ -60,7 +61,7 @@ async function command(cmd, args, cwd, extra = {}) {
 }
 function server(args, cwd) {const proc = spawn(process.execPath, args, {cwd, env, stdio: ['ignore', 'pipe', 'pipe']}); let logs = ''; proc.stdout.on('data', part => {logs += part;}); proc.stderr.on('data', part => {logs += part;}); children.push({proc, logs: () => logs}); return proc;}
 async function waitUrl(url) {for (let i = 0; i < 100; i++) {try {const response = await fetch(url, {signal: AbortSignal.timeout(2000)}); if (response.ok) return;} catch {} await new Promise(r => setTimeout(r, 100));} throw new Error(`Server did not become ready: ${url}`);}
-async function apiCall(path, body, token = '', method = body === undefined ? 'GET' : 'POST') {await pace();const response = await fetch(api + path, {signal: AbortSignal.timeout(10000), method, headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(body === undefined ? {} : {body: JSON.stringify(body)})}); observeRate(Object.fromEntries(response.headers));const data = response.status === 204 ? {} : await response.json(); if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${JSON.stringify(data)}`); return data;}
+async function apiCall(path, body, token = '', method = body === undefined ? 'GET' : 'POST') {await pace();const response = await fetch(api + path, {signal: AbortSignal.timeout(10000), method, headers: {...(body === undefined ? {} : {'Content-Type': 'application/json'}), ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(body === undefined ? {} : {body: JSON.stringify(body)})}); observeRate(Object.fromEntries(response.headers));const data = response.status === 204 ? {} : await response.json(); if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${JSON.stringify(data)}`); return data;}
 const sn = catalog.sn, nd = catalog.nd;
 const unique = Date.now().toString(36); const username = `web_owner_${unique}`; let password = 'browser-fixture-password-2026';
 const note = `Offline field evidence ${unique}`;
@@ -88,11 +89,28 @@ try {
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');
-  await page.goto(ui); await page.getByRole('button', {name: sn.register, exact: true}).click();
+  await page.goto(ui);
+  const apps = page.getByRole('region', {name:sn.farmerApps});
+  for (const {device, store, url} of appStoreListings) {
+    const platform = apps.getByRole('listitem').filter({hasText:device});
+    assert.ok((await platform.innerText()).includes(store));
+    if (url) {
+      assert.equal(await platform.getByRole('link').getAttribute('href'), url);
+    } else {
+      assert.ok((await platform.innerText()).includes(sn.notPublished));
+      assert.equal(await platform.getByRole('link').count(), 0);
+    }
+  }
+  await page.getByRole('button', {name: sn.register, exact: true}).click();
   await page.getByLabel(sn.username, {exact: true}).fill(username); await page.getByLabel(sn.password, {exact: true}).fill(password); await page.getByLabel(sn.farmName, {exact: true}).fill('Browser acceptance farm');
   await page.getByRole('button', {name: sn.continue, exact: true}).click();
   await expectVisible(page.getByRole('heading', {name: sn.recoveryCode, exact: true}));
   const recoveryCode = await page.locator('.secret-result code').textContent(); assert.ok(recoveryCode?.length > 15);
+  await context.setOffline(true);
+  await page.getByRole('button', {name: sn.savedCode, exact: true}).click();
+  await expectVisible(page.getByRole('alert'));
+  assert.equal(await page.locator('.secret-result code').textContent(), recoveryCode);
+  await context.setOffline(false);
   await page.getByRole('button', {name: sn.savedCode, exact: true}).click();
   await expectVisible(page.locator('.farm-switch')); checkpoint('Wait for active service worker and page control');
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), undefined, {timeout: 15000});
