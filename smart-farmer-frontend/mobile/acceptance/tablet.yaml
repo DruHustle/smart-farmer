@@ -21,19 +21,27 @@ appId: eu.onesa.smartfarmer
     element:
       id: workspace-language
     direction: UP
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: project-open-${PROJECT_ID}
-    direction: DOWN
+- runFlow:
+    when:
+      notVisible:
+        id: project-open-${PROJECT_ID}
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: project-open-${PROJECT_ID}
+          direction: DOWN
 - takeScreenshot: ipad-large-font-farm-overview
 - tapOn:
     id: project-open-${PROJECT_ID}
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: project-workspace
-    direction: DOWN
+- runFlow:
+    when:
+      notVisible:
+        id: project-workspace
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: project-workspace
+          direction: DOWN
 - tapOn:
     id: project-workspace
 - tapOn:

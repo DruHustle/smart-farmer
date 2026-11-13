@@ -27,18 +27,29 @@ appId: eu.onesa.smartfarmer
     id: '^invoice-upload-[0-9a-f-]+$'
 # An unuploaded private source must survive a real process restart.
 - stopApp
-- launchApp:
-    stopApp: false
-    permissions:
-      all: unset
 - runFlow:
     when:
       platform: Android
     commands:
+      - launchApp:
+          stopApp: false
+          permissions:
+            all: unset
       - openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
       - tapOn:
           text: Open
           optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions:
+            all: unset
+          arguments:
+            "--initialUrl": smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1
+      - runFlow: ios-resume-locked-bundle.yaml
 - extendedWaitUntil:
     visible:
       id: device-reauthenticate
