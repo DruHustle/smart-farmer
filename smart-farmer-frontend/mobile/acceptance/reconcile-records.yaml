@@ -1,7 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
-- tapOn:
-    id: tab-record
+- runFlow: select-record-tab.yaml
 - scrollUntilVisible:
     centerElement: true
     element:
