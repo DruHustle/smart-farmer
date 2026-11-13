@@ -69,5 +69,25 @@ class SubmittedLogin(unittest.TestCase):
             self.assertEqual(self.checkpoint(failure, []), "record-assertion")
 
 
+    def test_invoice_requires_draft_restart_and_exact_driver_disconnect(self):
+        def visible(key):
+            return {"command": {"assertConditionCommand": {"condition": {"visible": {"idRegex": key, "optional": False}}}},
+                    "metadata": {"status": "COMPLETED"}}
+
+        def completed(name, value):
+            return {"command": {name: value}, "metadata": {"status": "COMPLETED"}}
+
+        prefix = [visible("invoice-local-source-image"), visible("^invoice-upload-[0-9a-f-]+$"),
+                  completed("stopAppCommand", {}), completed("launchAppCommand", {}),
+                  visible("device-reauthenticate"), completed("tapOnElement", {"selector": {"idRegex": "device-reauthenticate", "optional": False}}),
+                  visible("auth-username")]
+        flow = "accounting-intake-check-local"
+        self.assertEqual(self.checkpoint(sheet.STATIC_LOSS, prefix + trace(), flow), "invoice-restored-postlogin")
+        self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix[1:] + trace(), flow))
+        self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix[:2] + prefix[3:] + trace(), flow))
+        self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix + trace()[:-1], flow))
+        self.assertIsNone(self.checkpoint("Missing element: invoice-local-source-image", prefix + trace(), flow))
+        self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix + trace(), "accounting-intake-post"))
+
 if __name__ == "__main__":
     unittest.main()

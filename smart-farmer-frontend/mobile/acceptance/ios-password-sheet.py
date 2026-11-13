@@ -54,6 +54,7 @@ RECORD_CHECKPOINTS = {
 }
 SHEET_BODY = r"^Securely store your password so it’s filled automatically the next time you need it\.$"
 DEVICE_LOSS = "maestro.DeviceUnreachableException: Device became unreachable during deviceInfo"
+STATIC_LOSS = "maestro.DeviceUnreachableException: Device became unreachable during isScreenStatic"
 
 
 def lost_after_submit(trace):
@@ -85,9 +86,42 @@ def lost_after_submit(trace):
             })
 
 
+def restored_invoice_login(trace):
+    # Confirm the intact original preview, explicit upload, actual restart and
+    # reauthentication. The continuation can then read only this restored draft.
+    def control(entry, command, key):
+        value = entry["command"].get(command, {})
+        target = value.get("condition", {}).get("visible") if command == "assertConditionCommand" else value.get("selector")
+        return entry["metadata"]["status"] == "COMPLETED" and target == {"idRegex": key, "optional": False}
+
+    i = 0
+    for command, key in [
+        ("assertConditionCommand", "invoice-local-source-image"),
+        ("assertConditionCommand", "^invoice-upload-[0-9a-f-]+$"),
+        ("stopAppCommand", None), ("launchAppCommand", None),
+        ("assertConditionCommand", "device-reauthenticate"),
+        ("tapOnElement", "device-reauthenticate"),
+        ("assertConditionCommand", "auth-username"),
+    ]:
+        while i < len(trace):
+            current = trace[i]
+            i += 1
+            if key is None:
+                matched = command in current["command"] and current["metadata"]["status"] == "COMPLETED"
+            else:
+                matched = control(current, command, key)
+            if matched:
+                break
+        else:
+            return False
+    return lost_after_submit(trace[i:])
+
+
 def checkpoint(report, commands):
     tests = ET.parse(report).findall(".//testcase")
+    invoice = "smart-farmer-frontend/mobile/acceptance/accounting-intake-check-local.yaml"
     if len(tests) != 1 or tests[0].get("file") not in {
+        invoice,
         "smart-farmer-frontend/mobile/acceptance/login.yaml",
         "smart-farmer-frontend/mobile/acceptance/reconcile-signin.yaml",
     }:
@@ -96,6 +130,11 @@ def checkpoint(report, commands):
     if len(failures) != 1 or not failures[0].text:
         return None
     failure = failures[0].text
+    if tests[0].get("file") == invoice:
+        if failure.splitlines()[0] not in {DEVICE_LOSS, STATIC_LOSS}:
+            return None
+        with open(commands, encoding="utf-8") as stream:
+            return "invoice-restored-postlogin" if restored_invoice_login(json.load(stream)) else None
     if failure in RECORD_CHECKPOINTS:
         return "record-assertion"
     if failure.splitlines()[0] == DEVICE_LOSS:

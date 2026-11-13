@@ -44,7 +44,24 @@ if [[ "$NATIVE_PLATFORM" == ios ]]; then
   # Read only a cache-directory timestamp while Photos and Farmer process the
   # chosen image. Leave XCTest idle; rendered temp files can be removed quickly.
   python3 "$NATIVE_DIR/acceptance/ios-invoice-render.py" "$NATIVE_CONTAINER" "$NATIVE_PICK_SINCE"
-  intake_flow check-local --no-reinstall-driver
+  if ! intake_flow check-local --no-reinstall-driver; then
+    # Resume only after the real restart and accepted sign-in, if XCTest lost
+    # the connection in Apple's optional Passwords sheet. Never repeat the pick
+    # or submit a second credential, upload, draft or journal intent.
+    NATIVE_CHECK_PATH="$EVIDENCE/ios-intake-check-local"
+    NATIVE_COMMANDS=("$NATIVE_CHECK_PATH"/*/accounting-intake-check-local/commands.json)
+    [[ ${#NATIVE_COMMANDS[@]} == 1 && -f "${NATIVE_COMMANDS[0]}" ]] || exit 1
+    NATIVE_PASSWORD_CHECK="$NATIVE_DIR/acceptance/ios-password-sheet.py"
+    [[ $(python3 "$NATIVE_PASSWORD_CHECK" checkpoint "$NATIVE_CHECK_PATH.xml" "${NATIVE_COMMANDS[0]}") == invoice-restored-postlogin ]] || exit 1
+    NATIVE_PASSWORD_IMAGE="$RUNNER_TEMP/ios-intake-current-screen.png"
+    xcrun simctl io "$2" screenshot "$NATIVE_PASSWORD_IMAGE"
+    NATIVE_PASSWORD_POINT=$(python3 "$NATIVE_PASSWORD_CHECK" locate "$NATIVE_PASSWORD_IMAGE" iphone) || NATIVE_PASSWORD_POINT=''
+    rm -f "$NATIVE_PASSWORD_IMAGE"
+    if [[ -n "$NATIVE_PASSWORD_POINT" ]]; then
+      intake_flow dismiss-system-sheet --no-reinstall-driver -e NOT_NOW_POINT="$NATIVE_PASSWORD_POINT"
+    fi
+    intake_flow readback --no-reinstall-driver
+  fi
 else
   intake_flow capture
 fi
