@@ -1,6 +1,0 @@
-appId: eu.onesa.smartfarmer
----
-# This connection starts on the existing WebKit form, after native consent.
-- assertTrue: ${FLOW_STATE === 'cold'}
-- runFlow: ios-enter-email.yaml
-- runFlow: cold.yaml

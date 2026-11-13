@@ -164,6 +164,18 @@ appId: eu.onesa.smartfarmer
     notVisible:
       id: invoice-confirm-draft
     timeout: 45000
+# The confirmed draft can retain the editor’s scroll position at its actions.
+# The balance appears above Preview in the detail screen.
+- runFlow:
+    when:
+      platform: iOS
+      visible: {id: invoice-preview}
+      notVisible: {id: invoice-balance}
+    commands:
+      - scrollUntilVisible:
+          element: {id: invoice-balance}
+          direction: UP
+          timeout: 30000
 - scrollUntilVisible:
     element:
       id: invoice-balance

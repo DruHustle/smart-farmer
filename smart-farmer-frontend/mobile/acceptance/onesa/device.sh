@@ -15,6 +15,7 @@ grant_android_debug_network() {
 case "$platform" in
   ios)
     device=$(xcrun simctl list devices available -j | node -e "let t='';process.stdin.on('data',s=>t+=s).on('end',()=>console.log(Object.values(JSON.parse(t).devices).flat().find(d=>d.isAvailable&&d.name.startsWith('iPhone')).udid))")
+    bash "$dir/ios-xctest/browser.sh" prepare "$device" || exit 1
     ;;
   android)
     # Exercise the dedicated Portal run at a 360x640dp compact phone viewport.
@@ -74,14 +75,16 @@ run_identity_flow() {
       maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
     local flow=ios-journey
-    if [[ "$phase_state" == cold ]]; then
-      # Native consent may transfer focus to SafariViewService. Reattach once
-      # before entering either credential; never replay the authorization request.
+    if [[ "$phase_state" != active ]]; then
+      # The original entry flow stops at the signed-out Farmer screen. Build and
+      # start the native test runner before it taps the timed authorization button.
       mkdir -p "$phase_dir/entry"
-      maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE=cold \
+      maestro --device "$device" test --no-reinstall-driver "$@" \
         --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" \
-        "$dir/ios-entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
-      flow=ios-cold-browser
+        "$dir/entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
+      bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role" || return 1
+      if [[ "$phase_state" == cancel ]]; then return 0; fi
+      flow=ios-xctest-workspace
     fi
     maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
       --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \

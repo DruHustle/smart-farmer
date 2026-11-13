@@ -1,14 +1,7 @@
 appId: eu.onesa.smartfarmer
 ---
-- assertTrue: ${FLOW_STATE === 'cancel' || FLOW_STATE === 'active'}
+- assertTrue: ${FLOW_STATE === 'active'}
 - runFlow: ios-entry.yaml
 # No operating-system action starts a new authorization after this point.
 - runFlow: ios-portal-open.yaml
-- runFlow:
-    when:
-      true: ${FLOW_STATE === 'active'}
-    file: active.yaml
-- runFlow:
-    when:
-      true: ${FLOW_STATE === 'cancel'}
-    file: cancel.yaml
+- runFlow: active.yaml
