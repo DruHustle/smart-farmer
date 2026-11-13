@@ -4,7 +4,7 @@ NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
 NATIVE_SUITE="${1:-farm}"
-case "$NATIVE_SUITE" in farm|invoice) ;; *) exit 2 ;; esac
+case "$NATIVE_SUITE" in farm|invoice|tablet) ;; *) exit 2 ;; esac
 NATIVE_LOG_PID=''
 NATIVE_THREAD_WATCH_PID=''
 NATIVE_THREAD_STOP_FILE=''
@@ -92,8 +92,23 @@ run_native_login() {
     xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
     xcrun simctl io "$device" screenshot "$prompt_image" || return 1
     if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
-      # Never tap coordinates from an old frame. Require real signed-in controls.
-      resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+      # The iPad's native screenshot can omit the AutoFill overlay. The
+      # XCTest display capture includes it. Classify a fresh frame from this
+      # same simulator, never a coordinate calculated from the failed step.
+      if [[ "$layout" == ipad && "$checkpoint" == record-assertion ]]; then
+        local display="$EVIDENCE/$label-current-display"
+        maestro --device "$device" test --no-reinstall-driver --flatten-debug-output \
+          --test-output-dir "$display" --debug-output "$display" \
+          "$NATIVE_DIR/acceptance/ios-current-display.yaml" || return 1
+        local live="$display/ios-current-display/takeScreenshot/current-system-view.png"
+        [[ -f "$live" ]] || return 1
+        if prompt_point=$(python3 "$check" locate "$live" "$layout"); then
+          cp "$live" "$prompt_image" || return 1
+        fi
+      fi
+      if [[ -z "$prompt_point" ]]; then
+        resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+      fi
     fi
   fi
   set --
@@ -108,6 +123,25 @@ run_native_login() {
     --format junit --output "$report" --test-output-dir "$EVIDENCE/$label-after-password-sheet" \
     "$resume"
 }
+run_tablet() {
+  NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')
+  xcrun simctl boot "$NATIVE_TABLET"
+  xcrun simctl bootstatus "$NATIVE_TABLET" -b
+  xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
+  xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
+  start_native_log "$NATIVE_TABLET" ios-tablet
+  run_native_login "$NATIVE_TABLET" ipad ipad-large-font
+  read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
+  maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
+}
+
+# The iPad uses its own clean install, accessible text size and the preseeded
+# project/forum records. Its UI verification does not consume iPhone mutations.
+if [[ "$NATIVE_SUITE" == tablet ]]; then
+  run_tablet
+  exit 0
+fi
+
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
@@ -143,12 +177,8 @@ bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
 bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"
 stop_native_log
 xcrun simctl shutdown "$NATIVE_PHONE"
-NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')
-xcrun simctl boot "$NATIVE_TABLET"
-xcrun simctl bootstatus "$NATIVE_TABLET" -b
-xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
-xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
-start_native_log "$NATIVE_TABLET" ios-tablet
-run_native_login "$NATIVE_TABLET" ipad ipad-large-font
-read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
-maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
+# On a direct farm run keep the complete historical handset/tablet journey.
+# CI schedules the same full tablet sequence in its own macOS job.
+if [[ "${NATIVE_TABLET_SEPARATE:-0}" != 1 ]]; then
+  run_tablet
+fi

@@ -170,7 +170,7 @@ jobs:
       fail-fast: false
       matrix:
         # For a focused replay, the PR description may include [ios-invoice-replay].
-        suite: ${{ fromJSON((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice"]' || '["farm","onesa"]') }}
+        suite: ${{ fromJSON((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]') }}
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
@@ -256,6 +256,7 @@ jobs:
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
           NATIVE_SUITE: ${{ matrix.suite }}
+          NATIVE_TABLET_SEPARATE: '1'
         run: |
           if [[ "$NATIVE_SUITE" == onesa ]]; then
             bash smart-farmer-frontend/mobile/acceptance/onesa/device.sh ios
@@ -278,7 +279,7 @@ jobs:
         if: always() && matrix.suite != 'onesa'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.suite == 'invoice' && 'native-ios-invoice-replay' || 'native-ios-acceptance' }}
+          name: ${{ matrix.suite == 'invoice' && 'native-ios-invoice-replay' || matrix.suite == 'tablet' && 'native-ipad-acceptance' || 'native-ios-acceptance' }}
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
           path: ${{ runner.temp }}/native-evidence
       - name: Retain successful simulator app for review
