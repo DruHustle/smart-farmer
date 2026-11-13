@@ -68,27 +68,15 @@ run_identity_flow() {
       node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" "$phase_dir/browser-target.json" > "$phase_dir/browser.log" 2>&1 &&
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
-    mkdir -p "$phase_dir/entry" "$phase_dir/complete"
-    # A fresh role owns an erased simulator. Install XCTest once while SpringBoard
-    # is visible. Reinstalling it while Safari owns the active session loses the
-    # current accessibility target, including the focused credential control.
+    mkdir -p "$phase_dir/complete"
+    # Install XCTest before creating a five-minute PKCE state. The entire
+    # authorization and real app return then share one Maestro connection.
     if [[ "$phase_state" != active ]]; then
       maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
-    maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/ios-entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
-    # Native consent changes the active XCTest accessibility target. Confirm its
-    # resulting Portal page from a fresh driver session without opening a new request.
-    mkdir -p "$phase_dir/portal"
-    maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/portal" --debug-output "$phase_dir/portal" "$dir/ios-portal-open.yaml" > "$phase_dir/portal.log" 2>&1 || return 1
-    if [[ "$phase_state" == cold ]]; then
-      mkdir -p "$phase_dir/email"
-      maestro --device "$device" test --no-reinstall-driver "$@" --test-output-dir "$phase_dir/email" --debug-output "$phase_dir/email" "$dir/ios-enter-email.yaml" > "$phase_dir/email.log" 2>&1 || return 1
-      # Check the exact email and the secure field’s masked length on the same
-      # Safari surface. Only this fresh private diagnostic may contain inputs.
-      maestro --device "$device" hierarchy --no-reinstall-driver > "$phase_dir/email-field.json" 2>/dev/null || return 1
-      node "$dir/verify-ios-email.mjs" "$phase_dir/email-field.json" "$fixture" "$phase_role" > "$phase_dir/browser.log" 2>&1 || return 1
-    fi
-    maestro --device "$device" test --no-reinstall-driver "$@" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/$phase_state.yaml" > "$phase_dir/complete.log" 2>&1
+    maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
+      --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \
+      "$dir/ios-journey.yaml" > "$phase_dir/complete.log" 2>&1
   fi
 }
 status=0

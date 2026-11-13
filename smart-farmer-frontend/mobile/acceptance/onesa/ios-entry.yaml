@@ -1,7 +1,6 @@
 appId: eu.onesa.smartfarmer
 ---
-# Start Farmer once. A fresh Maestro phase will inspect the system browser
-# without relaunching the app or sending another authorization request.
+# Start Farmer once. The calling flow continues on the live browser sheet.
 - assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
 - runFlow:
     when:

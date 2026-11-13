@@ -22,6 +22,26 @@ appId: eu.onesa.smartfarmer
     timeout: 10000
 - inputText: ${EMAIL}
 - runFlow: dismiss-browser-keyboard.yaml
+# Read the named WebKit control in this driver session. A blank or partial
+# fixture email may be corrected once before the form has been submitted.
+- copyTextFrom: '^Email address$'
+- runFlow:
+    when:
+      true: ${maestro.copiedText !== EMAIL}
+    commands:
+      - tapOn:
+          text: '^Email address$'
+          point: '95%,50%'
+      - extendedWaitUntil:
+          visible: {id: '^inputView$'}
+          timeout: 10000
+      - eraseText: 100
+      - inputText: ${EMAIL}
+      - runFlow: dismiss-browser-keyboard.yaml
+      - copyTextFrom: '^Email address$'
+- assertTrue:
+    condition: ${maestro.copiedText === EMAIL}
+    label: Confirm the Portal email field
 # Safari reports its secure control's masked value separately from its label.
 # Fill it on this same browser surface, then verify both fields before submit.
 - tapOn: '^Password$'
@@ -36,3 +56,9 @@ appId: eu.onesa.smartfarmer
     timeout: 10000
 - inputText: ${PASSWORD}
 - runFlow: dismiss-browser-keyboard.yaml
+# Only a masked value on the named secure control can pass. Reading the
+# password or a placeholder cannot satisfy this check.
+- copyTextFrom: '^Password$'
+- assertTrue:
+    condition: ${typeof maestro.copiedText === 'string' && maestro.copiedText.length === PASSWORD.length && /^[•●]+$/.test(maestro.copiedText)}
+    label: Confirm the masked Portal password field

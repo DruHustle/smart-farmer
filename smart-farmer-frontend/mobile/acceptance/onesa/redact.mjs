@@ -52,6 +52,9 @@ const errorKinds = [
 const commandKinds = {assertConditionCommand:'assert-visibility',tapOnElement:'tap',inputTextCommand:'input',scrollUntilVisible:'scroll',runFlowCommand:'run-flow',launchAppCommand:'launch'};
 function commandStage(command) {
   const text = JSON.stringify(command);
+  const label = command.assertConditionCommand?.label;
+  if (label === 'Confirm the Portal email field') return 'auth-email-readback';
+  if (label === 'Confirm the masked Portal password field') return 'auth-password-readback';
   const assertion = command.assertConditionCommand?.condition?.visible?.textRegex;
   if (typeof assertion==='string' && (assertion==='^${EMAIL}$' || /^\^[^\s@^$"/<>]+@[^\s@^$"/<>]+\$$/.test(assertion))) return 'auth-email-readback';
   if (/Authenticator or recovery code/.test(text)) return 'auth-mfa';
