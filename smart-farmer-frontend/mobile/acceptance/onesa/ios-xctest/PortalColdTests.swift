@@ -2,7 +2,7 @@ import XCTest
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, consent, email, password, remember, firstSubmit
+        case fixture, signedOut, consent, systemPrompt, browserForm, email, password, remember, firstSubmit
         case mfa, secondSubmit, cancelAction, returnLink, nativeDenial, nativeInvitation, completed
     }
 
@@ -25,9 +25,24 @@ final class PortalColdTests: XCTestCase {
         return false
     }
 
+    // On iOS 26 the visible system authentication web view may be owned by a
+    // background SafariViewService. Inspect its accessible live controls without
+    // activating Safari or changing the installed app's authorization request.
+    @MainActor private var browserOwners: [XCUIApplication] {
+        var owners: [XCUIApplication] = []
+        if [.runningForeground, .runningBackground].contains(authSheet.state) { owners.append(authSheet) }
+        if safari.state == .runningForeground { owners.append(safari) }
+        if app.state == .runningForeground { owners.append(app) }
+        return owners
+    }
+
+    @MainActor private var inputOwners: [XCUIApplication] {
+        browserOwners + (springboard.state == .runningForeground ? [springboard] : [])
+    }
+
     @MainActor private func browserConsent() -> XCUIElement? {
         let title = NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "localhost", "sign in")
-        for owner in [springboard, app] {
+        for owner in [springboard] + browserOwners {
             let alert = owner.alerts.firstMatch
             guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
             let button = alert.buttons["Continue"].firstMatch
@@ -36,24 +51,33 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
-    @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
-        var consent: XCUIElement?
-        let presented = {
-            consent = self.browserConsent()
-            return consent != nil || ready()
-        }
-        // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
-        // live alert once before failing. Rendering Portal gets its own wait
-        // after the OS prompt has actually been accepted.
-        guard waitFor(presented) || presented() else { return false }
-        guard let consent else { return true }
+    @MainActor private func openPortal() throws -> XCUIElement {
+        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        let ready = waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 30)
+        try XCTUnwrap(ready ? true : nil, "Signed-out Farmer sign-in control")
+        // Deliver one real touch inside the visible React Native control. A second
+        // tap could replace the PKCE state if the first request already started.
+        let button = start.frame.intersection(app.frame)
+        try XCTUnwrap(!button.isEmpty && !button.isNull ? true : nil, "Visible native sign-in target")
+        let center = CGVector(dx: button.midX - app.frame.minX, dy: button.midY - app.frame.minY)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(center).tap()
+        checkpoint(.consent)
+        var web: XCUIElement?
+        var prompt: XCUIElement?
+        let presented = waitFor({
+            web = self.portalWeb()
+            if web != nil { return true }
+            prompt = self.browserConsent()
+            return prompt != nil
+        })
+        if let web { return web }
+        let consent = try XCTUnwrap(presented ? prompt : nil, "Expected native consent or issuer form")
+        checkpoint(.systemPrompt)
         consent.tap()
-        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
-            // The first tap can coincide with presentation. Retry only the
-            // same local sign-in alert, without repeating the app's request.
-            stillPresented.tap()
-        }
-        return waitFor(ready)
+        if !consent.waitForNonExistence(timeout: 5), let samePrompt = browserConsent() { samePrompt.tap() }
+        checkpoint(.browserForm)
+        _ = waitFor({ web = self.portalWeb(); return web != nil })
+        return try XCTUnwrap(web, "System browser owns the issuer form after consent")
     }
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
@@ -65,7 +89,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
         @MainActor func keyboardReady() -> Bool {
-            let owners = [authSheet, safari, app, springboard].filter { $0.state == .runningForeground }
+            let owners = inputOwners
             for surface in owners {
                 let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
                 guard tutorial.exists else { continue }
@@ -114,7 +138,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in [app, authSheet, safari] where surface.state == .runningForeground {
+            for surface in self.browserOwners {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -122,15 +146,19 @@ final class PortalColdTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            [app, authSheet, safari].filter { $0.state == .runningForeground }.allSatisfy { !$0.keyboards.firstMatch.exists }
+            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
     @MainActor private func portalWeb() -> XCUIElement? {
-        for owner in [authSheet, safari] where owner.state == .runningForeground {
-            let web = owner.webViews.firstMatch
-            let email = field("Email address", in: web)
-            if web.exists && email.exists && email.isEnabled && email.isHittable { return web }
+        for owner in browserOwners {
+            for web in owner.webViews.allElementsBoundByIndex {
+                // A visible browser form identifies the surface. Each subsequent
+                // action independently requires its named control to be hittable.
+                let email = field("Email address", in: web)
+                let cancel = web.buttons["Cancel sign-in"].firstMatch
+                if email.exists && (email.isHittable || (cancel.exists && cancel.isHittable)) { return web }
+            }
         }
         return nil
     }
@@ -153,7 +181,7 @@ final class PortalColdTests: XCTestCase {
 
     @MainActor private func returnLink() -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
-        for owner in [authSheet, safari, app, springboard] where owner.state == .runningForeground {
+        for owner in inputOwners {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
             if notice.exists && notNow.exists && notNow.isHittable { notNow.tap(); return nil }
@@ -180,12 +208,7 @@ final class PortalColdTests: XCTestCase {
         // Activating the existing app here does not start the timed request or open a URL.
         checkpoint(.signedOut)
         app.activate()
-        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
-        let startReady = waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 30)
-        try XCTUnwrap(startReady ? start : nil, "Signed-out Farmer sign-in control").tap()
-        checkpoint(.consent)
-        try XCTUnwrap(awaitBrowser { self.portalWeb() != nil } ? true : nil, "Issuer page in system browser")
-        let web = try XCTUnwrap(portalWeb(), "Real browser owns issuer form")
+        let web = try openPortal()
         if role == "cancel" {
             checkpoint(.cancelAction)
             let cancel = web.buttons["Cancel sign-in"].firstMatch

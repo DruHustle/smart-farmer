@@ -44,6 +44,16 @@ appId: eu.onesa.smartfarmer
           direction: DOWN
 - tapOn:
     id: project-workspace
+# Acknowledged iPad taps can leave the project chooser closed. Reopen it
+# once only when its own enabled button is still on the original sheet.
+- runFlow:
+    when:
+      notVisible:
+        id: project-workspace-option-performance
+    commands:
+      - tapOn:
+          id: project-workspace
+          enabled: true
 - tapOn:
     id: project-workspace-option-performance
 - scrollUntilVisible:
