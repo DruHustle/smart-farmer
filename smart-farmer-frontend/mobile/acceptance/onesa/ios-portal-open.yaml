@@ -1,0 +1,6 @@
+appId: eu.onesa.smartfarmer
+---
+# Inspect the already-open external browser in a fresh Maestro session.
+- extendedWaitUntil:
+    visible: '^(Sign in to Onesa|Email address|Cancel sign-in|Continue as .*|Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
+    timeout: 45000

@@ -76,6 +76,10 @@ run_identity_flow() {
       maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
     maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/ios-entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
+    # Native consent changes the active XCTest accessibility target. Confirm its
+    # resulting Portal page from a fresh driver session without opening a new request.
+    mkdir -p "$phase_dir/portal"
+    maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/portal" --debug-output "$phase_dir/portal" "$dir/ios-portal-open.yaml" > "$phase_dir/portal.log" 2>&1 || return 1
     if [[ "$phase_state" == cold ]]; then
       mkdir -p "$phase_dir/email"
       maestro --device "$device" test --no-reinstall-driver "$@" --test-output-dir "$phase_dir/email" --debug-output "$phase_dir/email" "$dir/ios-enter-email.yaml" > "$phase_dir/email.log" 2>&1 || return 1

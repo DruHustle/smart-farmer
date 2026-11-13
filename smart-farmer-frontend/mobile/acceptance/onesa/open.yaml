@@ -19,11 +19,6 @@ appId: eu.onesa.smartfarmer
                 text: '^Continue$'
                 below: '^“Smart ?Farmer” Wants to Use “localhost” to Sign In$'
                 optional: true
-      # An optional system tap alone does not establish a handoff. Require
-      # the live Portal form, remembered account or Farmer's return bridge.
-      - extendedWaitUntil:
-          visible: '^(Sign in to Onesa|Email address|Cancel sign-in|Continue as .*|Dzokera muSmart Farmer|Buyela ku-Smart Farmer)$'
-          timeout: 45000
 - runFlow:
     when:
       platform: Android
