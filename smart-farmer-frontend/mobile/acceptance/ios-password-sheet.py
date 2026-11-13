@@ -1,5 +1,6 @@
 """Locate the decline button on the observed English iOS AutoFill sheet."""
 import csv
+import json
 import io
 import subprocess
 import sys
@@ -47,17 +48,76 @@ def not_now_point(image, device):
     return f"{round(100 * decline[0] / width)}%,{round(100 * decline[1] / height)}%"
 
 
+RECORD_CHECKPOINTS = {
+    "Assertion is false: id: tab-record is visible",
+    "Assertion is false: id: tab-record, selected is visible",
+}
+SHEET_BODY = r"^Securely store your password so it’s filled automatically the next time you need it\.$"
+DEVICE_LOSS = "maestro.DeviceUnreachableException: Device became unreachable during deviceInfo"
+
+
+def lost_after_submit(trace):
+    # Match the contiguous Maestro 2.12 stack, including the scope of each tap.
+    # Accept no other interrupted command and never replay credential submission.
+    expected = [
+        ("tapOnElement", "COMPLETED"), ("runFlowCommand", "RUNNING"),
+        ("assertConditionCommand", "COMPLETED"), ("runFlowCommand", "RUNNING"),
+        ("applyConfigurationCommand", "COMPLETED"), ("tapOnElement", "RUNNING"),
+    ]
+    tail = trace[-len(expected):]
+    if len(tail) != len(expected):
+        return False
+    for entry, (kind, status) in zip(tail, expected):
+        if list(entry["command"]) != [kind] or entry["metadata"]["status"] != status:
+            return False
+    submit, platform, hidden, sheet, config, decline = [
+        next(iter(entry["command"].values())) for entry in tail
+    ]
+    control = {"idRegex": "auth-submit", "optional": False}
+    return (submit["selector"] == control and submit["optional"] is False
+            and platform["condition"] == {"platform": "IOS"}
+            and hidden["condition"] == {"notVisible": control} and hidden["optional"] is False
+            and sheet["sourceDescription"] == "dismiss-password-save.yaml"
+            and config["config"] == {"appId": "eu.onesa.smartfarmer"}
+            and decline["optional"] is True and decline["selector"] == {
+                "textRegex": "^Not Now$", "optional": True,
+                "below": {"textRegex": SHEET_BODY, "optional": False},
+            })
+
+
+def checkpoint(report, commands):
+    tests = ET.parse(report).findall(".//testcase")
+    if len(tests) != 1 or tests[0].get("file") not in {
+        "smart-farmer-frontend/mobile/acceptance/login.yaml",
+        "smart-farmer-frontend/mobile/acceptance/reconcile-signin.yaml",
+    }:
+        return None
+    failures = tests[0].findall("failure")
+    if len(failures) != 1 or not failures[0].text:
+        return None
+    failure = failures[0].text
+    if failure in RECORD_CHECKPOINTS:
+        return "record-assertion"
+    if failure.splitlines()[0] == DEVICE_LOSS:
+        with open(commands, encoding="utf-8") as stream:
+            if lost_after_submit(json.load(stream)):
+                return "submitted-driver-lost"
+    return None
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 4 or sys.argv[3] not in ("iphone", "ipad"):
-        sys.exit("Specify the test report, screenshot and iPhone or iPad layout.")
-    failures = [e.text for e in ET.parse(sys.argv[1]).findall(".//failure")]
-    record_checkpoints = {
-        "Assertion is false: id: tab-record is visible",
-        "Assertion is false: id: tab-record, selected is visible",
-    }
-    if len(failures) != 1 or failures[0] not in record_checkpoints:
-        sys.exit("The device did not stop at the expected post-login assertion.")
-    point = not_now_point(sys.argv[2], sys.argv[3])
-    if not point:
-        sys.exit("The current screenshot does not identify the system password sheet.")
-    print(point)
+    if len(sys.argv) == 4 and sys.argv[1] == "checkpoint":
+        try:
+            phase = checkpoint(sys.argv[2], sys.argv[3])
+        except (OSError, ET.ParseError, KeyError, TypeError, ValueError):
+            phase = None
+        if not phase:
+            sys.exit("The device did not stop at a recognized post-login checkpoint.")
+        print(phase)
+    elif len(sys.argv) == 4 and sys.argv[1] == "locate" and sys.argv[3] in ("iphone", "ipad"):
+        point = not_now_point(sys.argv[2], sys.argv[3])
+        if not point:
+            sys.exit("The current screenshot does not identify the system password sheet.")
+        print(point)
+    else:
+        sys.exit("Specify checkpoint REPORT COMMANDS or locate SCREENSHOT iphone|ipad.")

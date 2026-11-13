@@ -3,6 +3,8 @@ set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+NATIVE_SUITE="${1:-farm}"
+case "$NATIVE_SUITE" in farm|invoice) ;; *) exit 2 ;; esac
 NATIVE_LOG_PID=''
 NATIVE_THREAD_WATCH_PID=''
 NATIVE_THREAD_STOP_FILE=''
@@ -57,25 +59,26 @@ run_native_login() {
   if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
-  # Capture the current system UI. Accept only the specific blocked assertion
-  # and full matching AutoFill sheet; never replay the completed sign-in.
-  xcrun simctl io "$device" screenshot "$prompt_image"
-  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py"
+  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py" checkpoint
   local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
-  if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
-    # The completed XCTest run may have yielded focus. Require the exact
-    # blocking sheet in the assertion's own frame before returning to Farmer.
-    local failed_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-tab-record.png)
-    if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
-       ! python3 "$check" "$report" "${failed_frames[0]}" "$layout" > /dev/null; then
-      rm -f "$prompt_image"
-      return 1
+  checkpoint=$(python3 "$check" checkpoint "$report" "$EVIDENCE/$label/$flow/commands.json") || return 1
+  xcrun simctl io "$device" screenshot "$prompt_image" || return 1
+  if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
+    if [[ "$checkpoint" == record-assertion ]]; then
+      # On a failed Record assertion, require the exact sheet in the failure frame.
+      local failed_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-tab-record.png)
+      if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
+         ! python3 "$check" locate "${failed_frames[0]}" "$layout" > /dev/null; then
+        rm -f "$prompt_image"
+        return 1
+      fi
     fi
+    # The submitted-login trace can end inside Apple's decline handler when
+    # XCTest disconnects. Restore focus without resubmitting the login.
     xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
     xcrun simctl io "$device" screenshot "$prompt_image" || return 1
-    if ! prompt_point=$(python3 "$check" "$report" "$prompt_image" "$layout"); then
-      # Never tap coordinates from the old frame. Only the original record
-      # assertions may continue if the app now shows its signed-in workspace.
+    if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
+      # Never tap coordinates from an old frame. Require real signed-in controls.
       resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
     fi
   fi
@@ -97,6 +100,14 @@ xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
 run_native_login "$NATIVE_PHONE" iphone ios-login
+if [[ "$NATIVE_SUITE" == invoice ]]; then
+  # Independent clean install and seeded API. The full farm suite below keeps
+  # its original order, including all product and accounting assertions.
+  bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"
+  stop_native_log
+  xcrun simctl shutdown "$NATIVE_PHONE"
+  exit 0
+fi
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)

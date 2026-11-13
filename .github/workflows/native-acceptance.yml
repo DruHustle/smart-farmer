@@ -1,6 +1,11 @@
 name: Native acceptance
 on:
   workflow_dispatch:
+    inputs:
+      ios_invoice:
+        description: Include a separate clean-install iPhone invoice replay
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
@@ -164,7 +169,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [farm, onesa]
+        # For a focused replay, the PR description may include [ios-invoice-replay].
+        suite: ${{ fromJSON((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice"]' || '["farm","onesa"]') }}
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
@@ -178,6 +184,9 @@ jobs:
         with: {node-version: 24}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
+      - name: Check iOS submitted-login recovery
+        if: matrix.suite != 'onesa'
+        run: python3 -m unittest discover -s smart-farmer-frontend/mobile/acceptance -p 'test_ios_password_sheet.py' -v
       - name: Start isolated PostgreSQL
         run: |
           brew install postgresql@17
@@ -235,7 +244,7 @@ jobs:
         if: matrix.suite == 'onesa'
         run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh ios
       - name: Start isolated API and Metro
-        if: matrix.suite == 'farm'
+        if: matrix.suite != 'onesa'
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh ios
       - name: Install pinned Maestro CLI
         run: |
@@ -246,7 +255,13 @@ jobs:
         # Allow measured cold XCTest startup; application flow timeouts stay unchanged.
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
-        run: bash ${{ matrix.suite == 'onesa' && 'smart-farmer-frontend/mobile/acceptance/onesa/device.sh ios' || 'smart-farmer-frontend/mobile/acceptance/ios.sh' }}
+          NATIVE_SUITE: ${{ matrix.suite }}
+        run: |
+          if [[ "$NATIVE_SUITE" == onesa ]]; then
+            bash smart-farmer-frontend/mobile/acceptance/onesa/device.sh ios
+          else
+            bash smart-farmer-frontend/mobile/acceptance/ios.sh "$NATIVE_SUITE"
+          fi
       - name: Capture fresh simulator startup after a device failure
         if: failure() && matrix.suite == 'onesa'
         timeout-minutes: 4
@@ -260,10 +275,10 @@ jobs:
           retention-days: 7
           path: ${{ runner.temp }}/onesa-evidence
       - name: Retain ios acceptance evidence
-        if: always() && matrix.suite == 'farm'
+        if: always() && matrix.suite != 'onesa'
         uses: actions/upload-artifact@v4
         with:
-          name: native-ios-acceptance
+          name: ${{ matrix.suite == 'invoice' && 'native-ios-invoice-replay' || 'native-ios-acceptance' }}
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
           path: ${{ runner.temp }}/native-evidence
       - name: Retain successful simulator app for review

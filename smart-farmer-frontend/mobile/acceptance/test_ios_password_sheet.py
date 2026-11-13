@@ -1,0 +1,73 @@
+"""Regressions for the observed XCTest disconnect after credential submission."""
+import importlib.util
+import json
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("password_sheet", Path(__file__).with_name("ios-password-sheet.py"))
+sheet = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sheet)
+
+
+def trace():
+    submit = {"idRegex": "auth-submit", "optional": False}
+    decline = {"textRegex": "^Not Now$", "optional": True,
+               "below": {"textRegex": sheet.SHEET_BODY, "optional": False}}
+    events = [
+        ("tapOnElement", "COMPLETED", {"selector": submit, "optional": False}),
+        ("runFlowCommand", "RUNNING", {"condition": {"platform": "IOS"}}),
+        ("assertConditionCommand", "COMPLETED", {"condition": {"notVisible": submit}, "optional": False}),
+        ("runFlowCommand", "RUNNING", {"sourceDescription": "dismiss-password-save.yaml"}),
+        ("applyConfigurationCommand", "COMPLETED", {"config": {"appId": "eu.onesa.smartfarmer"}}),
+        ("tapOnElement", "RUNNING", {"selector": decline, "optional": True}),
+    ]
+    return [{"command": {kind: data}, "metadata": {"status": status}} for kind, status, data in events]
+
+
+class SubmittedLogin(unittest.TestCase):
+    def checkpoint(self, failure, commands, flow="login"):
+        with tempfile.TemporaryDirectory() as directory:
+            root = ET.Element("testsuite")
+            case = ET.SubElement(root, "testcase", file=f"smart-farmer-frontend/mobile/acceptance/{flow}.yaml")
+            ET.SubElement(case, "failure").text = failure
+            report = Path(directory, "result.xml")
+            ET.ElementTree(root).write(report)
+            evidence = Path(directory, "commands.json")
+            evidence.write_text(json.dumps(commands))
+            return sheet.checkpoint(report, evidence)
+
+    def test_observed_login_and_reauthentication(self):
+        for flow in ("login", "reconcile-signin"):
+            self.assertEqual(self.checkpoint(sheet.DEVICE_LOSS + "\n  at driver", trace(), flow),
+                             "submitted-driver-lost")
+
+    def test_unrecognized_loss_cannot_resume(self):
+        self.assertIsNone(self.checkpoint("Device unreachable", trace()))
+        self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, trace(), "accounting-intake-post"))
+        self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, trace()[:-3]))
+        self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, trace() + trace()[:1]))
+        for index in range(6):
+            incomplete = trace()
+            incomplete[index]["metadata"]["status"] = "PENDING"
+            self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, incomplete))
+        for index, kind, field, value in [
+            (0, "tapOnElement", "selector", {"idRegex": "auth-username", "optional": False}),
+            (1, "runFlowCommand", "condition", {"platform": "ANDROID"}),
+            (2, "assertConditionCommand", "condition", {"visible": {"idRegex": "auth-submit"}}),
+            (3, "runFlowCommand", "sourceDescription", "other.yaml"),
+            (4, "applyConfigurationCommand", "config", {"appId": "other"}),
+            (5, "tapOnElement", "selector", {"textRegex": "^Continue$"}),
+        ]:
+            alternate = trace()
+            alternate[index]["command"][kind][field] = value
+            self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, alternate))
+
+    def test_previous_record_failures_still_require_frame_check(self):
+        for failure in sheet.RECORD_CHECKPOINTS:
+            self.assertEqual(self.checkpoint(failure, []), "record-assertion")
+
+
+if __name__ == "__main__":
+    unittest.main()
