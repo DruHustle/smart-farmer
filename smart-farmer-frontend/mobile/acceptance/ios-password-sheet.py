@@ -6,6 +6,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from datetime import datetime
 
 
 def not_now_point(image, device):
@@ -86,6 +87,30 @@ def lost_after_submit(trace):
             })
 
 
+def submitted_session_response(trace, proxy):
+    target = {"idRegex": "auth-submit", "optional": False}
+    tail = trace[-3:]
+    expected = [("tapOnElement", "COMPLETED"), ("runFlowCommand", "RUNNING"),
+                ("assertConditionCommand", "RUNNING")]
+    if len(tail) != 3 or any(list(row["command"]) != [kind] or row["metadata"]["status"] != status
+                             for row, (kind, status) in zip(tail, expected)):
+        return False
+    tap, platform, hidden = [next(iter(row["command"].values())) for row in tail]
+    if (tap.get("selector") != target or tap.get("optional") is not False
+            or platform.get("condition") != {"platform": "IOS"}
+            or hidden.get("condition") != {"notVisible": target} or hidden.get("optional") is not False):
+        return False
+    with open(proxy, encoding="utf-8") as stream:
+        rows = [json.loads(line.removeprefix("[native-proxy] ")) for line in stream if line.startswith("[native-proxy] ")]
+    posts = [row for row in rows if row.get("method") == "POST"]
+    if ([row.get("route") for row in posts] != ["/v1/sessions", "/v1/sessions"]
+            or [row.get("status") for row in posts] != ["pending", 200]):
+        return False
+    start = tail[0]["metadata"]["timestamp"]
+    times = [datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).timestamp() * 1000 for row in posts]
+    return start <= times[0] <= times[1] <= start + 45000
+
+
 def restored_invoice_login(trace):
     # Confirm the intact original preview, explicit upload, actual restart and
     # reauthentication. The continuation can then read only this restored draft.
@@ -122,7 +147,7 @@ def restored_invoice_login(trace):
     return lost_after_submit(trace[i:])
 
 
-def checkpoint(report, commands):
+def checkpoint(report, commands, proxy=None):
     tests = ET.parse(report).findall(".//testcase")
     invoice = "smart-farmer-frontend/mobile/acceptance/accounting-intake-check-local.yaml"
     if len(tests) != 1 or tests[0].get("file") not in {
@@ -155,15 +180,18 @@ def checkpoint(report, commands):
         return "record-assertion"
     if failure.splitlines()[0] == DEVICE_LOSS:
         with open(commands, encoding="utf-8") as stream:
-            if lost_after_submit(json.load(stream)):
-                return "submitted-driver-lost"
+            trace = json.load(stream)
+        if lost_after_submit(trace):
+            return "submitted-driver-lost"
+        if proxy and tests[0].get("file", "").endswith("/login.yaml") and submitted_session_response(trace, proxy):
+            return "submitted-session-confirmed"
     return None
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4 and sys.argv[1] == "checkpoint":
+    if len(sys.argv) in (4, 5) and sys.argv[1] == "checkpoint":
         try:
-            phase = checkpoint(sys.argv[2], sys.argv[3])
+            phase = checkpoint(*sys.argv[2:])
         except (OSError, ET.ParseError, KeyError, TypeError, ValueError):
             phase = None
         if not phase:

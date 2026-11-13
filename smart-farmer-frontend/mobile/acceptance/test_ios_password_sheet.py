@@ -43,6 +43,25 @@ class SubmittedLogin(unittest.TestCase):
             self.assertEqual(self.checkpoint(sheet.DEVICE_LOSS + "\n  at driver", trace(), flow),
                              "submitted-driver-lost")
 
+    def test_first_visibility_wait_requires_exactly_one_confirmed_session_from_that_tap(self):
+        entries = trace()[:3]
+        entries[-1]["metadata"]["status"] = "RUNNING"
+        entries[0]["metadata"]["timestamp"] = 1700000000000
+        with tempfile.TemporaryDirectory() as directory:
+            proxy = Path(directory, "proxy.log")
+            rows = [{"method": "POST", "route": "/v1/sessions", "status": status, "timestamp": stamp}
+                    for status, stamp in [("pending", "2023-11-14T22:13:21Z"), (200, "2023-11-14T22:13:22Z")]]
+            def accepts(events):
+                proxy.write_text("".join("[native-proxy] " + json.dumps(row) + "\n" for row in events))
+                return sheet.submitted_session_response(entries, proxy)
+            self.assertTrue(accepts(rows))
+            self.assertFalse(accepts(rows[:1]))
+            self.assertFalse(accepts(rows + rows))
+            self.assertFalse(accepts([rows[0], {**rows[1], "status": 403}]))
+            self.assertFalse(accepts([rows[0], {**rows[1], "timestamp": "2023-11-14T22:17:22Z"}]))
+            entries[0]["metadata"]["status"] = "RUNNING"
+            self.assertFalse(accepts(rows))
+
     def test_unrecognized_loss_cannot_resume(self):
         self.assertIsNone(self.checkpoint("Device unreachable", trace()))
         self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, trace(), "accounting-intake-post"))
