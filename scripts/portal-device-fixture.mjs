@@ -238,6 +238,14 @@ async function listen(origin, isPortal) {
           headers,
         },
         (reply) => {
+          // The device operator needs to distinguish a UI click from an issuer
+          // response. Only emit the finite action and status, never the interaction ID,
+          // returned redirect, cookie, request/response body or credential values.
+          const action = isPortal && request.method === "POST"
+            ? /^\/api\/v1\/account\/interaction\/[^/]+\/(login|continue|cancel)$/.exec(path)?.[1]
+            : undefined;
+          if (action && Number.isInteger(reply.statusCode))
+            console.log(`ONESA_DEVICE_PORTAL ${action} ${reply.statusCode}`);
           response.writeHead(reply.statusCode, reply.headers);
           reply.pipe(response);
         },

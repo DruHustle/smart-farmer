@@ -13,3 +13,8 @@ appId: eu.onesa.smartfarmer
     id: UIContinuousPathIntroductionView
 - inputText: ${EMAIL}
 - runFlow: dismiss-browser-keyboard.yaml
+# Safari reports its secure control's masked value separately from its label.
+# Fill it on this same browser surface, then verify both fields before submit.
+- tapOn: '^Password$'
+- inputText: ${PASSWORD}
+- runFlow: dismiss-browser-keyboard.yaml

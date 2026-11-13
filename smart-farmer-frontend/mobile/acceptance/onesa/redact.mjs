@@ -20,6 +20,8 @@ for (const phase of ['run','entry','portal','email','browser','complete']) {
   if (!existsSync(runFile)) continue;
   const privateLines = readFileSync(runFile,'utf8').split('\n');
   if (phase === 'browser') {
+    if (privateLines.includes('The Portal email control or secure password control was not filled as expected.'))
+      console.log('Portal form field verification failed before submission.');
     const tag = 'ONESA_BROWSER_FAILED_STAGE ';
     const stage = privateLines.find(line => line.startsWith(tag) && chromeFailureStages.has(line.slice(tag.length)));
     if (stage) console.log('Failed Chrome stage: '+stage.slice(tag.length));

@@ -90,3 +90,34 @@ test('only an allowlisted Chrome phase can leave the private browser log', () =>
     assert.equal(output, 'Visible screen landmarks: \nFailed Chrome stage: mfa-submit\n');
   } finally { rmSync(directory,{recursive:true,force:true}); }
 });
+
+test('iOS Portal submission requires the expected email and a filled secure field; diagnostics expose neither', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'farmer-safari-form-'));
+  try {
+    const email = 'test-account@example.invalid';
+    const password = 'synthetic-form-value';
+    const data = join(directory, 'fixture.json');
+    const screen = join(directory, 'screen.json');
+    writeFileSync(data, JSON.stringify({ MEMBER_EMAIL: email, PASSWORD: password }));
+    const check = (shownEmail: string, shownPassword: string, label = 'Password') => {
+      return () => {
+        writeFileSync(screen, JSON.stringify({ children: [
+          { attributes: { accessibilityText: 'Email address', value: shownEmail } },
+          { attributes: { accessibilityText: label, value: shownPassword } },
+        ] }));
+        return execFileSync(process.execPath, ['acceptance/onesa/verify-ios-email.mjs', screen, data, 'member'], { encoding: 'utf8', stdio: 'pipe' });
+      };
+    };
+    assert.equal(check(email, '•'.repeat(password.length))(), '');
+    for (const attempt of [check(email, ''), check(email, '•'.repeat(password.length - 1)),
+      check('other@example.invalid', '•'.repeat(password.length)), check(email, password),
+      check(email, '•'.repeat(password.length), 'Other control')]) {
+      assert.throws(attempt, (error: unknown) => {
+        if (!error || typeof error !== 'object' || !('stderr' in error)) return false;
+        const message = String(error.stderr);
+        return message.trim() === 'The Portal email control or secure password control was not filled as expected.' &&
+          !message.includes(email) && !message.includes(password);
+      });
+    }
+  } finally { rmSync(directory, { force: true, recursive: true }); }
+});

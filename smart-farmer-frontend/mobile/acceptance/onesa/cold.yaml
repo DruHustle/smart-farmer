@@ -1,8 +1,5 @@
 appId: eu.onesa.smartfarmer
 ---
-- tapOn: '^Password$'
-- inputText: ${PASSWORD}
-- runFlow: dismiss-browser-keyboard.yaml
 # Remembering the browser is a normal Portal control. The active test must use
 # the OS browser cookies. It never supplies another password or recovery code.
 - scrollUntilVisible:
@@ -12,7 +9,10 @@ appId: eu.onesa.smartfarmer
 - scrollUntilVisible:
     element: '^Continue$'
     direction: DOWN
-- tapOn: '^Continue$'
+- tapOn:
+    text: '^Continue$'
+    enabled: true
+    below: '^Remember this browser$'
 - runFlow:
     when:
       true: ${ROLE === 'admin'}

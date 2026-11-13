@@ -83,8 +83,8 @@ run_identity_flow() {
     if [[ "$phase_state" == cold ]]; then
       mkdir -p "$phase_dir/email"
       maestro --device "$device" test --no-reinstall-driver "$@" --test-output-dir "$phase_dir/email" --debug-output "$phase_dir/email" "$dir/ios-enter-email.yaml" > "$phase_dir/email.log" 2>&1 || return 1
-      # The pinned iOS driver exposes WebKit field values separately from the
-      # strings checked by assertVisible. Keep the raw snapshot on the runner.
+      # Check the exact email and the secure field’s masked length on the same
+      # Safari surface. Only this fresh private diagnostic may contain inputs.
       maestro --device "$device" hierarchy --no-reinstall-driver > "$phase_dir/email-field.json" 2>/dev/null || return 1
       node "$dir/verify-ios-email.mjs" "$phase_dir/email-field.json" "$fixture" "$phase_role" > "$phase_dir/browser.log" 2>&1 || return 1
     fi
@@ -119,11 +119,16 @@ for role in cancel member admin; do
     # Add arguments through positional parameters, including the empty cancel set
     # on the older Bash shipped by macOS runners.
     set -- ${opts[@]+"${opts[@]}"}
+    # Bind allowlisted issuer responses to the appropriate planned role/phase.
+    if [[ "$platform" == ios ]]; then
+      portal_log_start=$(wc -l < "$RUNNER_TEMP/onesa-device/fixture.log")
+    fi
     if run_identity_flow "$state" "$role" "$private" "$@" &&
        { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; } &&
        { [[ "$platform" != android ]] || node "$dir/chrome-complete.mjs" "$device" "$private/browser-target.json" > "$private/browser-cleanup.log" 2>&1; }; then
       reference="${mapped:-}"
       echo "$role $state PASS" | tee -a "$evidence/$platform-results.txt"
+      passed=true
     else
       status=1
       echo "$role $state FAIL" | tee -a "$evidence/$platform-results.txt"
@@ -135,8 +140,13 @@ for role in cancel member admin; do
       fi
       node "$dir/redact.mjs" "$private" | tee -a "$evidence/$platform-results.txt"
       if [[ "$state" == cold ]]; then echo "$role active UNTESTED (cold did not complete)" | tee -a "$evidence/$platform-results.txt"; fi
-      break
+      passed=false
     fi
+    if [[ "$platform" == ios ]]; then
+      # Raw logs, data, credentials and callbacks stay private to the runner.
+      awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_PORTAL (login|continue|cancel) [1-5][0-9][0-9]$/ {print; seen=1} END {if (!seen) print "No Portal interaction submission response observed for this attempt."}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
+    fi
+    if [[ "$passed" == false ]]; then break; fi
   done
   # Only the intentionally named, confirmed signed-out frame is shareable.
   signed_out=$(find "$RUNNER_TEMP/onesa-device/$role-${states[0]}" -type f -iname '*signed-out-smart-farmer*.png' -print -quit)
