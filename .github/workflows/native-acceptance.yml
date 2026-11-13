@@ -186,7 +186,7 @@ jobs:
         with: {distribution: temurin, java-version: 17}
       - name: Check iOS submitted-login recovery
         if: matrix.suite != 'onesa'
-        run: python3 -m unittest discover -s smart-farmer-frontend/mobile/acceptance -p 'test_ios_password_sheet.py' -v
+        run: python3 -m unittest discover -s smart-farmer-frontend/mobile/acceptance -p 'test_ios_*.py' -v
       - name: Start isolated PostgreSQL
         run: |
           brew install postgresql@17

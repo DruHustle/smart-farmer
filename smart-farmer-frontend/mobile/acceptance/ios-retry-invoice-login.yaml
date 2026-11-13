@@ -1,0 +1,18 @@
+appId: eu.onesa.smartfarmer
+---
+# The isolated API returned success after the fixture's client had closed.
+# Require the still-open sign-in screen and its reported error before one retry.
+- assertVisible: '^Hazvina kubudirira[.] Tarisa zvawaisa kana kubatana[.]$'
+- assertVisible:
+    id: auth-username
+    text: '^native_owner$'
+- assertVisible:
+    id: auth-submit
+    enabled: true
+- tapOn:
+    id: auth-submit
+- extendedWaitUntil:
+    notVisible: {id: auth-submit}
+    timeout: 45000
+- runFlow: dismiss-password-save.yaml
+- runFlow: record-after-login.yaml
