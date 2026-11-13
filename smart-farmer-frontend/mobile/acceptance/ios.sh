@@ -107,6 +107,13 @@ run_native_login() {
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
+# A customer already has the source photo before signing in. Seed the real
+# OS library before opening Farmer; opening Photos later would lock the app.
+NATIVE_INVOICE_IMAGE="$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png"
+node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_INVOICE_IMAGE" > "$EVIDENCE/ios-intake-source.txt"
+xcrun simctl launch "$NATIVE_PHONE" com.apple.mobileslideshow > /dev/null
+xcrun simctl addmedia "$NATIVE_PHONE" "$NATIVE_INVOICE_IMAGE"
+printf '%s\n' 'Apple Simulator imported the synthetic invoice into Photos before sign-in.' >> "$EVIDENCE/ios-intake-source.txt"
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
 run_native_login "$NATIVE_PHONE" iphone ios-login

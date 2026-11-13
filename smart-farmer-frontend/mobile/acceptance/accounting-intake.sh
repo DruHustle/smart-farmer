@@ -31,15 +31,10 @@ intake_flow() {
     "$NATIVE_DIR/acceptance/accounting-intake-$phase.yaml"
 }
 
-NATIVE_INVOICE_IMAGE="$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png"
-node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_INVOICE_IMAGE" > "$EVIDENCE/$NATIVE_PLATFORM-intake-source.txt"
-if [[ "$NATIVE_PLATFORM" == ios ]]; then
-  # Initialize Photos before the gallery workflow. The first capture flow
-  # reactivates Farmer; its existing permission and selection checks still run.
-  NATIVE_INVOICE_DEVICE="${2:?Pass the iOS simulator}"
-  xcrun simctl launch "$NATIVE_INVOICE_DEVICE" com.apple.mobileslideshow > /dev/null
-  xcrun simctl addmedia "$NATIVE_INVOICE_DEVICE" "$NATIVE_INVOICE_IMAGE"
-  printf '%s\n' 'Apple Simulator imported the synthetic invoice into Photos.' >> "$EVIDENCE/$NATIVE_PLATFORM-intake-source.txt"
+# iOS Photos is seeded before sign-in so fixture setup cannot background and
+# lock an authenticated workspace. Android generates its image for Maestro here.
+if [[ "$NATIVE_PLATFORM" == android ]]; then
+  node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png" > "$EVIDENCE/android-intake-source.txt"
 fi
 node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" baseline > "$EVIDENCE/$NATIVE_PLATFORM-intake-checks.txt"
 intake_flow capture

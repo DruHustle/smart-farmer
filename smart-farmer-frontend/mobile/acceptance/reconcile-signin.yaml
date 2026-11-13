@@ -1,7 +1,20 @@
 appId: eu.onesa.smartfarmer
 ---
+# This separate XCTest session follows a real locked restart. Give the existing
+# process focus without restarting it or changing the denied camera permission.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions: {}
+- assertVisible:
+    id: device-reauthenticate
+    enabled: true
 - tapOn:
     id: device-reauthenticate
+    enabled: true
 - extendedWaitUntil:
     visible:
       id: auth-username
