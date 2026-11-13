@@ -64,6 +64,18 @@ class SubmittedLogin(unittest.TestCase):
             alternate[index]["command"][kind][field] = value
             self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, alternate))
 
+    def test_record_tap_requires_prior_visibility_and_the_exact_failed_control(self):
+        failure = "Element not found: Id matching regex: tab-record, Enabled"
+        visible = {"metadata": {"status": "COMPLETED"}, "command": {
+            "assertConditionCommand": {"condition": {"visible": {"idRegex": "tab-record", "optional": False}}}}}
+        tap = {"metadata": {"status": "FAILED"}, "command": {
+            "tapOnElement": {"selector": {"idRegex": "tab-record", "enabled": True, "optional": False}}}}
+        self.assertEqual(self.checkpoint(failure, [visible, tap]), "record-tap")
+        self.assertIsNone(self.checkpoint(failure, [tap]))
+        self.assertIsNone(self.checkpoint(failure, [visible, tap, visible]))
+        tap["command"]["tapOnElement"]["selector"]["idRegex"] = "other-tab"
+        self.assertIsNone(self.checkpoint(failure, [visible, tap]))
+
     def test_previous_record_failures_still_require_frame_check(self):
         for failure in sheet.RECORD_CHECKPOINTS:
             self.assertEqual(self.checkpoint(failure, []), "record-assertion")

@@ -135,6 +135,17 @@ def checkpoint(report, commands):
             return None
         with open(commands, encoding="utf-8") as stream:
             return "invoice-restored-postlogin" if restored_invoice_login(json.load(stream)) else None
+    if failure == "Element not found: Id matching regex: tab-record, Enabled":
+        with open(commands, encoding="utf-8") as stream:
+            trace = json.load(stream)
+        target = {"idRegex": "tab-record", "enabled": True, "optional": False}
+        shown = {"visible": {"idRegex": "tab-record", "optional": False}}
+        if (trace and trace[-1]["metadata"]["status"] == "FAILED"
+                and trace[-1]["command"].get("tapOnElement", {}).get("selector") == target
+                and any(step["metadata"]["status"] == "COMPLETED"
+                        and step["command"].get("assertConditionCommand", {}).get("condition") == shown
+                        for step in trace)):
+            return "record-tap"
     if failure in RECORD_CHECKPOINTS:
         return "record-assertion"
     if failure.splitlines()[0] == DEVICE_LOSS:

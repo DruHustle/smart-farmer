@@ -59,6 +59,16 @@ run_native_login() {
   if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
+  if [[ "$flow" == login && "$label" == ios-login ]] &&
+     python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label"; then
+    # XCTest failed before it could launch the form. Keep the failed install
+    # trace, then give the same simulator one clean driver installation.
+    mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
+    echo 'Retrying the initial iPhone driver after its accessibility service failed to initialize.'
+    if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
+      return 0
+    fi
+  fi
   # One user retry is allowed only in the isolated invoice fixture, on the
   # initial sign-in screen. No account proof, financial action or record is replayed.
   if [[ "$NATIVE_SUITE" == invoice && "$flow" == login && "$label" == ios-login ]]; then
@@ -76,6 +86,15 @@ run_native_login() {
   local check="$NATIVE_DIR/acceptance/ios-password-sheet.py" checkpoint
   local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
   checkpoint=$(python3 "$check" checkpoint "$report" "$EVIDENCE/$label/$flow/commands.json") || return 1
+  if [[ "$checkpoint" == record-tap ]]; then
+    # The Record control was visible before its tap failed. Only Apple's exact
+    # password sheet in that failed display permits the post-login recovery.
+    local tap_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-tapOnElement-tab-record.png)
+    if [[ ${#tap_frames[@]} != 1 || ! -f "${tap_frames[0]}" ]] ||
+       ! python3 "$check" locate "${tap_frames[0]}" "$layout" > /dev/null; then
+      return 1
+    fi
+  fi
   xcrun simctl io "$device" screenshot "$prompt_image" || return 1
   if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
     if [[ "$checkpoint" == record-assertion ]]; then
@@ -95,7 +114,7 @@ run_native_login() {
       # The iPad's native screenshot can omit the AutoFill overlay. The
       # XCTest display capture includes it. Classify a fresh frame from this
       # same simulator, never a coordinate calculated from the failed step.
-      if [[ "$layout" == ipad && "$checkpoint" == record-assertion ]]; then
+      if [[ "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap ) ]]; then
         local display="$EVIDENCE/$label-current-display"
         maestro --device "$device" test --no-reinstall-driver --flatten-debug-output \
           --test-output-dir "$display" --debug-output "$display" \
