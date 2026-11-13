@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -32,7 +32,16 @@ export function AccountingCapture({ work, language, onNativePrompt, onSelected }
         if (source === 'camera' && !(await ImagePicker.requestCameraPermissionsAsync()).granted) throw new Error('permissionDenied');
         const picked = source === 'camera'
           ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, exif: false })
-          : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: false, quality: 0.9, exif: false });
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsMultipleSelection: false,
+              exif: false,
+              // On iOS copy the current Photos file directly. The app already resizes
+              // and encodes invoices below, after the system picker has dismissed.
+              ...(Platform.OS === 'ios'
+                ? { quality: 1, preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current }
+                : { quality: 0.9 }),
+            });
         const item = picked.assets?.[0]; if (picked.canceled || !item) return;
         temporary.add(item.uri);
         const context = ImageManipulator.manipulate(item.uri);
