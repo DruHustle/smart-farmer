@@ -16,12 +16,16 @@ node -e 'async function run(){for(let i=0;i<60;i++){try{const r=await fetch("htt
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs seed
 node smart-farmer-frontend/mobile/acceptance/fixture.mjs proxy > "$RUNNER_TEMP/native-evidence/proxy.log" 2>&1 &
 cd smart-farmer-frontend/mobile
+native_bundle_path="/index.bundle?platform=$NATIVE_PLATFORM&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+native_bundle_url="http://127.0.0.1:8081$native_bundle_path"
 if [[ "$NATIVE_PLATFORM" == ios ]]; then
   NATIVE_THREAD_PRELOAD=''
   if node "$PWD/acceptance/darwin-thread-preflight.cjs" prepare > "$RUNNER_TEMP/native-evidence/ios-thread-preflight.json" 2>/dev/null; then
     NATIVE_THREAD_PRELOAD=" --require \"$PWD/acceptance/darwin-thread-preload.cjs\""
   fi
   # Capture HTTP lifecycle metadata, never headers, query strings or payloads.
+  ONESA_IOS_ACCEPTANCE_BUNDLE_PATH="$native_bundle_path" \
+  EXPO_OVERRIDE_METRO_CONFIG="$PWD/acceptance/ios-bundle-metro.cjs" \
   NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require \"$PWD/acceptance/metro-request-observer.cjs\"$NATIVE_THREAD_PRELOAD" \
     npx expo start --dev-client --localhost > "$RUNNER_TEMP/native-evidence/metro.log" 2>&1 &
 else
@@ -30,8 +34,11 @@ fi
 node -e 'async function run(){for(let i=0;i<90;i++){try{const r=await fetch("http://127.0.0.1:8081/status");if(r.ok)return;}catch{}await new Promise(r=>setTimeout(r,1000));}throw new Error("Metro not ready");}run();'
 # Warm the same development graph requested by Expo SDK 58's native client.
 # The router root and Hermes transform profile are part of that graph's identity.
-curl --fail --show-error --silent --max-time 180 --output /dev/null "http://127.0.0.1:8081/index.bundle?platform=$NATIVE_PLATFORM&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+curl --fail --show-error --silent --max-time 180 --output /dev/null "$native_bundle_url"
 if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  # Require the same successful GET's real MIME type on the cached HEAD path.
+  curl --fail --show-error --silent --max-time 10 --head "$native_bundle_url" |
+    grep -Ei '^content-type: *(application|text)/javascript([;[:space:]]|$)' >/dev/null
   # Retain separate manifest diagnostics. iOS acceptance launches the warmed
   # bundle directly, avoiding dynamic manifest resolution. Expo still performs
   # a HEAD content-type probe against that exact bundle URL.

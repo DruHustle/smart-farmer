@@ -18,7 +18,8 @@ appId: eu.onesa.smartfarmer
 - extendedWaitUntil:
     visible:
       id: auth-username
-    timeout: 20000
+    # Keychain deletion precedes the authenticated-to-signed-out transition.
+    timeout: 45000
 - runFlow: credentials.yaml
 - extendedWaitUntil:
     visible:

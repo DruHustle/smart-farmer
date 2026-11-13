@@ -53,12 +53,15 @@ appId: eu.onesa.smartfarmer
 - extendedWaitUntil:
     visible:
       id: device-reauthenticate
+      enabled: true
     timeout: 60000
 - tapOn:
     id: device-reauthenticate
+    enabled: true
 - extendedWaitUntil:
     visible:
       id: auth-username
-    timeout: 20000
+    # Keychain deletion precedes the authenticated-to-signed-out transition.
+    timeout: 45000
 - runFlow: credentials.yaml
 - runFlow: accounting-intake-readback.yaml
