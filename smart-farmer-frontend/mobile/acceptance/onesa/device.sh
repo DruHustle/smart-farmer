@@ -75,7 +75,7 @@ run_identity_flow() {
       maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
     local flow=ios-journey
-    if [[ "$phase_state" != active ]]; then
+    if [[ "$phase_state" == cold ]]; then
       # The original entry flow stops at the signed-out Farmer screen. Build and
       # start the native test runner before it taps the timed authorization button.
       mkdir -p "$phase_dir/entry"
@@ -83,7 +83,6 @@ run_identity_flow() {
         --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" \
         "$dir/entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
       bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role" || return 1
-      if [[ "$phase_state" == cancel ]]; then return 0; fi
       flow=ios-xctest-workspace
     fi
     maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \

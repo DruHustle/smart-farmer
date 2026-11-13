@@ -100,6 +100,15 @@ class SubmittedLogin(unittest.TestCase):
         self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix + trace()[:-1], flow))
         self.assertIsNone(self.checkpoint("Missing element: invoice-local-source-image", prefix + trace(), flow))
         self.assertIsNone(self.checkpoint(sheet.STATIC_LOSS, prefix + trace(), "accounting-intake-post"))
+        shown = prefix[4]["command"]["assertConditionCommand"]["condition"]["visible"]
+        tapped = prefix[5]["command"]["tapOnElement"]["selector"]
+        for selector in (shown, tapped):
+            selector["enabled"] = True
+        self.assertEqual(self.checkpoint(sheet.DEVICE_LOSS, prefix + trace(), flow), "invoice-restored-postlogin")
+        for selector in (shown, tapped):
+            selector["enabled"] = False
+            self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, prefix + trace(), flow))
+            selector["enabled"] = True
 
 if __name__ == "__main__":
     unittest.main()

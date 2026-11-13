@@ -29,10 +29,9 @@ case "$mode" in
       > "$work/build.log" 2>&1 || report_failure simulator-build
     ;;
   test)
-    role=${3:?cancel, member or admin}
-    case "$role" in cancel|member|admin) ;; *) exit 2 ;; esac
+    role=${3:?member or admin}
+    case "$role" in member|admin) ;; *) exit 2 ;; esac
     context="$role cold"
-    if [[ "$role" == cancel ]]; then context=cancel; fi
     run=$(mktemp -d "$work/$role.XXXXXX")
     trap 'rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
@@ -42,13 +41,11 @@ case "$mode" in
       TEST_RUNNER_FARMER_EMAIL=$(read_fixture ADMIN_EMAIL)
       TEST_RUNNER_FARMER_MFA=$(read_fixture ADMIN_MFA)
       export TEST_RUNNER_FARMER_MFA
-    elif [[ "$role" == member ]]; then
+    else
       TEST_RUNNER_FARMER_EMAIL=$(read_fixture MEMBER_EMAIL)
     fi
-    if [[ "$role" != cancel ]]; then
-      TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
-      export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
-    fi
+    TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
+    export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
     # Xcode logs and .xcresult may contain synthetic inputs. Keep them private on the runner.
@@ -57,7 +54,7 @@ case "$mode" in
       -resultBundlePath "$run/identity.xcresult" \
       -only-testing:FarmerBrowserTests/PortalColdTests/testColdPortal > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|systemPrompt|browserForm|email|password|remember|firstSubmit|mfa|secondSubmit|cancelAction|returnLink|nativeDenial|nativeInvitation|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       report_failure "${last:-test-launch}"
     fi
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary

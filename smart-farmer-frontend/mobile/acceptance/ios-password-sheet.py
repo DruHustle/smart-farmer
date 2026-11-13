@@ -92,7 +92,12 @@ def restored_invoice_login(trace):
     def control(entry, command, key):
         value = entry["command"].get(command, {})
         target = value.get("condition", {}).get("visible") if command == "assertConditionCommand" else value.get("selector")
-        return entry["metadata"]["status"] == "COMPLETED" and target == {"idRegex": key, "optional": False}
+        expected = {"idRegex": key, "optional": False}
+        # Newer traces require an enabled reauthentication button for both
+        # the visibility check and tap. Preserve the older exact selector too.
+        if key == "device-reauthenticate" and target == {**expected, "enabled": True}:
+            return entry["metadata"]["status"] == "COMPLETED"
+        return entry["metadata"]["status"] == "COMPLETED" and target == expected
 
     i = 0
     for command, key in [

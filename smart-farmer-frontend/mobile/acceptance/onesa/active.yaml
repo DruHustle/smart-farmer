@@ -10,11 +10,4 @@ appId: eu.onesa.smartfarmer
     commands:
       - tapOn: 'Continue as ${EMAIL}'
 - runFlow: callback.yaml
-- extendedWaitUntil:
-    visible: {id: forum-new}
-    timeout: 45000
-- assertVisible: {id: tab-forum, selected: true}
-- assertVisible: ${FARM_NAME}
-- scrollUntilVisible:
-    element: ${FORUM_TITLE}
-    direction: DOWN
+- runFlow: active-workspace.yaml

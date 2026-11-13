@@ -10,14 +10,5 @@ appId: eu.onesa.smartfarmer
 - runFlow:
     when:
       true: ${FLOW_STATE === 'active'}
-    commands:
-      - stopApp
-      - runFlow: launch.yaml
-      - extendedWaitUntil:
-          visible: {id: device-reauthenticate}
-          timeout: 120000
-      - tapOn: {id: device-reauthenticate}
-      - extendedWaitUntil:
-          visible: {id: auth-onesa}
-          timeout: 30000
+    file: ios-prepare-reauthenticate.yaml
 - runFlow: open.yaml
