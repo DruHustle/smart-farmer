@@ -33,8 +33,12 @@ appId: eu.onesa.smartfarmer
     when:
       platform: iOS
     commands:
-      - assertVisible:
-          id: PXGGridLayout-Info
+      # Apple's Photos extension can present its loading sheet before its grid.
+      # Wait for an actual selectable item before the single user selection.
+      - extendedWaitUntil:
+          visible:
+            id: PXGGridLayout-Info
+          timeout: 60000
       - tapOn:
           id: PXGGridLayout-Info
           index: 0
