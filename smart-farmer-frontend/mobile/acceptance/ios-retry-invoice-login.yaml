@@ -1,8 +1,18 @@
 appId: eu.onesa.smartfarmer
 ---
-# The isolated API returned success after the fixture's client had closed.
-# Require the still-open sign-in screen and its reported error before one retry.
-- assertVisible: '^Hazvina kubudirira[.] Tarisa zvawaisa kana kubatana[.]$'
+# The Mac checked the API and recorded native form from this same attempt.
+# Confirm the matching error is still displayed before one normal submission.
+- runFlow:
+    when:
+      true: ${LOGIN_CASE === 'closed-response'}
+    commands:
+      - assertVisible: '^Hazvina kubudirira[.] Tarisa zvawaisa kana kubatana[.]$'
+- runFlow:
+    when:
+      true: ${LOGIN_CASE === 'client-validation'}
+    commands:
+      - assertVisible: '^Zadza mashoko anodiwa[.]$'
+      - assertVisible: {id: auth-password, text: '^[•●]{25}$'}
 - assertVisible:
     id: auth-username
     text: '^native_owner$'

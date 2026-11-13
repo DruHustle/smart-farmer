@@ -41,6 +41,37 @@ class LoginDelivery(unittest.TestCase):
             (self.root / f"{name}.log").write_text("".join(f"[native-{name}] {json.dumps(e)}\n" for e in events))
         return delivery.one_lost_session(self.root)
 
+    def test_client_only_error_requires_fields_and_both_live_observers(self):
+        self.proxy = [dict(timestamp=stamp(900), method="GET", route="other", status=200)]
+        self.api = [dict(time=stamp(ms), event="heartbeat", pending=[]) for ms in (900, 5000, 9500)]
+        self.check()
+        directory = self.root / "ios-login/login/screen-hierarchy"
+        directory.mkdir()
+        frame = directory / "step-037-assertCondition-auth-submit.json"
+        attrs = [{"resource-id": "auth-username", "value": "native_owner", "enabled": "true"},
+                 {"resource-id": "auth-password", "value": "•" * 25, "enabled": "true"},
+                 {"resource-id": "auth-submit", "enabled": "true"},
+                 {"accessibilityText": "Zadza mashoko anodiwa."}]
+
+        def matches(controls):
+            frame.write_text(json.dumps({"attributes": {}, "children": [{"attributes": a} for a in controls]}))
+            return delivery.rejected_before_request(self.root)
+
+        self.assertTrue(matches(attrs))
+        self.assertFalse(matches(attrs[:-1]))
+        self.assertFalse(matches([*attrs, attrs[0]]))
+        self.assertFalse(matches([attrs[0], dict(attrs[1], value="x" * 25), *attrs[2:]]))
+        self.proxy.append(dict(timestamp=stamp(1200), method="POST", route="/v1/sessions", status="pending"))
+        self.check()
+        self.assertFalse(matches(attrs))
+        self.proxy.pop()
+        self.api.append(dict(time=stamp(1210), event="request.start", method="POST", path="/v1/sessions"))
+        self.check()
+        self.assertFalse(matches(attrs))
+        self.api = self.api[1:3]
+        self.check()
+        self.assertFalse(matches(attrs))
+
     def test_late_success_after_one_lost_request(self):
         self.assertTrue(self.check())
 

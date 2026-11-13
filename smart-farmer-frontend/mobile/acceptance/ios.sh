@@ -61,13 +61,17 @@ run_native_login() {
   fi
   # One user retry is allowed only in the isolated invoice fixture, on the
   # initial sign-in screen. No account proof, financial action or record is replayed.
-  if [[ "$NATIVE_SUITE" == invoice && "$flow" == login && "$label" == ios-login ]] &&
-     python3 "$NATIVE_DIR/acceptance/ios-login-delivery.py" "$EVIDENCE"; then
-    mv "$report" "$EVIDENCE/$label-before-closed-response.xml"
-    printf '%s\n' 'Closed client response; the isolated API completed the login after disconnect.' > "$EVIDENCE/$label-closed-response.txt"
-    maestro --device "$device" test --no-reinstall-driver --format junit --output "$report" \
-      --test-output-dir "$EVIDENCE/$label-after-closed-response" "$NATIVE_DIR/acceptance/ios-retry-invoice-login.yaml"
-    return $?
+  if [[ "$NATIVE_SUITE" == invoice && "$flow" == login && "$label" == ios-login ]]; then
+    local login_case
+    for login_case in closed-response client-validation; do
+      if python3 "$NATIVE_DIR/acceptance/ios-login-delivery.py" "$EVIDENCE" "$login_case"; then
+        mv "$report" "$EVIDENCE/$label-before-$login_case.xml"
+        printf '%s\n' "$login_case" > "$EVIDENCE/$label-recovery.txt"
+        maestro --device "$device" test --no-reinstall-driver -e LOGIN_CASE="$login_case" --format junit --output "$report" \
+          --test-output-dir "$EVIDENCE/$label-after-$login_case" "$NATIVE_DIR/acceptance/ios-retry-invoice-login.yaml"
+        return $?
+      fi
+    done
   fi
   local check="$NATIVE_DIR/acceptance/ios-password-sheet.py" checkpoint
   local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"

@@ -1,0 +1,40 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: activate-ios.yaml
+# The simulator setup imports the PNG into Apple Photos before XCTest starts.
+# Android uses the same generated PNG in its real system MediaStore.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - addMedia:
+          - assets/native-supplier-invoice.png
+- runFlow: accounting-intake-open.yaml
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: invoice-library
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invoice-library
+# Strict OS selectors: if the pinned simulator changes, retain its real hierarchy
+# and fail. Do not substitute coordinates, optional taps or a mocked picker.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          text: '^Photo taken on .+$'
+      - tapOn:
+          text: '^Photo taken on .+$'
+          index: 0
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: PXGGridLayout-Info
+      - tapOn:
+          id: PXGGridLayout-Info
+          index: 0

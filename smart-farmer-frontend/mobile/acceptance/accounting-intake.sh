@@ -37,7 +37,17 @@ if [[ "$NATIVE_PLATFORM" == android ]]; then
   node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png" > "$EVIDENCE/android-intake-source.txt"
 fi
 node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" baseline > "$EVIDENCE/$NATIVE_PLATFORM-intake-checks.txt"
-intake_flow capture
+if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  NATIVE_CONTAINER=$(xcrun simctl get_app_container "${2:?Pass the iOS simulator}" eu.onesa.smartfarmer data)
+  NATIVE_PICK_SINCE=$(python3 -c 'import time; print(time.time_ns())')
+  intake_flow pick --no-reinstall-driver
+  # Read only a cache-directory timestamp while Photos and Farmer process the
+  # chosen image. Leave XCTest idle; rendered temp files can be removed quickly.
+  python3 "$NATIVE_DIR/acceptance/ios-invoice-render.py" "$NATIVE_CONTAINER" "$NATIVE_PICK_SINCE"
+  intake_flow check-local --no-reinstall-driver
+else
+  intake_flow capture
+fi
 node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" local >> "$EVIDENCE/$NATIVE_PLATFORM-intake-checks.txt"
 
 # Verify the actual restarted app's encrypted store while the image is still local.
@@ -47,7 +57,6 @@ if [ "$NATIVE_PLATFORM" = android ]; then
   tar -xf "$NATIVE_INTAKE_PRIVATE/cache.tar" -C "$NATIVE_INTAKE_PRIVATE"
   python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_INTAKE_PRIVATE" > "$EVIDENCE/$NATIVE_PLATFORM-intake-encryption.txt"
 else
-  NATIVE_CONTAINER=$(xcrun simctl get_app_container "${2:?Pass the iOS simulator}" eu.onesa.smartfarmer data)
   python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_CONTAINER" > "$EVIDENCE/$NATIVE_PLATFORM-intake-encryption.txt"
 fi
 

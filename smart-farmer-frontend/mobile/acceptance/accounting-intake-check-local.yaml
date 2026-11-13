@@ -1,0 +1,71 @@
+appId: eu.onesa.smartfarmer
+---
+# The system picker has returned. A draft and explicit upload consent are
+# required in the installed app, both before and after the encrypted restart.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: invoice-library
+            enabled: true
+          timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: invoice-local-source-image
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-local-source-image
+- scrollUntilVisible:
+    element:
+      id: '^invoice-upload-[0-9a-f-]+$'
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: '^invoice-upload-[0-9a-f-]+$'
+# An unuploaded private source must survive a real process restart.
+- stopApp
+- launchApp:
+    stopApp: false
+    permissions:
+      all: unset
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - openLink: smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&__expo_disable_fab=1&disableFab=1
+      - tapOn:
+          text: Open
+          optional: true
+- extendedWaitUntil:
+    visible:
+      id: device-reauthenticate
+    timeout: 60000
+- tapOn:
+    id: device-reauthenticate
+- extendedWaitUntil:
+    visible:
+      id: auth-username
+    timeout: 20000
+- runFlow: credentials.yaml
+- extendedWaitUntil:
+    visible:
+      id: tab-more
+    timeout: 45000
+- runFlow: accounting-intake-open.yaml
+- scrollUntilVisible:
+    element:
+      id: invoice-local-source-image
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: invoice-local-source-image
+- scrollUntilVisible:
+    element:
+      id: '^invoice-upload-[0-9a-f-]+$'
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: '^invoice-upload-[0-9a-f-]+$'
