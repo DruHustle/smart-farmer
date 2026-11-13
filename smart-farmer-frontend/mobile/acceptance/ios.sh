@@ -59,12 +59,20 @@ run_native_login() {
   if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
-  if [[ "$flow" == login && "$label" == ios-login ]] &&
-     python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label"; then
+  if [[ "$flow" == login ]] &&
+     python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label" "$device"; then
     # XCTest failed before it could launch the form. Keep the failed install
     # trace, then give the same simulator one clean driver installation.
     mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
-    echo 'Retrying the initial iPhone driver after its accessibility service failed to initialize.'
+    if [[ "$label" == ipad-large-font ]]; then
+      # Re-register the same installed tablet with CoreSimulator and Xcode.
+      # The detector already verified that no Farmer UI command was issued.
+      xcrun simctl shutdown "$device" || return 1
+      xcrun simctl boot "$device" || return 1
+      xcrun simctl bootstatus "$device" -b || return 1
+      xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
+    fi
+    echo 'Retrying the initial XCTest driver on the same simulator.'
     if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
       return 0
     fi

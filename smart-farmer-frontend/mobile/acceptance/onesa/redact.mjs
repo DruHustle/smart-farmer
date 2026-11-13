@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {chromeFailureStages} from './chrome-tab.mjs';
 const file = join(process.argv[2],'hierarchy.json');
 const text = existsSync(file) ? readFileSync(file,'utf8') : '';
-const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation','tab-forum','forum-new',
+const landmarks = ['auth-onesa','device-reauthenticate','first-farm-invitation','tab-forum','forum-new','forum-open-',
   'Email address','Authenticator or recovery code','Remember this browser','Continue as','Cancel sign-in',
   'Dzokera muSmart Farmer','Buyela ku-Smart Farmer','Use without an account','Your connection is not private',
   'Development servers','Continue','Close','Open','No thanks','Chrome','Save password','Sign in to Onesa',
@@ -35,6 +35,8 @@ for (const phase of ['run','entry','portal','email','browser','complete']) {
   if (!failed) continue;
   const targets = [...landmarks,'Password','first-farm-join','Remember this browser','Morning irrigation inspection','Device Qualification Farm','Android driver','XCTest','Keyboard','Scroll','Submit'];
   console.log('Failed phase: '+phase);
+  if (phase === 'complete' && /forum-open-|\$\{FORUM_TITLE\}/.test(failed))
+    console.log('Failed workspace assertion: seeded discussion title');
   console.log('Failed command landmarks: '+(targets.filter(item=>failed.toLowerCase().includes(item.toLowerCase())).join(', ') || 'none identified'));
 }
 
@@ -60,6 +62,7 @@ function commandStage(command) {
   if (/Authenticator or recovery code/.test(text)) return 'auth-mfa';
   if (/Wants to Use.*to Sign In/.test(text)) return 'browser-consent';
   if (/Dzokera muSmart Farmer|Buyela ku-Smart Farmer/.test(text)) return 'callback-return';
+  if (/forum-open-|\$\{FORUM_TITLE\}/.test(text)) return 'seeded-forum-discussion';
   if (/first-farm-invitation|first-farm-join|tab-forum|forum-new/.test(text)) return 'native-workspace';
   if (/auth-onesa/.test(text)) return 'native-sign-in';
   if (/Continue as/.test(text)) return 'browser-sso';

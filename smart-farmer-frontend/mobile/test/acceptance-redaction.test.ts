@@ -78,6 +78,16 @@ test('Chrome handoff waits for one visible page at an exact fixture origin', asy
     /No visible fixture tab/);
 });
 
+test('exact seeded forum assertion emits no discussion title or record ID', () => {
+  const directory=mkdtempSync(join(tmpdir(),'farmer-discussion-'));
+  try {
+    writeFileSync(join(directory, 'complete.log'), '[Failed] Scroll to forum-open-private-id with title private-title');
+    const output=execFileSync(process.execPath,['acceptance/onesa/redact.mjs',directory],{encoding:'utf8'});
+    assert.match(output,/Failed workspace assertion: seeded discussion title/);
+    assert.doesNotMatch(output,/private-id|private-title/);
+  } finally { rmSync(directory,{recursive:true,force:true}); }
+});
+
 test('only an allowlisted Chrome phase can leave the private browser log', () => {
   const directory = mkdtempSync(join(tmpdir(), 'farmer-browser-stage-'));
   try {
