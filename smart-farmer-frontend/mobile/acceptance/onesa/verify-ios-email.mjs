@@ -24,7 +24,11 @@ try {
   if (typeof fixture.PASSWORD !== 'string' || !fixture.PASSWORD.length) throw new Error();
   const found = { email: false, password: false };
   matchesFields(JSON.parse(readFileSync(hierarchyFile, 'utf8')), fixture, role, found);
-  if (!found.email || !found.password) throw new Error();
+  if (!found.email || !found.password) {
+    if (!found.email) console.error('ONESA_IOS_FIELD_UNVERIFIED email');
+    if (!found.password) console.error('ONESA_IOS_FIELD_UNVERIFIED password');
+    throw new Error();
+  }
 } catch {
   console.error('The Portal email control or secure password control was not filled as expected.');
   process.exitCode = 1;

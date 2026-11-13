@@ -11,10 +11,28 @@ appId: eu.onesa.smartfarmer
     optional: true
 - assertNotVisible:
     id: UIContinuousPathIntroductionView
+# A WebKit field can be visible before the first tap raises the keyboard.
+- runFlow:
+    when:
+      notVisible: {id: '^inputView$'}
+    commands:
+      - tapOn: '^Email address$'
+- extendedWaitUntil:
+    visible: {id: '^inputView$'}
+    timeout: 10000
 - inputText: ${EMAIL}
 - runFlow: dismiss-browser-keyboard.yaml
 # Safari reports its secure control's masked value separately from its label.
 # Fill it on this same browser surface, then verify both fields before submit.
 - tapOn: '^Password$'
+# A WebKit field can be visible before the first tap raises the keyboard.
+- runFlow:
+    when:
+      notVisible: {id: '^inputView$'}
+    commands:
+      - tapOn: '^Password$'
+- extendedWaitUntil:
+    visible: {id: '^inputView$'}
+    timeout: 10000
 - inputText: ${PASSWORD}
 - runFlow: dismiss-browser-keyboard.yaml

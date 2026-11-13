@@ -220,6 +220,15 @@ const page =
 async function listen(origin, isPortal) {
   const server = https.createServer(tls, (request, response) => {
     const path = new URL(request.url, origin).pathname;
+    // Record only the known surface and server receipt time. Query strings,
+    // state, codes, cookies, and form inputs stay off this evidence channel.
+    if (request.method === "GET") {
+      const stage = isPortal && path === "/api/v1/identity/auth" ? "authorize" :
+        !isPortal && path === "/auth/onesa/callback" ? "callback-page" : null;
+      if (stage) response.once("finish", () => {
+        console.log(`ONESA_DEVICE_HTTP ${stage} ${response.statusCode} ${Date.now()}`);
+      });
+    }
     if (
       (isPortal && path.startsWith("/api/")) ||
       (!isPortal && path.startsWith("/v1/"))
@@ -358,7 +367,15 @@ try {
       "tsx",
       "--input-type=module",
       "-e",
-      "import {buildApp} from './src/app.ts';import {pool} from './src/db.ts';const app=buildApp(pool,process.env.WEB_ORIGIN);await app.listen({host:'127.0.0.1',port:46504})",
+      `import {buildApp} from './src/app.ts';
+       import {pool} from './src/db.ts';
+       const app=buildApp(pool,process.env.WEB_ORIGIN);
+       app.addHook('onResponse', async (request, reply) => {
+         if (request.method === 'POST' && request.routeOptions.url === '/v1/onesa/sessions') {
+           console.log('ONESA_DEVICE_HTTP session ' + reply.statusCode + ' ' + Date.now());
+         }
+       });
+       await app.listen({host:'127.0.0.1',port:46504});`,
     ],
     true,
   );

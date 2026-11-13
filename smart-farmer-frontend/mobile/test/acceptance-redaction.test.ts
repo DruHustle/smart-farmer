@@ -109,14 +109,25 @@ test('iOS Portal submission requires the expected email and a filled secure fiel
       };
     };
     assert.equal(check(email, '•'.repeat(password.length))(), '');
-    for (const attempt of [check(email, ''), check(email, '•'.repeat(password.length - 1)),
-      check('other@example.invalid', '•'.repeat(password.length)), check(email, password),
-      check(email, '•'.repeat(password.length), 'Other control')]) {
+    const cases: [() => string, string[]][] = [
+      [check(email, ''), ['password']],
+      [check(email, '•'.repeat(password.length - 1)), ['password']],
+      [check('other@example.invalid', '•'.repeat(password.length)), ['email']],
+      [check(email, password), ['password']],
+      [check(email, '•'.repeat(password.length), 'Other control'), ['password']],
+      [check('other@example.invalid', ''), ['email', 'password']],
+    ];
+    for (const [attempt, fields] of cases) {
       assert.throws(attempt, (error: unknown) => {
         if (!error || typeof error !== 'object' || !('stderr' in error)) return false;
         const message = String(error.stderr);
-        return message.trim() === 'The Portal email control or secure password control was not filled as expected.' &&
-          !message.includes(email) && !message.includes(password);
+        const expected = fields.map(field => 'ONESA_IOS_FIELD_UNVERIFIED ' + field);
+        expected.push('The Portal email control or secure password control was not filled as expected.');
+        assert.equal(message.trim(), expected.join('\n'));
+        writeFileSync(join(directory, 'browser.log'), message + '\nONESA_IOS_FIELD_UNVERIFIED ' + password);
+        const publicText = execFileSync(process.execPath, ['acceptance/onesa/redact.mjs', directory], { encoding: 'utf8' });
+        for (const field of fields) assert.ok(publicText.includes('Unverified Portal field: ' + field));
+        return !publicText.includes(email) && !publicText.includes(password);
       });
     }
   } finally { rmSync(directory, { force: true, recursive: true }); }

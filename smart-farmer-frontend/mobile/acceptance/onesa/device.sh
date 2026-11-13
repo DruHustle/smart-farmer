@@ -144,6 +144,7 @@ for role in cancel member admin; do
     fi
     if [[ "$platform" == ios ]]; then
       # Raw logs, data, credentials and callbacks stay private to the runner.
+      awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
       awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_PORTAL (login|continue|cancel) [1-5][0-9][0-9]$/ {print; seen=1} END {if (!seen) print "No Portal interaction submission response observed for this attempt."}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
     fi
     if [[ "$passed" == false ]]; then break; fi
