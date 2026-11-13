@@ -13,8 +13,9 @@ appId: eu.onesa.smartfarmer
 - assertVisible:
     id: "record-note"
     text: '(?-i)^Native durable offline observation$'
+# Save can be fully visible below mid-screen at the end of this form.
+# Scroll only as far as needed to reach the button and submit exactly once.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: record-save
     direction: DOWN

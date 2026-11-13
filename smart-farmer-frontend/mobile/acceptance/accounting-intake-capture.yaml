@@ -1,10 +1,14 @@
 appId: eu.onesa.smartfarmer
 ---
 - runFlow: activate-ios.yaml
-# addMedia writes this single synthetic image to the real OS Photos/MediaStore.
-# The generated PNG is not preloaded into the app or the server document table.
-- addMedia:
-    - assets/native-supplier-invoice.png
+# The simulator setup imports the PNG into Apple Photos before XCTest starts.
+# Android uses the same generated PNG in its real system MediaStore.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - addMedia:
+          - assets/native-supplier-invoice.png
 - runFlow: accounting-intake-open.yaml
 - scrollUntilVisible:
     centerElement: true
