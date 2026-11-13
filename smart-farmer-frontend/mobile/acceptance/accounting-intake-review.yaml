@@ -82,7 +82,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: sheet-close
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-use-extraction
     direction: DOWN
@@ -116,7 +115,6 @@ appId: eu.onesa.smartfarmer
 - inputText: '12.25'
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
@@ -132,7 +130,6 @@ appId: eu.onesa.smartfarmer
 - assertNotVisible:
     id: invoice-confirm-draft
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-line-0-tax
     direction: DOWN
@@ -142,7 +139,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: invoice-line-0-tax-option-0
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
@@ -158,7 +154,6 @@ appId: eu.onesa.smartfarmer
     id: invoice-total
     text: 'USD 24.50'
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-confirm-draft
     direction: DOWN

@@ -9,7 +9,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "invoice-finalize"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-confirm-finalize"
     direction: DOWN

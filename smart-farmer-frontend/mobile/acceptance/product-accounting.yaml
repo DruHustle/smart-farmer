@@ -25,12 +25,7 @@ appId: eu.onesa.smartfarmer
     id: "finance-tabs"
 - tapOn:
     id: "finance-tabs-option-accounting"
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: "accounting-tabs"
-    direction: DOWN
-    timeout: 30000
+- runFlow: accounting-tab-control.yaml
 - tapOn:
     id: "accounting-tabs"
 - tapOn:
@@ -147,7 +142,6 @@ appId: eu.onesa.smartfarmer
 - inputText: "15.25"
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-review-draft"
     direction: DOWN
@@ -175,7 +169,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "invoice-line-0-tax-option-0"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-review-draft"
     direction: DOWN
@@ -191,7 +184,6 @@ appId: eu.onesa.smartfarmer
     id: "invoice-total"
     text: "USD 30.50"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-confirm-draft"
     direction: DOWN
