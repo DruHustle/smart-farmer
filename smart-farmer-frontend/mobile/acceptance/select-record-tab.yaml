@@ -1,5 +1,13 @@
 appId: eu.onesa.smartfarmer
 ---
+# AutoFill can arrive after the previous phase saw the signed-in workspace.
+# Dismiss only the observed native password sheet before querying its covered tab.
+- runFlow:
+    when:
+      platform: iOS
+      visible: '^Save Password[?]$'
+    commands:
+      - runFlow: dismiss-password-save.yaml
 - extendedWaitUntil:
     visible:
       id: tab-record

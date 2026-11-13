@@ -69,14 +69,23 @@ run_identity_flow() {
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
     mkdir -p "$phase_dir/complete"
-    # Install XCTest before creating a five-minute PKCE state. The entire
-    # authorization and real app return then share one Maestro connection.
+    # Prepare the native driver before the app creates the timed PKCE request.
     if [[ "$phase_state" != active ]]; then
       maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
+    local flow=ios-journey
+    if [[ "$phase_state" == cold ]]; then
+      # Native consent may transfer focus to SafariViewService. Reattach once
+      # before entering either credential; never replay the authorization request.
+      mkdir -p "$phase_dir/entry"
+      maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE=cold \
+        --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" \
+        "$dir/ios-entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
+      flow=ios-cold-browser
+    fi
     maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
       --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \
-      "$dir/ios-journey.yaml" > "$phase_dir/complete.log" 2>&1
+      "$dir/$flow.yaml" > "$phase_dir/complete.log" 2>&1
   fi
 }
 status=0
@@ -112,6 +121,8 @@ for role in cancel member admin; do
       portal_log_start=$(wc -l < "$RUNNER_TEMP/onesa-device/fixture.log")
     fi
     if run_identity_flow "$state" "$role" "$private" "$@" &&
+       { [[ "$platform" != ios ]] || awk -v from="$portal_log_start" -v role="$role" -v phase="$state" \
+           -f "$dir/verify-ios-receipts.awk" "$RUNNER_TEMP/onesa-device/fixture.log"; } &&
        { [[ "$state" == cancel ]] || { mapped=$(node "$dir/verify.mjs" "$role" "$fixture") && [[ "$state" == cold || "$mapped" == "$reference" ]]; }; } &&
        { [[ "$platform" != android ]] || node "$dir/chrome-complete.mjs" "$device" "$private/browser-target.json" > "$private/browser-cleanup.log" 2>&1; }; then
       reference="${mapped:-}"

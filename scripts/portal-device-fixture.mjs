@@ -337,10 +337,12 @@ try {
       .replace("</head>", '<link rel="stylesheet" href="/farmer.css"></head>')
       .replace("/src/main.tsx", "/farmer.js"),
   );
+  const subjects = {member: randomUUID(), administrator: randomUUID()};
   await run(
     portalApi,
     {
       ...portalEnv,
+      FIXTURE_SUBJECTS: JSON.stringify(subjects),
       FIXTURE_PASSWORD: password,
       FIXTURE_RECOVERY_CODES: JSON.stringify(codes),
     },
@@ -445,6 +447,9 @@ try {
       {
         PORTAL_REVISION: git(portal),
         FARMER_REVISION: git(farmer),
+        ISSUER: issuer,
+        MEMBER_SUBJECT: subjects.member,
+        ADMIN_SUBJECT: subjects.administrator,
         MEMBER_EMAIL: "member@example.invalid",
         ADMIN_EMAIL: "administrator@example.invalid",
         PASSWORD: password,
