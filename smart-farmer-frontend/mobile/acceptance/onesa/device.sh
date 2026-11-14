@@ -58,6 +58,11 @@ esac
 # Each role starts with a freshly cleared browser and Farmer data. Keep every
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
+ios_maestro() {
+  local seconds=$1
+  shift
+  python3 "$dir/run-bounded.py" "$seconds" maestro --device "$device" "$@"
+}
 run_identity_flow() {
   local phase_state="$1" phase_role="$2" phase_dir="$3"
   shift 3
@@ -72,20 +77,22 @@ run_identity_flow() {
     mkdir -p "$phase_dir/complete"
     # Prepare the native driver before the app creates the timed PKCE request.
     if [[ "$phase_state" != active ]]; then
-      maestro --device "$device" hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
+      ios_maestro 300 hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     fi
     local flow=ios-journey
     if [[ "$phase_state" == cold ]]; then
       # The original entry flow stops at the signed-out Farmer screen. Build and
       # start the native test runner before it taps the timed authorization button.
       mkdir -p "$phase_dir/entry"
-      maestro --device "$device" test --no-reinstall-driver "$@" \
+      ios_maestro 360 test --no-reinstall-driver "$@" \
         --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" \
         "$dir/entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
-      bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role" || return 1
-      flow=ios-xctest-workspace
+      # XCTest completes the native invitation and forum checks on the same
+      # connection. Ordered HTTP receipts and SQL subject checks follow here.
+      bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role"
+      return $?
     fi
-    maestro --device "$device" test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
+    ios_maestro 480 test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
       --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \
       "$dir/$flow.yaml" > "$phase_dir/complete.log" 2>&1
   fi
@@ -120,6 +127,7 @@ for role in cancel member admin; do
     set -- ${opts[@]+"${opts[@]}"}
     # Bind allowlisted issuer responses to the appropriate planned role/phase.
     if [[ "$platform" == ios ]]; then
+      printf 'START %s %s %s\n' "$role" "$state" "$(date -u +%FT%TZ)" | tee -a "$evidence/ios-results.txt"
       portal_log_start=$(wc -l < "$RUNNER_TEMP/onesa-device/fixture.log")
     fi
     if run_identity_flow "$state" "$role" "$private" "$@" &&
@@ -135,7 +143,7 @@ for role in cancel member admin; do
       echo "$role $state FAIL" | tee -a "$evidence/$platform-results.txt"
       # List the matching visible controls (never screen text, tokens or input).
       if [[ "$platform" == ios ]]; then
-        maestro --device "$device" hierarchy --no-reinstall-driver > "$private/hierarchy.json" 2>/dev/null || true
+        ios_maestro 30 hierarchy --no-reinstall-driver > "$private/hierarchy.json" 2>/dev/null || true
       else
         maestro --device "$device" hierarchy > "$private/hierarchy.json" 2>/dev/null || true
       fi

@@ -44,6 +44,10 @@ case "$mode" in
     else
       TEST_RUNNER_FARMER_EMAIL=$(read_fixture MEMBER_EMAIL)
     fi
+    TEST_RUNNER_FARMER_INVITE=$(read_fixture "$(echo "$role" | tr '[:lower:]' '[:upper:]')_INVITE")
+    TEST_RUNNER_FARMER_FARM=$(read_fixture FARM_NAME)
+    TEST_RUNNER_FARMER_DISCUSSION=$(read_fixture FORUM_TITLE)
+    export TEST_RUNNER_FARMER_INVITE TEST_RUNNER_FARMER_FARM TEST_RUNNER_FARMER_DISCUSSION
     TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
     export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
     runs=("$work"/build/Build/Products/*.xctestrun)
@@ -54,7 +58,7 @@ case "$mode" in
       -resultBundlePath "$run/identity.xcresult" \
       -only-testing:FarmerBrowserTests/PortalColdTests/testColdPortal > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|forum|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       report_failure "${last:-test-launch}"
     fi
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary

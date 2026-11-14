@@ -3,7 +3,7 @@ import XCTest
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
         case fixture, signedOut, consent, email, password, remember, firstSubmit
-        case mfa, secondSubmit, returnLink, nativeInvitation, completed
+        case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm, forum, completed
     }
 
     // Only these fixed names leave the runner. Never print a field, URL or assertion payload.
@@ -23,6 +23,16 @@ final class PortalColdTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         } while Date() < deadline
         return false
+    }
+
+    // iOS embeds the Safari view service in Farmer. Its accessibility tree can
+    // remain live while XCTest reports that service in the background.
+    @MainActor private var browserOwners: [XCUIApplication] {
+        var owners: [XCUIApplication] = []
+        if [.runningForeground, .runningBackground].contains(authSheet.state) { owners.append(authSheet) }
+        if safari.state == .runningForeground { owners.append(safari) }
+        if app.state == .runningForeground { owners.append(app) }
+        return owners
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
@@ -58,9 +68,14 @@ final class PortalColdTests: XCTestCase {
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
         let fields = label == "Password" ? web.secureTextFields : web.textFields
-        // Only the admin whole-owner fallback passes an application here.
+        // WebKit may expose the external HTML label on a neighbouring text
+        // node. Only use the unnamed control if its type is unique in the
+        // verified issuer form. The MFA page has another text input.
         if web is XCUIApplication {
-            return fields.matching(NSPredicate(format: "label == %@", label)).firstMatch
+            let exact = fields.matching(NSPredicate(format: "label == %@", label))
+            if exact.count == 1 { return exact.firstMatch }
+            if ["Email address", "Password"].contains(label), fields.count == 1 { return fields.firstMatch }
+            return exact.firstMatch
         }
         let named = fields[label]
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
@@ -69,7 +84,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
         @MainActor func keyboardReady() -> Bool {
-            let owners = [authSheet, safari, app, springboard].filter { $0.state == .runningForeground }
+            let owners = browserOwners + [springboard]
             for surface in owners {
                 let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
                 guard tutorial.exists else { continue }
@@ -87,8 +102,17 @@ final class PortalColdTests: XCTestCase {
             return owners.contains { $0.keyboards.firstMatch.exists }
         }
         let input = field(label, in: web)
-        let editable = waitFor({ input.exists && input.isEnabled && input.isHittable }, seconds: 15)
-        try XCTUnwrap(editable ? input : nil, "Browser input is editable").tap()
+        let editable = waitFor({ input.exists && input.isEnabled && !input.frame.intersection(self.app.frame).isEmpty }, seconds: 15)
+        _ = try XCTUnwrap(editable ? true : nil, "Browser input is editable")
+        if input.isHittable {
+            input.tap()
+        } else {
+            // The remote view may be backgrounded while the embedded sheet is
+            // visible. Tap the real field within the foreground app's display.
+            let visible = input.frame.intersection(app.frame)
+            let point = CGVector(dx: visible.midX - app.frame.minX, dy: visible.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+        }
         if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
             // A newly presented WebKit field can appear before its first tap
             // gives the software keyboard focus. This repeat only focuses it.
@@ -121,7 +145,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in [app, authSheet, safari] where surface.state == .runningForeground {
+            for surface in browserOwners {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -129,7 +153,7 @@ final class PortalColdTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            [app, authSheet, safari].filter { $0.state == .runningForeground }.allSatisfy { !$0.keyboards.firstMatch.exists }
+            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
@@ -142,26 +166,22 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
-    // Maestro reads the complete iOS 26 SafariViewService snapshot. The
-    // separate service can be backgrounded while its sheet is on screen.
-    // Scope this fallback to one real issuer form in the system browser.
-    @MainActor private func adminIssuerOwner() -> XCUIApplication? {
-        guard [.runningForeground, .runningBackground].contains(authSheet.state),
-              authSheet.webViews.count > 0, let snapshot = try? authSheet.snapshot() else { return nil }
-        var heading = false
-        var email = 0
-        var password = 0
-        func inspect(_ node: XCUIElementSnapshot) {
-            if node.label == "Sign in to Onesa" { heading = true }
-            if node.isEnabled && node.elementType == .textField && node.label == "Email address" { email += 1 }
-            if node.isEnabled && node.elementType == .secureTextField && node.label == "Password" { password += 1 }
-            for child in node.children { inspect(child) }
+    // Verify the whole embedded sheet when the foreground web view lookup
+    // misses it. HTML labels can be separate siblings of the input nodes.
+    @MainActor private func embeddedIssuer() -> XCUIApplication? {
+        for owner in browserOwners {
+            guard owner.webViews.count > 0 else { continue }
+            let nodes = owner.descendants(matching: .any)
+            guard nodes["Sign in to Onesa"].firstMatch.exists,
+                  nodes["Remember this browser"].firstMatch.exists,
+                  owner.buttons["Cancel sign-in"].firstMatch.exists else { continue }
+            let email = field("Email address", in: owner)
+            let password = field("Password", in: owner)
+            guard email.exists, password.exists, email.isEnabled, password.isEnabled,
+                  !email.frame.intersection(app.frame).isEmpty else { continue }
+            return owner
         }
-        inspect(snapshot)
-        guard heading, email == 1, password == 1 else { return nil }
-        let target = field("Email address", in: authSheet)
-        guard target.exists, target.isEnabled, target.isHittable else { return nil }
-        return authSheet
+        return nil
     }
 
     @MainActor private func remember(_ web: XCUIElement) throws {
@@ -182,7 +202,7 @@ final class PortalColdTests: XCTestCase {
 
     @MainActor private func returnLink() -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
-        for owner in [authSheet, safari, app, springboard] where owner.state == .runningForeground {
+        for owner in browserOwners + [springboard] {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
             if notice.exists && notNow.exists && notNow.isHittable { notNow.tap(); return nil }
@@ -192,12 +212,12 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
-    @MainActor private func returnToFarmer(adminOwner: XCUIApplication? = nil) throws {
+    @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil) throws {
         checkpoint(.returnLink)
         var link: XCUIElement?
         let found = waitFor({
             link = self.returnLink()
-            if link == nil, let owner = adminOwner {
+            if link == nil, let owner = issuerOwner {
                 let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
                 let links = owner.links.matching(names)
                 if links.count == 1, links.firstMatch.isHittable { link = links.firstMatch }
@@ -221,18 +241,12 @@ final class PortalColdTests: XCTestCase {
         let startReady = waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 30)
         try XCTUnwrap(startReady ? start : nil, "Signed-out Farmer sign-in control").tap()
         checkpoint(.consent)
-        let web: XCUIElement
-        if role == "admin" {
-            var surface: XCUIElement?
-            let visible = awaitBrowser {
-                surface = self.portalWeb() ?? self.adminIssuerOwner()
-                return surface != nil
-            }
-            web = try XCTUnwrap(visible ? surface : nil, "Real browser owns administrator issuer form")
-        } else {
-            try XCTUnwrap(awaitBrowser { self.portalWeb() != nil } ? true : nil, "Issuer page in system browser")
-            web = try XCTUnwrap(portalWeb(), "Real browser owns issuer form")
+        var surface: XCUIElement?
+        let visible = awaitBrowser {
+            surface = self.portalWeb() ?? self.embeddedIssuer()
+            return surface != nil
         }
+        let web = try XCTUnwrap(visible ? surface : nil, "System browser owns the issuer form")
         let email = try XCTUnwrap(env["FARMER_EMAIL"], "Synthetic email exists")
         let password = try XCTUnwrap(env["FARMER_PASSWORD"], "Synthetic password exists")
         checkpoint(.email)
@@ -255,11 +269,37 @@ final class PortalColdTests: XCTestCase {
             checkpoint(.secondSubmit)
             try submit(web)
         }
-        try returnToFarmer(adminOwner: web as? XCUIApplication)
+        try returnToFarmer(issuerOwner: web as? XCUIApplication)
         checkpoint(.nativeInvitation)
         let invitation = app.descendants(matching: .any)["first-farm-invitation"].firstMatch
         try XCTUnwrap(waitFor({ self.app.state == .runningForeground && invitation.exists }, seconds: 40) ? true : nil,
                       "Native callback opened the expected unaffiliated account")
+        // Keep the XCTest session that observed the native callback. Starting
+        // a second runner here used to lose the visible invitation mid-handoff.
+        checkpoint(.joinFarm)
+        let forum = app.descendants(matching: .any)["tab-forum"].firstMatch
+        XCTAssertFalse(forum.exists, "Uninvited account has no workspace")
+        invitation.tap()
+        invitation.typeText(try XCTUnwrap(env["FARMER_INVITE"]))
+        let join = app.descendants(matching: .any)["first-farm-join"].firstMatch
+        if !join.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        _ = try XCTUnwrap(waitFor({ join.exists && join.isEnabled && join.isHittable }) ? true : nil, "Invitation can be submitted")
+        join.tap()
+        checkpoint(.forum)
+        let farmName = try XCTUnwrap(env["FARMER_FARM"])
+        let farm = app.staticTexts[farmName].firstMatch
+        XCTAssertTrue(waitFor({ farm.exists && forum.exists && forum.isHittable }), "Farm and forum available")
+        forum.tap()
+        let newDiscussion = app.descendants(matching: .any)["forum-new"].firstMatch
+        XCTAssertTrue(newDiscussion.waitForExistence(timeout: 30), "Forum opened")
+        let title = try XCTUnwrap(env["FARMER_DISCUSSION"])
+        let discussion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "forum-open-", title)).firstMatch
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<8 {
+            if discussion.exists && discussion.isHittable { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(discussion.exists && discussion.isHittable, "Seeded discussion is visible")
         checkpoint(.completed)
     }
 }
