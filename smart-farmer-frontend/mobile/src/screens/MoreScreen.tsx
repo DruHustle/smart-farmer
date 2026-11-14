@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, Text, View } from 'react-native';
+import { isLocalApiHost } from '../api';
 import { errorText, label, textFor } from '../i18n';
 import { formatFarmTime } from '../time';
 import type { Language, Mutation, Task } from '../types';
@@ -19,6 +20,7 @@ import { MediaPanel } from './MediaPanel';
 type DeviceSession = { id: string; label: string; created_at: string; expires_at: string; current: boolean };
 export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void; onNativePrompt: (active: boolean) => void }) {
   const t = textFor(language);
+  const localRecovery = __DEV__ && work.session.localFixture === true && isLocalApiHost(new URL(work.session.origin).hostname);
   const [screen, setScreen] = useState<string | null>(null);
   const [accountingLink, setAccountingLink] = useState<{ farmId: string; invoiceId: string } | null>(null);
   const [role, setRole] = useState('worker'); const [code, setCode] = useState(''); const [inviteToken, setInviteToken] = useState('');
@@ -49,6 +51,7 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
     if (success) { setInviteToken(''); setScreen(null); await work.refresh(); }
   }
   async function recover() {
+    if (!localRecovery) return;
     await work.onlineAction(async () => { const response = await work.api.request<{ recoveryCode: string }>('/v1/recovery-codes', 'POST', { password }); setPassword(''); setCode(response.recoveryCode); });
   }
   async function retry(item: Mutation) {
@@ -122,7 +125,10 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
         {work.canManage ? <Records items={invitations.value || []} language={language} timezone={timezone} fields={['role', 'created_at', 'expires_at', 'accepted_at']}>{item => !item.accepted_at ? <Action work={work} language={language} title={t.revoke} danger action={() => work.api.request(farmPath(work, `/invitations/${item.id}`), 'DELETE')} onSaved={invitations.reload} /> : null}</Records> : null}
         <Card title={t.join}><Field label={t.invitationCode} value={inviteToken} onChangeText={setInviteToken} secureTextEntry autoCapitalize="none" autoCorrect={false} /><Button title={t.join} busy={work.busy} disabled={!inviteToken.trim()} onPress={() => { void acceptInvite(); }} /></Card>
       </> : null}
-      {screen === 'recovery' ? <><Text style={styles.muted}>{t.recoveryHint}</Text><Field label={t.password} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" maxLength={128} /><Button title={t.createRecovery} busy={work.busy} onPress={() => { void recover(); }} />{code ? <Card><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={styles.text}>{code}</Text></Card> : null}</> : null}
+      {screen === 'recovery' && !localRecovery ? <Button title={t.onesaAccount} onPress={() => {
+        void Linking.openURL(work.session.portalAccountUrl ?? 'https://portal.onesa.eu/account').catch(work.setError);
+      }}/> : null}
+      {screen === 'recovery' && localRecovery ? <><Text style={styles.muted}>{t.recoveryHint}</Text><Field label={t.password} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" maxLength={128} /><Button title={t.createRecovery} busy={work.busy} onPress={() => { void recover(); }} />{code ? <Card><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={styles.text}>{code}</Text></Card> : null}</> : null}
       {screen === 'sessions' ? devices.map(device => <Card key={device.id} title={device.current ? t.currentSession : device.label || t.sessions}><Text style={styles.caption}>{formatFarmTime(device.created_at, timezone, language)} → {formatFarmTime(device.expires_at, timezone, language)}</Text><Button secondary title={t.revoke} busy={work.busy} onPress={() => { void work.onlineAction(async () => { await work.api.request(`/v1/sessions/${encodeURIComponent(device.id)}`, 'DELETE'); if (device.current) onLogout(); else setDevices(previous => previous.filter(item => item.id !== device.id)); }); }} /></Card>) : null}
 
     </Sheet>

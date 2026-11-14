@@ -1,0 +1,8 @@
+appId: eu.onesa.smartfarmer
+---
+# XCTest already observed the real callback open this app and show its native
+# invitation. Resume the same account and run the existing farm assertions.
+- launchApp:
+    stopApp: false
+    permissions: {}
+- runFlow: cold-workspace.yaml

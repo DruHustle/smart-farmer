@@ -6,6 +6,7 @@ import { apiOrigin, createApi } from './src/api';
 import { errorText, textFor } from './src/i18n';
 import { deviceUnlock, forgetSession, openRepository, readLanguage, readSession, saveLanguage, saveSession } from './src/native-storage';
 import { clearReminders, endDeviceNotifications } from './src/reminders';
+import { clearLocalSession, createSessionGate, traceSession } from './src/session-transition';
 import { LocalRepository } from './src/repository';
 import type { Language, Session } from './src/types';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -22,8 +23,10 @@ function Root() {
   const [repository, setRepository] = useState<LocalRepository | null>(null);
   const [locked, setLocked] = useState(true);
   const [expired, setExpired] = useState(false);
+  const accessInvalidated = useRef(false);
   const [starting, setStarting] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [sessionGate] = useState(() => createSessionGate(setBusy, traceSession));
   const [error, setError] = useState<unknown>(null);
   const [nativePrompt, setNativePrompt] = useState(false);
   const nativePromptRef = useRef(false);
@@ -33,7 +36,11 @@ function Root() {
   let configurationError: unknown = null;
   try { origin = apiOrigin(process.env.EXPO_PUBLIC_API_URL, __DEV__); } catch (value) { configurationError = value; }
 
-  const expire = useCallback(() => { setExpired(true); setLocked(true); }, []);
+  const expire = useCallback(() => {
+    accessInvalidated.current = true;
+    setExpired(true);
+    setLocked(true);
+  }, []);
 
   async function getRepository(value: Session) {
     const key = `${value.origin}\n${value.userId}`;
@@ -53,6 +60,10 @@ function Root() {
     if (Platform.OS === 'ios') void ScreenCapture.enableAppSwitcherProtectionAsync(1).catch(() => undefined);
     // The camera/voice-note flow never writes private files to the public photo library.
   }, []);
+
+  useEffect(() => {
+    if (!session) sessionGate.authScreenCommitted();
+  }, [session, sessionGate]);
 
   useEffect(() => {
     if (session) void ScreenCapture.preventScreenCaptureAsync('private-farm').catch(() => undefined);
@@ -82,30 +93,60 @@ function Root() {
   async function authenticated(value: Session) {
     const local = await getRepository(value);
     await saveLanguage(value.language); await saveSession(value);
+    accessInvalidated.current = false;
     setSession(value); setRepository(local); setLanguage(value.language); setExpired(false); setLocked(false); setError(null);
   }
 
   async function unlock() {
     if (!session || expired) return;
-    setBusy(true); setError(null);
     try {
-      if (await deviceUnlock(t.unlock, t.cancel)) { setRepository(await getRepository(session)); setLocked(false); }
-    } catch (value) { setError(value); } finally { setBusy(false); }
+      await sessionGate.run('unlock', async () => {
+        setError(null);
+        if (!await deviceUnlock(t.unlock, t.cancel)) return;
+        const canUnlock = () => !accessInvalidated.current && Date.parse(session.expiresAt) > Date.now();
+        if (!canUnlock()) { expire(); return; }
+        const local = await getRepository(session);
+        if (!canUnlock()) { expire(); return; }
+        setRepository(local);
+        setLocked(false);
+      });
+    } catch (value) { setError(value); }
   }
 
   async function signOut() {
-    observeSignOutPhase('entry');
-    const previous = session;
-    setLocked(true);
-    await forgetSession();
-    observeSignOutPhase('session-delete-completed');
-    try { if (previous) await endDeviceNotifications(previous); else await clearReminders(); observeSignOutPhase('notification-cleanup-completed'); } catch { observeSignOutPhase('notification-cleanup-failed'); /* Notification service failure must not prevent local sign-out. */ }
-    setSession(null); setRepository(null); setLocked(true); setExpired(false); setError(null);
-    observeSignOutPhase('local-auth-state-requested');
-    if (previous) {
-      // Local access ends immediately; the server request is best-effort when a connection exists.
-      void createApi(previous.origin, previous.token).request('/v1/sessions/current', 'DELETE').catch(() => undefined);
-    }
+    await sessionGate.run('sign_out', async () => {
+      observeSignOutPhase('entry');
+      const previous = session;
+      setLocked(true);
+      await clearLocalSession({
+        async forgetSession() {
+          await forgetSession();
+          observeSignOutPhase('session-delete-completed');
+        },
+        async clearNotifications() {
+          try {
+            if (previous) await endDeviceNotifications(previous);
+            else await clearReminders();
+            observeSignOutPhase('notification-cleanup-completed');
+          } catch (error) {
+            observeSignOutPhase('notification-cleanup-failed');
+            throw error;
+          }
+        },
+        clearState() {
+          setSession(null);
+          setRepository(null);
+          setLocked(true);
+          setExpired(false);
+          setError(null);
+          observeSignOutPhase('local-auth-state-requested');
+        },
+      }, traceSession);
+      if (previous) {
+        // Revoke on the server when connected after local access has ended.
+        void createApi(previous.origin, previous.token).request('/v1/sessions/current', 'DELETE').catch(() => undefined);
+      }
+    });
   }
 
   function requestSignOut() {
@@ -118,12 +159,12 @@ function Root() {
   if (configurationError) return <ScrollView contentContainerStyle={styles.content}><Text style={styles.brand}>Smart Farmer</Text><Choice label={t.language} closeLabel={t.close} value={language} onChange={changeLanguage} options={[{ value: 'sn', label: 'Shona' }, { value: 'nd', label: 'isiNdebele' }]} /><Notice text={errorText(language, configurationError)} error /></ScrollView>;
   if (!session) return <AuthScreen origin={origin} language={language} onLanguage={changeLanguage} onSession={authenticated} />;
   return <View style={styles.page}>
-    {repository && !locked ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
-    <Sheet title={t.locked} visible={locked} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
+    {repository && !locked && !expired ? <WorkspaceScreen key={`${session.origin}:${session.userId}`} session={session} repository={repository} language={language} onLanguage={changeLanguage} onExpired={expire} onLogout={requestSignOut} onLock={() => setLocked(true)} nativeBusy={nativePrompt} onNativePrompt={nativeBusy} /> : <View style={styles.content}><Text style={styles.brand}>Smart Farmer</Text></View>}
+    <Sheet title={t.locked} visible={locked || expired} dismissible={false} onClose={() => undefined} closeLabel={t.locked}>
       <Text style={styles.heading}>{session.username}</Text><Text style={styles.text}>{expired ? t.sessionExpired : t.unlockHint}</Text>
       {error ? <Notice text={errorText(language, error)} error /> : null}
       {!expired ? <Button testID="device-unlock" title={t.unlock} busy={busy} onPress={() => { void unlock(); }} /> : null}
-      <Button testID="device-reauthenticate" secondary title={t.reauthenticate} onPress={() => { void signOut().catch(setError); }} />
+      <Button testID="device-reauthenticate" secondary title={t.reauthenticate} busy={busy} onPress={() => { void signOut().catch(setError); }} />
       <Text style={styles.caption}>{t.localPrivacy}</Text>
     </Sheet>
   </View>;

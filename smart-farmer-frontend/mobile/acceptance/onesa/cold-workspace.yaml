@@ -1,0 +1,24 @@
+appId: eu.onesa.smartfarmer
+---
+- extendedWaitUntil:
+    visible: {id: first-farm-invitation}
+    timeout: 45000
+- assertNotVisible: {id: tab-forum}
+- tapOn: {id: first-farm-invitation}
+- inputText: ${INVITE}
+- runFlow: ../dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element: {id: first-farm-join}
+    direction: DOWN
+- tapOn: {id: first-farm-join}
+- extendedWaitUntil:
+    visible: {id: tab-forum}
+    timeout: 45000
+- assertVisible: ${FARM_NAME}
+- tapOn: {id: tab-forum}
+- extendedWaitUntil:
+    visible: {id: forum-new}
+    timeout: 30000
+- scrollUntilVisible:
+    element: ${FORUM_TITLE}
+    direction: DOWN

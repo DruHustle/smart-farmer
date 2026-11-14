@@ -31,9 +31,10 @@ async function lockMembershipChange(client:PoolClient,farmId:string,actorId:stri
   return target.rows[0];
 }
 
-export function registerIdentity(app:FastifyInstance, ctx:Context) {
+export function registerIdentity(app:FastifyInstance, ctx:Context, localCredentials:boolean) {
   const {db,user,member,transaction}=ctx;
   app.post('/v1/register',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=credentials.extend({language,farmName:z.string().trim().min(1).max(100)}).strict().parse(req.body);
     const passwordHash=await hashPassword(b.password), recoveryCode=token();
     const result=await transaction(async client=>{
@@ -47,6 +48,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     return reply.code(201).send(result);
   });
   app.post('/v1/sessions',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=credentials.extend({deviceName:z.string().trim().max(80).default('Device')}).strict().parse(req.body);
     const result=await db.query('SELECT id,username,password_hash,language FROM users WHERE username=$1',[b.username]);
     const account=result.rows[0];
@@ -72,6 +74,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   app.delete('/v1/sessions/current',async(req,reply)=>{const id=await user(req,reply);if(!id)return;await db.query('DELETE FROM sessions WHERE token_hash=$1',[sha256(req.headers.authorization!.slice(7))]);return reply.code(204).send();});
   app.delete('/v1/sessions/:sessionId',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {sessionId}=z.object({sessionId:uuid}).parse(req.params);await db.query('DELETE FROM sessions WHERE user_id=$1 AND id=$2',[id,sessionId]);return reply.code(204).send();});
   app.post('/v1/recovery-codes',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const id=await user(req,reply);if(!id)return;const b=z.object({password}).strict().parse(req.body);
     const a=await db.query('SELECT password_hash FROM users WHERE id=$1',[id]);
     if(!await verifyPassword(b.password,a.rows[0].password_hash))throw new ApiError('invalid_credentials',401);
@@ -83,6 +86,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     reply.header('Cache-Control','no-store');return {recoveryCode};
   });
   app.post('/v1/recover',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=z.object({username,password,recoveryCode:z.string().min(32).max(100)}).strict().parse(req.body);
     const newHash=await hashPassword(b.password);
     await transaction(async client=>{
@@ -124,6 +128,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   app.get('/v1/farms/:farmId/invitations',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id,manageRoles))throw new ApiError('not_found',404);const q=z.object({limit:z.coerce.number().int().min(1).max(100).default(100),cursor:uuid.optional()}).parse(req.query);const r=await db.query('SELECT id,role,expires_at,accepted_at,created_at FROM invitations WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return {items:r.rows.slice(0,q.limit),nextCursor:r.rows.length>q.limit?r.rows[q.limit-1].id:null};});
   app.delete('/v1/farms/:farmId/invitations/:invitationId',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId,invitationId}=z.object({farmId:uuid,invitationId:uuid}).parse(req.params);if(!await member(farmId,id,manageRoles))throw new ApiError('not_found',404);await db.query('DELETE FROM invitations WHERE farm_id=$1 AND id=$2 AND accepted_at IS NULL',[farmId,invitationId]);return reply.code(204).send();});
   app.post('/v1/invitations/accept',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials && !req.headers.authorization) throw new ApiError('onesa_sign_in_required',403);
     const b=z.object({token:z.string().length(43),username:username.optional(),password:password.optional(),language:language.optional()}).strict().parse(req.body);
     const existingUser=req.headers.authorization?await user(req,reply):null;if(req.headers.authorization&&!existingUser)return;
     if(!existingUser&&(!b.username||!b.password||!b.language))throw new ApiError('credentials_required');

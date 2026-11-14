@@ -31,9 +31,40 @@ intake_flow() {
     "$NATIVE_DIR/acceptance/accounting-intake-$phase.yaml"
 }
 
-node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png" > "$EVIDENCE/$NATIVE_PLATFORM-intake-source.txt"
+# iOS Photos is seeded before sign-in so fixture setup cannot background and
+# lock an authenticated workspace. Android generates its image for Maestro here.
+if [[ "$NATIVE_PLATFORM" == android ]]; then
+  node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png" > "$EVIDENCE/android-intake-source.txt"
+fi
 node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" baseline > "$EVIDENCE/$NATIVE_PLATFORM-intake-checks.txt"
-intake_flow capture
+if [[ "$NATIVE_PLATFORM" == ios ]]; then
+  NATIVE_CONTAINER=$(xcrun simctl get_app_container "${2:?Pass the iOS simulator}" eu.onesa.smartfarmer data)
+  NATIVE_PICK_SINCE=$(python3 -c 'import time; print(time.time_ns())')
+  intake_flow pick --no-reinstall-driver
+  # Read only a cache-directory timestamp while Photos and Farmer process the
+  # chosen image. Leave XCTest idle; rendered temp files can be removed quickly.
+  python3 "$NATIVE_DIR/acceptance/ios-invoice-render.py" "$NATIVE_CONTAINER" "$NATIVE_PICK_SINCE"
+  if ! intake_flow check-local --no-reinstall-driver; then
+    # Resume only after the real restart and accepted sign-in, if XCTest lost
+    # the connection in Apple's optional Passwords sheet. Never repeat the pick
+    # or submit a second credential, upload, draft or journal intent.
+    NATIVE_CHECK_PATH="$EVIDENCE/ios-intake-check-local"
+    NATIVE_COMMANDS=("$NATIVE_CHECK_PATH"/*/accounting-intake-check-local/commands.json)
+    [[ ${#NATIVE_COMMANDS[@]} == 1 && -f "${NATIVE_COMMANDS[0]}" ]] || exit 1
+    NATIVE_PASSWORD_CHECK="$NATIVE_DIR/acceptance/ios-password-sheet.py"
+    [[ $(python3 "$NATIVE_PASSWORD_CHECK" checkpoint "$NATIVE_CHECK_PATH.xml" "${NATIVE_COMMANDS[0]}") == invoice-restored-postlogin ]] || exit 1
+    NATIVE_PASSWORD_IMAGE="$RUNNER_TEMP/ios-intake-current-screen.png"
+    xcrun simctl io "$2" screenshot "$NATIVE_PASSWORD_IMAGE"
+    NATIVE_PASSWORD_POINT=$(python3 "$NATIVE_PASSWORD_CHECK" locate "$NATIVE_PASSWORD_IMAGE" iphone) || NATIVE_PASSWORD_POINT=''
+    rm -f "$NATIVE_PASSWORD_IMAGE"
+    if [[ -n "$NATIVE_PASSWORD_POINT" ]]; then
+      intake_flow dismiss-system-sheet --no-reinstall-driver -e NOT_NOW_POINT="$NATIVE_PASSWORD_POINT"
+    fi
+    intake_flow readback --no-reinstall-driver
+  fi
+else
+  intake_flow capture
+fi
 node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" local >> "$EVIDENCE/$NATIVE_PLATFORM-intake-checks.txt"
 
 # Verify the actual restarted app's encrypted store while the image is still local.
@@ -43,7 +74,6 @@ if [ "$NATIVE_PLATFORM" = android ]; then
   tar -xf "$NATIVE_INTAKE_PRIVATE/cache.tar" -C "$NATIVE_INTAKE_PRIVATE"
   python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_INTAKE_PRIVATE" > "$EVIDENCE/$NATIVE_PLATFORM-intake-encryption.txt"
 else
-  NATIVE_CONTAINER=$(xcrun simctl get_app_container "${2:?Pass the iOS simulator}" eu.onesa.smartfarmer data)
   python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_CONTAINER" > "$EVIDENCE/$NATIVE_PLATFORM-intake-encryption.txt"
 fi
 

@@ -1,0 +1,37 @@
+appId: eu.onesa.smartfarmer
+---
+# Expo may briefly show the recent local bundle while opening it itself.
+# If the chooser persists, resume that exact bundle. A direct transition
+# to the locked workspace needs no tap; the calling flow still verifies reauthentication.
+- extendedWaitUntil:
+    visible: '^(Pinda zvakare paindaneti|Ngena futhi nge-inthanethi|Enter URL manually|This is the developer menu\. It gives you access to useful tools in development builds\.|Toggle element inspector)$'
+    timeout: 120000
+- runFlow:
+    when:
+      visible: '^Enter URL manually$'
+    commands:
+      - tapOn:
+          text: '^http://127\.0\.0\.1:8081/index\.bundle\?platform=ios&dev=true&hot=false&lazy=true&transform\.engine=hermes&transform\.bytecode=1&transform\.routerRoot=app&unstable_transformProfile=hermes-stable$'
+          optional: true
+# An installed development build can present its first-use tutorial after the
+# bundle opens. The text anchors each action to Expo, outside the farm app.
+- extendedWaitUntil:
+    visible: '^(Pinda zvakare paindaneti|Ngena futhi nge-inthanethi|This is the developer menu\. It gives you access to useful tools in development builds\.|Toggle element inspector)$'
+    timeout: 120000
+- runFlow:
+    when:
+      visible: '^This is the developer menu\. It gives you access to useful tools in development builds\.$'
+    commands:
+      - tapOn:
+          text: '^Continue$'
+          below: '^This is the developer menu\. It gives you access to useful tools in development builds\.$'
+      - extendedWaitUntil:
+          notVisible: '^This is the developer menu\. It gives you access to useful tools in development builds\.$'
+          timeout: 10000
+- runFlow:
+    when:
+      visible: '^Toggle element inspector$'
+    commands:
+      - tapOn:
+          id: '^xmark$'
+          text: '^Close$'

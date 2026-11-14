@@ -220,6 +220,15 @@ const page =
 async function listen(origin, isPortal) {
   const server = https.createServer(tls, (request, response) => {
     const path = new URL(request.url, origin).pathname;
+    // Record only the known surface and server receipt time. Query strings,
+    // state, codes, cookies, and form inputs stay off this evidence channel.
+    if (request.method === "GET") {
+      const stage = isPortal && path === "/api/v1/identity/auth" ? "authorize" :
+        !isPortal && path === "/auth/onesa/callback" ? "callback-page" : null;
+      if (stage) response.once("finish", () => {
+        console.log(`ONESA_DEVICE_HTTP ${stage} ${response.statusCode} ${Date.now()}`);
+      });
+    }
     if (
       (isPortal && path.startsWith("/api/")) ||
       (!isPortal && path.startsWith("/v1/"))
@@ -238,6 +247,14 @@ async function listen(origin, isPortal) {
           headers,
         },
         (reply) => {
+          // The device operator needs to distinguish a UI click from an issuer
+          // response. Only emit the finite action and status, never the interaction ID,
+          // returned redirect, cookie, request/response body or credential values.
+          const action = isPortal && request.method === "POST"
+            ? /^\/api\/v1\/account\/interaction\/[^/]+\/(login|continue|cancel)$/.exec(path)?.[1]
+            : undefined;
+          if (action && Number.isInteger(reply.statusCode))
+            console.log(`ONESA_DEVICE_PORTAL ${action} ${reply.statusCode}`);
           response.writeHead(reply.statusCode, reply.headers);
           reply.pipe(response);
         },
@@ -249,7 +266,7 @@ async function listen(origin, isPortal) {
       request.pipe(upstream);
       return;
     }
-    if (!isPortal && path === "/auth/onesa/callback") {
+    if (!isPortal && ["/", "/auth/onesa/callback", "/account-deletion"].includes(path)) {
       response.setHeader("content-type", "text/html");
       response.end(readFileSync(join(temp, "farmer.html")));
       return;
@@ -320,10 +337,12 @@ try {
       .replace("</head>", '<link rel="stylesheet" href="/farmer.css"></head>')
       .replace("/src/main.tsx", "/farmer.js"),
   );
+  const subjects = {member: randomUUID(), administrator: randomUUID()};
   await run(
     portalApi,
     {
       ...portalEnv,
+      FIXTURE_SUBJECTS: JSON.stringify(subjects),
       FIXTURE_PASSWORD: password,
       FIXTURE_RECOVERY_CODES: JSON.stringify(codes),
     },
@@ -350,7 +369,15 @@ try {
       "tsx",
       "--input-type=module",
       "-e",
-      "import {buildApp} from './src/app.ts';import {pool} from './src/db.ts';const app=buildApp(pool,process.env.WEB_ORIGIN);await app.listen({host:'127.0.0.1',port:46504})",
+      `import {buildApp} from './src/app.ts';
+       import {pool} from './src/db.ts';
+       const app=buildApp(pool,process.env.WEB_ORIGIN);
+       app.addHook('onResponse', async (request, reply) => {
+         if (request.method === 'POST' && request.routeOptions.url === '/v1/onesa/sessions') {
+           console.log('ONESA_DEVICE_HTTP session ' + reply.statusCode + ' ' + Date.now());
+         }
+       });
+       await app.listen({host:'127.0.0.1',port:46504});`,
     ],
     true,
   );
@@ -420,6 +447,9 @@ try {
       {
         PORTAL_REVISION: git(portal),
         FARMER_REVISION: git(farmer),
+        ISSUER: issuer,
+        MEMBER_SUBJECT: subjects.member,
+        ADMIN_SUBJECT: subjects.administrator,
         MEMBER_EMAIL: "member@example.invalid",
         ADMIN_EMAIL: "administrator@example.invalid",
         PASSWORD: password,

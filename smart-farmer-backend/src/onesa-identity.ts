@@ -89,10 +89,11 @@ export function openGrant(value: string, bearer: string) {
   } catch { throw new ApiError('unauthorized',401); }
 }
 
-export function registerOnesa(app: FastifyInstance, ctx: Context, config: Config | null) {
-  app.get('/v1/onesa/config', async () => config ? {
-    issuer:config.issuer, clientId:config.clientId, callback:config.callback,
-  } : {enabled:false});
+export function registerOnesa(app: FastifyInstance, ctx: Context, config: Config | null, localCredentials: boolean) {
+  app.get('/v1/onesa/config', async () => ({
+    ...(config ? {issuer:config.issuer, clientId:config.clientId, callback:config.callback} : {enabled:false}),
+    ...(localCredentials ? {local_credentials:true} : {}),
+  }));
   app.post('/v1/onesa/sessions', {config:{rateLimit:{max:12,timeWindow:'1 minute'}}}, async req => {
     if (!config) throw new ApiError('onesa_unavailable',503);
     const input = z.object({code:z.string().min(1).max(4096),verifier:z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),language:z.enum(['sn','nd'])}).strict().parse(req.body);

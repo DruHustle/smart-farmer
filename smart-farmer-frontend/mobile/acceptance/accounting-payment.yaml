@@ -40,7 +40,6 @@ appId: eu.onesa.smartfarmer
 - inputText: "${PAYMENT_REFERENCE}"
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "product-review"
     direction: DOWN
@@ -48,7 +47,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "product-review"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "product-confirm"
     direction: DOWN

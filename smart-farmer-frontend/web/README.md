@@ -36,6 +36,8 @@ Run the backend separately according to its README. `VITE_API_URL` must identify
 npm exec vite preview -- --host 127.0.0.1
 ```
 
+With a fresh, running [Portal and Farmer fixture](../../scripts/portal-device-fixture.mjs) and its private `FIXTURE_READY_FILE`, run `node test/portal-website.mjs` from this web directory. The test signs the same synthetic member in through Portal from two browser sessions. It creates a farm on desktop, interrupts and retries the committed response, saves a crop and reopens it at phone width.
+
 Serve `dist/` using HTTPS in production. Localhost is supported for development. Encryption, service workers, microphone access, and clipboard sharing require a secure context. The service worker is generated during production builds. It precaches the application shell, scripts, styles and icons, excludes authenticated/API responses, and loads the HLS player only when a person requests video.
 
 ### Private camera deployment

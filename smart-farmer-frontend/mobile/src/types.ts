@@ -1,6 +1,6 @@
 export type Language = 'sn' | 'nd';
 export type Role = 'owner' | 'manager' | 'worker' | 'adviser' | 'veterinarian';
-export type Session = { token: string; userId: string; username: string; language: Language; expiresAt: string; origin: string };
+export type Session = { token: string; userId: string; username: string; language: Language; expiresAt: string; origin: string; localFixture?: true; portalAccountUrl?: string };
 export type Farm = { id: string; name: string; timezone: string; role: Role };
 export const enterpriseTypes = ['crop', 'broiler', 'layer', 'breeder', 'hatchery', 'rabbit_breeding', 'rabbit_growout', 'fish', 'fish_nursery', 'fish_breeder', 'fish_hatchery'] as const;
 export type EnterpriseType = typeof enterpriseTypes[number];

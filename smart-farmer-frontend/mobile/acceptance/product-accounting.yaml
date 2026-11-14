@@ -19,18 +19,13 @@ appId: eu.onesa.smartfarmer
     centerElement: true
     element:
       id: "finance-tabs"
-    direction: DOWN
+    direction: UP
     timeout: 30000
 - tapOn:
     id: "finance-tabs"
 - tapOn:
     id: "finance-tabs-option-accounting"
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: "accounting-tabs"
-    direction: DOWN
-    timeout: 30000
+- runFlow: accounting-tab-control.yaml
 - tapOn:
     id: "accounting-tabs"
 - tapOn:
@@ -147,7 +142,6 @@ appId: eu.onesa.smartfarmer
 - inputText: "15.25"
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-review-draft"
     direction: DOWN
@@ -175,7 +169,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "invoice-line-0-tax-option-0"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-review-draft"
     direction: DOWN
@@ -191,7 +184,6 @@ appId: eu.onesa.smartfarmer
     id: "invoice-total"
     text: "USD 30.50"
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "invoice-confirm-draft"
     direction: DOWN
@@ -222,7 +214,12 @@ appId: eu.onesa.smartfarmer
 - assertVisible: "Synthetic native acceptance farm"
 - takeScreenshot: accounting-draft-preview
 - tapOn:
-    id: "sheet-close"
+    id: "invoice-preview-close"
+    enabled: true
+- extendedWaitUntil:
+    notVisible:
+      id: "invoice-preview-close"
+    timeout: 15000
 - runFlow:
     file: accounting-finalize.yaml
     env:

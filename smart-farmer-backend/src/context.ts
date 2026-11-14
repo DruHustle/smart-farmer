@@ -11,13 +11,16 @@ export class ApiError extends Error {
 }
 export const writeRoles = ['owner','manager','worker'];
 export const manageRoles = ['owner','manager'];
-export function createContext(db: pg.Pool, central: ReturnType<typeof identityConfig> = null) {
+export function createContext(db: pg.Pool, central: ReturnType<typeof identityConfig>, localCredentials: boolean) {
   async function user(req: FastifyRequest, reply: FastifyReply) {
     const value = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
     if (!value) { reply.code(401).send({error:'unauthorized'}); return null; }
     const result = await db.query('SELECT s.user_id,s.onesa_grant,u.onesa_subject,u.onesa_issuer FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [sha256(value)]);
     if (!result.rowCount) { reply.code(401).send({error:'unauthorized'}); return null; }
     const account = result.rows[0];
+    if (!account.onesa_subject && !localCredentials) {
+      reply.code(401).send({error:'onesa_sign_in_required'}); return null;
+    }
     if (account.onesa_subject) {
       try {
         if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);

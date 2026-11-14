@@ -2,12 +2,17 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import {openAuthSessionAsync} from 'expo-web-browser';
 import {createApi} from './api';
-import {nativeCode, type PendingOnesa} from './onesa-callback';
+import {PendingOnesaTransactions, type PendingOnesa} from './onesa-callback';
 import type {Language,Session} from './types';
 
 export type OnesaConfig = {issuer:string;clientId:string;callback:string};
 const pendingKey = 'smart-farmer.onesa-pending.v1';
 const options = {keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY};
+const transactions = new PendingOnesaTransactions({
+  read: () => SecureStore.getItemAsync(pendingKey, options),
+  write: value => SecureStore.setItemAsync(pendingKey, value, options),
+  remove: () => SecureStore.deleteItemAsync(pendingKey, options),
+});
 const random = () => Array.from(Crypto.getRandomBytes(32), byte => byte.toString(16).padStart(2,'0')).join('');
 
 export async function openOnesa(origin:string, config:OnesaConfig, language:Language) {
@@ -22,7 +27,7 @@ export async function openOnesa(origin:string, config:OnesaConfig, language:Lang
   const params = new URLSearchParams({response_type:'code',scope:'openid email profile onesa',client_id:config.clientId,
     redirect_uri:config.callback,code_challenge_method:'S256',code_challenge:challenge,state,nonce:random()});
   const pending:PendingOnesa={state,verifier,issuer:config.issuer,origin,language,expires:Date.now()+300_000};
-  await SecureStore.setItemAsync(pendingKey,JSON.stringify(pending),options);
+  await transactions.save(pending);
   try {
     const response = await openAuthSessionAsync(target.href + '?' + params, 'smartfarmer://onesa/callback');
     if (response.type === 'cancel' || response.type === 'dismiss') throw new Error('onesa_cancelled');
@@ -30,19 +35,16 @@ export async function openOnesa(origin:string, config:OnesaConfig, language:Lang
     return await redeemOnesa(response.url, origin);
   } finally {
     // Cold starts redeem from secure storage. Clear only the attempt owned by this sheet.
-    const raw = await SecureStore.getItemAsync(pendingKey, options);
-    if (raw && JSON.parse(raw).state === state) await SecureStore.deleteItemAsync(pendingKey, options);
+    await transactions.clear(state);
   }
 }
 
 export async function redeemOnesa(incoming:string,origin:string):Promise<Session | null> {
-  const raw=await SecureStore.getItemAsync(pendingKey,options);
-  if(!raw)return null;
-  const pending:PendingOnesa=JSON.parse(raw);
-  const code=nativeCode(incoming,pending,origin);
-  await SecureStore.deleteItemAsync(pendingKey,options);
+  const claim = await transactions.claim(incoming, origin);
+  if (!claim) return null;
+  const {pending, code} = claim;
   const reply=await createApi(origin).request<Omit<Session,'origin'>>('/v1/onesa/sessions','POST',
     {code,verifier:pending.verifier,language:pending.language});
   // Native storage supplies its own account-bound database key.
-  return {origin,token:reply.token,userId:reply.userId,username:reply.username,language:reply.language,expiresAt:reply.expiresAt};
+  return {origin,portalAccountUrl:new URL('/account',pending.issuer).href,token:reply.token,userId:reply.userId,username:reply.username,language:reply.language,expiresAt:reply.expiresAt};
 }

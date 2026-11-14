@@ -3,6 +3,8 @@ set -euo pipefail
 NATIVE_DIR="$PWD/smart-farmer-frontend/mobile"
 EVIDENCE="$RUNNER_TEMP/native-evidence"
 NATIVE_APP="$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+NATIVE_SUITE="${1:-farm}"
+case "$NATIVE_SUITE" in farm|invoice|tablet) ;; *) exit 2 ;; esac
 NATIVE_LOG_PID=''
 NATIVE_THREAD_WATCH_PID=''
 NATIVE_THREAD_STOP_FILE=''
@@ -51,29 +53,161 @@ start_native_log() {
   node "$NATIVE_DIR/acceptance/darwin-thread-watch.cjs" "$native_label" > "$native_thread_output" 2>/dev/null &
   NATIVE_THREAD_WATCH_PID=$!
 }
+run_native_login() {
+  local device="$1" layout="$2" label="$3" flow="${4:-login}"
+  local report="$EVIDENCE/$label.xml" prompt_image="$RUNNER_TEMP/$layout-current-password-sheet.png" prompt_point
+  if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
+    return 0
+  fi
+  if [[ "$flow" == login ]] &&
+     python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label" "$device"; then
+    # XCTest failed before it could launch the form. Keep the failed install
+    # trace, then give the same simulator one clean driver installation.
+    mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
+    if [[ "$label" == ipad-large-font ]]; then
+      # Re-register the same installed tablet with CoreSimulator and Xcode.
+      # The detector already verified that no Farmer UI command was issued.
+      xcrun simctl shutdown "$device" || return 1
+      xcrun simctl boot "$device" || return 1
+      xcrun simctl bootstatus "$device" -b || return 1
+      xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
+    fi
+    echo 'Retrying the initial XCTest driver on the same simulator.'
+    if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
+      return 0
+    fi
+  fi
+  # One user retry is allowed only in the isolated invoice fixture, on the
+  # initial sign-in screen. No account proof, financial action or record is replayed.
+  if [[ "$NATIVE_SUITE" == invoice && "$flow" == login && "$label" == ios-login ]]; then
+    local login_case
+    for login_case in closed-response client-validation; do
+      if python3 "$NATIVE_DIR/acceptance/ios-login-delivery.py" "$EVIDENCE" "$login_case"; then
+        mv "$report" "$EVIDENCE/$label-before-$login_case.xml"
+        printf '%s\n' "$login_case" > "$EVIDENCE/$label-recovery.txt"
+        maestro --device "$device" test --no-reinstall-driver -e LOGIN_CASE="$login_case" --format junit --output "$report" \
+          --test-output-dir "$EVIDENCE/$label-after-$login_case" "$NATIVE_DIR/acceptance/ios-retry-invoice-login.yaml"
+        return $?
+      fi
+    done
+  fi
+  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py" checkpoint
+  local resume="$NATIVE_DIR/acceptance/ios-resume-after-password-sheet.yaml"
+  set -- "$report" "$EVIDENCE/$label/$flow/commands.json"
+  if [[ "$label" == ipad-large-font && "$flow" == login ]]; then set -- "$@" "$EVIDENCE/proxy.log"; fi
+  checkpoint=$(python3 "$check" checkpoint "$@") || return 1
+  if [[ "$checkpoint" == record-tap ]]; then
+    # The Record control was visible before its tap failed. Only Apple's exact
+    # password sheet in that failed display permits the post-login recovery.
+    local tap_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-tapOnElement-tab-record.png)
+    if [[ ${#tap_frames[@]} != 1 || ! -f "${tap_frames[0]}" ]] ||
+       ! python3 "$check" locate "${tap_frames[0]}" "$layout" > /dev/null; then
+      return 1
+    fi
+  fi
+  xcrun simctl io "$device" screenshot "$prompt_image" || return 1
+  if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
+    if [[ "$checkpoint" == record-assertion ]]; then
+      # On a failed Record assertion, require the exact sheet in the failure frame.
+      local failed_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-tab-record.png)
+      if [[ ${#failed_frames[@]} != 1 || ! -f "${failed_frames[0]}" ]] ||
+         ! python3 "$check" locate "${failed_frames[0]}" "$layout" > /dev/null; then
+        rm -f "$prompt_image"
+        return 1
+      fi
+    fi
+    # The submitted-login trace can end inside Apple's decline handler when
+    # XCTest disconnects. Restore focus without resubmitting the login.
+    xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
+    xcrun simctl io "$device" screenshot "$prompt_image" || return 1
+    if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
+      # The iPad's native screenshot can omit the AutoFill overlay. The
+      # XCTest display capture includes it. Classify a fresh frame from this
+      # same simulator, never a coordinate calculated from the failed step.
+      if [[ "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap || "$checkpoint" == submitted-session-confirmed ) ]]; then
+        local display="$EVIDENCE/$label-current-display"
+        maestro --device "$device" test --no-reinstall-driver --flatten-debug-output \
+          --test-output-dir "$display" --debug-output "$display" \
+          "$NATIVE_DIR/acceptance/ios-current-display.yaml" || return 1
+        local live="$display/ios-current-display/takeScreenshot/current-system-view.png"
+        [[ -f "$live" ]] || return 1
+        if prompt_point=$(python3 "$check" locate "$live" "$layout"); then
+          cp "$live" "$prompt_image" || return 1
+        fi
+      fi
+      if [[ -z "$prompt_point" ]]; then
+        resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+      fi
+    fi
+  fi
+  set --
+  if [[ -n "$prompt_point" ]]; then
+    set -- -e NOT_NOW_POINT="$prompt_point"
+    mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+  else
+    rm -f "$prompt_image"
+  fi
+  mv "$report" "$EVIDENCE/$label-before-password-sheet.xml"
+  maestro --device "$device" test --no-reinstall-driver "$@" \
+    --format junit --output "$report" --test-output-dir "$EVIDENCE/$label-after-password-sheet" \
+    "$resume"
+}
+run_tablet() {
+  NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')
+  xcrun simctl boot "$NATIVE_TABLET"
+  xcrun simctl bootstatus "$NATIVE_TABLET" -b
+  xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
+  xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
+  start_native_log "$NATIVE_TABLET" ios-tablet
+  run_native_login "$NATIVE_TABLET" ipad ipad-large-font
+  read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
+  maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
+}
+
+# The iPad uses its own clean install, accessible text size and the preseeded
+# project/forum records. Its UI verification does not consume iPhone mutations.
+if [[ "$NATIVE_SUITE" == tablet ]]; then
+  run_tablet
+  exit 0
+fi
+
 NATIVE_PHONE=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPhone"));if(!d)throw Error("iPhone simulator unavailable");process.stdout.write(d.udid);});')
 xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
+# A customer already has the source photo before signing in. Seed the real
+# OS library before opening Farmer; opening Photos later would lock the app.
+NATIVE_INVOICE_IMAGE="$NATIVE_DIR/acceptance/assets/native-supplier-invoice.png"
+node "$NATIVE_DIR/acceptance/accounting-intake-fixture.mjs" image "$NATIVE_INVOICE_IMAGE" > "$EVIDENCE/ios-intake-source.txt"
+xcrun simctl launch "$NATIVE_PHONE" com.apple.mobileslideshow > /dev/null
+xcrun simctl addmedia "$NATIVE_PHONE" "$NATIVE_INVOICE_IMAGE"
+printf '%s\n' 'Apple Simulator imported the synthetic invoice into Photos before sign-in.' >> "$EVIDENCE/ios-intake-source.txt"
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
+run_native_login "$NATIVE_PHONE" iphone ios-login
+if [[ "$NATIVE_SUITE" == invoice ]]; then
+  # Independent clean install and seeded API. The full farm suite below keeps
+  # its original order, including all product and accounting assertions.
+  bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"
+  stop_native_log
+  xcrun simctl shutdown "$NATIVE_PHONE"
+  exit 0
+fi
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
 python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_CONTAINER" > "$EVIDENCE/ios-encryption.txt"
 rm "$NATIVE_OFFLINE_FLAG"
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile.yaml"
+# AutoFill can offer to save the password again when the offline workspace is
+# unlocked. Recover only at the post-sign-in checkpoint, before any record work.
+run_native_login "$NATIVE_PHONE" iphone ios-reconcile-login reconcile-signin
+maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-reconcile.xml" --test-output-dir "$EVIDENCE/ios-reconcile" "$NATIVE_DIR/acceptance/reconcile-records.yaml"
 node "$NATIVE_DIR/acceptance/fixture.mjs" verify > "$EVIDENCE/ios-exactly-once.txt"
 bash "$NATIVE_DIR/acceptance/product-smoke.sh" ios "$NATIVE_PHONE"
 bash "$NATIVE_DIR/acceptance/accounting-intake.sh" ios "$NATIVE_PHONE"
 stop_native_log
 xcrun simctl shutdown "$NATIVE_PHONE"
-NATIVE_TABLET=$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=Object.values(JSON.parse(s).devices).flat();let d=a.find(x=>x.isAvailable&&x.name.startsWith("iPad"));if(!d)throw Error("iPad simulator unavailable");process.stdout.write(d.udid);});')
-xcrun simctl boot "$NATIVE_TABLET"
-xcrun simctl bootstatus "$NATIVE_TABLET" -b
-xcrun simctl ui "$NATIVE_TABLET" content_size accessibility-extra-large
-xcrun simctl install "$NATIVE_TABLET" "$NATIVE_APP"
-start_native_log "$NATIVE_TABLET" ios-tablet
-maestro --device "$NATIVE_TABLET" test --format junit --output "$EVIDENCE/ipad-large-font.xml" --debug-output "$EVIDENCE/ipad-large-font" --flatten-debug-output --test-output-dir "$EVIDENCE/ipad-large-font" "$NATIVE_DIR/acceptance/login.yaml"
-read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
-maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
+# On a direct farm run keep the complete historical handset/tablet journey.
+# CI schedules the same full tablet sequence in its own macOS job.
+if [[ "${NATIVE_TABLET_SEPARATE:-0}" != 1 ]]; then
+  run_tablet
+fi

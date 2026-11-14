@@ -1,0 +1,14 @@
+appId: eu.onesa.smartfarmer
+---
+# Start Farmer once. The calling flow continues on the live browser sheet.
+- assertTrue: ${['cancel', 'cold', 'active'].includes(FLOW_STATE)}
+- runFlow:
+    when:
+      true: ${FLOW_STATE !== 'active'}
+    commands:
+      - runFlow: entry.yaml
+- runFlow:
+    when:
+      true: ${FLOW_STATE === 'active'}
+    file: ios-prepare-reauthenticate.yaml
+- runFlow: open.yaml

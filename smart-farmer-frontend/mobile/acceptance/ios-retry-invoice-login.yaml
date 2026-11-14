@@ -1,0 +1,28 @@
+appId: eu.onesa.smartfarmer
+---
+# The Mac checked the API and recorded native form from this same attempt.
+# Confirm the matching error is still displayed before one normal submission.
+- runFlow:
+    when:
+      true: ${LOGIN_CASE === 'closed-response'}
+    commands:
+      - assertVisible: '^Hazvina kubudirira[.] Tarisa zvawaisa kana kubatana[.]$'
+- runFlow:
+    when:
+      true: ${LOGIN_CASE === 'client-validation'}
+    commands:
+      - assertVisible: '^Zadza mashoko anodiwa[.]$'
+      - assertVisible: {id: auth-password, text: '^[•●]{25}$'}
+- assertVisible:
+    id: auth-username
+    text: '^native_owner$'
+- assertVisible:
+    id: auth-submit
+    enabled: true
+- tapOn:
+    id: auth-submit
+- extendedWaitUntil:
+    notVisible: {id: auth-submit}
+    timeout: 45000
+- runFlow: dismiss-password-save.yaml
+- runFlow: record-after-login.yaml

@@ -10,6 +10,32 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: invoice-documents-refresh
+# A previously cached list can still report this upload as queued on iOS.
+# Repeating this read-only refresh does not resubmit the image or draft.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'invoice-scan-review-${DOCUMENT_ID}'
+          direction: DOWN
+          timeout: 30000
+      - runFlow:
+          when:
+            visible:
+              id: 'invoice-scan-(queued|processing)'
+          commands:
+            - scrollUntilVisible:
+                centerElement: true
+                element:
+                  id: invoice-documents-refresh
+                  enabled: true
+                direction: UP
+                timeout: 30000
+            - tapOn:
+                id: invoice-documents-refresh
+                enabled: true
 - scrollUntilVisible:
     element:
       id: invoice-scan-ready
@@ -56,7 +82,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: sheet-close
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-use-extraction
     direction: DOWN
@@ -90,7 +115,6 @@ appId: eu.onesa.smartfarmer
 - inputText: '12.25'
 - runFlow: dismiss-keyboard.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
@@ -106,7 +130,6 @@ appId: eu.onesa.smartfarmer
 - assertNotVisible:
     id: invoice-confirm-draft
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-line-0-tax
     direction: DOWN
@@ -116,7 +139,6 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: invoice-line-0-tax-option-0
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
@@ -132,7 +154,6 @@ appId: eu.onesa.smartfarmer
     id: invoice-total
     text: 'USD 24.50'
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-confirm-draft
     direction: DOWN
@@ -143,6 +164,18 @@ appId: eu.onesa.smartfarmer
     notVisible:
       id: invoice-confirm-draft
     timeout: 45000
+# The confirmed draft can retain the editor’s scroll position at its actions.
+# The balance appears above Preview in the detail screen.
+- runFlow:
+    when:
+      platform: iOS
+      visible: {id: invoice-preview}
+      notVisible: {id: invoice-balance}
+    commands:
+      - scrollUntilVisible:
+          element: {id: invoice-balance}
+          direction: UP
+          timeout: 30000
 - scrollUntilVisible:
     element:
       id: invoice-balance

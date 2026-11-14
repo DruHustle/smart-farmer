@@ -32,18 +32,13 @@ appId: eu.onesa.smartfarmer
     centerElement: true
     element:
       id: finance-tabs
-    direction: DOWN
+    direction: UP
     timeout: 30000
 - tapOn:
     id: finance-tabs
 - tapOn:
     id: finance-tabs-option-accounting
-- scrollUntilVisible:
-    centerElement: true
-    element:
-      id: accounting-tabs
-    direction: DOWN
-    timeout: 30000
+- runFlow: accounting-tab-control.yaml
 - tapOn:
     id: accounting-tabs
 - tapOn:

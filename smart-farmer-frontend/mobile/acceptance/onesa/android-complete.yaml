@@ -59,8 +59,16 @@ appId: eu.onesa.smartfarmer
           element: {id: forum-new, enabled: true}
           direction: DOWN
           timeout: 30000
+      # The discussion is below the topic and search controls. Scroll the
+      # compact viewport in short increments and require its exact title and ID.
       - scrollUntilVisible:
           element:
             id: '^forum-open-.*$'
             text: '^${FORUM_TITLE}$'
           direction: DOWN
+          timeout: 45000
+          speed: 35
+          centerElement: true
+      - assertVisible:
+          id: '^forum-open-.*$'
+          text: '^${FORUM_TITLE}$'
