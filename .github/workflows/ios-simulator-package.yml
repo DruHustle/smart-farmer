@@ -1,0 +1,59 @@
+name: Installed Farmer iPhone simulator
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-simulator-package.yml'
+      - 'smart-farmer-frontend/mobile/App.tsx'
+      - 'smart-farmer-frontend/mobile/index.js'
+      - 'smart-farmer-frontend/mobile/app.json'
+      - 'smart-farmer-frontend/mobile/package*.json'
+      - 'smart-farmer-frontend/mobile/src/**'
+      - 'smart-farmer-frontend/mobile/assets/**'
+      - 'smart-farmer-frontend/mobile/locales/**'
+      - 'smart-farmer-frontend/mobile/plugins/**'
+      - 'smart-farmer-frontend/mobile/ios/**'
+permissions:
+  contents: read
+concurrency:
+  group: 'farmer-iphone-simulator-${{ github.ref }}'
+  cancel-in-progress: true
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 70
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_API_URL: https://farmer.onesa.eu
+    defaults:
+      run:
+        working-directory: smart-farmer-frontend/mobile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.22.1
+      - run: npm ci && npx --no-install expo prebuild --platform ios --no-install && pod install --project-directory=ios
+      - name: Build and install the standalone release on an iPhone simulator
+        run: |
+          phone=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name|startswith("iPhone"))][0].udid // empty')
+          test -n "$phone"
+          xcrun simctl boot "$phone" || xcrun simctl bootstatus "$phone" -b
+          xcrun simctl bootstatus "$phone" -b
+          xcodebuild -workspace ios/SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Release -destination "id=$phone" -derivedDataPath "$RUNNER_TEMP/farmer-build" build
+          app="$RUNNER_TEMP/farmer-build/Build/Products/Release-iphonesimulator/SmartFarmer.app"
+          test -s "$app/main.jsbundle"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = eu.onesa.smartfarmer
+          xcrun simctl install "$phone" "$app"
+          xcrun simctl launch "$phone" eu.onesa.smartfarmer
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: SmartFarmer-iPhone-simulator
+          path: ${{ runner.temp }}/SmartFarmer-simulator.zip
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
