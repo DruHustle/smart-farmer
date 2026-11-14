@@ -1,5 +1,5 @@
 export type PendingOnesa = {
-  state: string; verifier: string; issuer: string; origin: string; language: 'sn' | 'nd'; expires: number;
+  state: string; nonce?:string; verifier: string; issuer: string; origin: string; language: 'sn' | 'nd'; expires: number;
 };
 
 export function nativeCode(incoming: string, pending: PendingOnesa, origin: string, now = Date.now()): string {

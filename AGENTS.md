@@ -29,8 +29,11 @@ exactly-once reconciliation checks. Exact artifact hashes and scope are in
 Keep generated CocoaPods and Metro configuration changes separate from intended
 source changes; restore only generated files after preserving build evidence.
 
-Onesa Portal is the identity authority. Bind identities by issuer and subject,
-never email alone. Approved ordinary accounts receive farm access only through
+Onesa Identity at `auth.onesa.eu` owns human sign-in and product grants for the
+managed pilot. Portal is the legacy issuer during migration. Validate the Farmer
+API audience and signed stable Onesa ID, and preserve existing issuer/subject
+links and Farmer accounts. Never link accounts by email alone.
+Approved ordinary accounts receive farm access only through
 explicit memberships; global administrators still require current MFA.
 Preserve PKCE/state, live revocation, return destinations and retry identifiers.
 An explicit central authority rejection permanently retires the local session;
