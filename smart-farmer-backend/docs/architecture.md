@@ -69,3 +69,21 @@ The existing Node 24/Fastify/PostgreSQL baseline was retained; dependencies are 
 - https://docs.expo.dev/workflow/overview/
 
 Repository code, tests and current CI are the evidence for implementation status; these documentation links do not establish that a specific app workflow has passed.
+
+### Managed Identity pilot
+
+When the Identity migration has verified the account links, set the following API settings on the pilot deployment. Register two clients with the exact HTTPS callback `${WEB_ORIGIN}/auth/onesa/callback`. The confidential web application uses client-secret basic. The public native client uses S256 PKCE and token endpoint authentication method `none`. The native browser hands off only a one-use code. Each client retains its nonce and verifier until return. Configure the Farmer API access-token lifetime to at most 300 seconds, with RS256 signatures.
+
+| Setting | Pilot value or source |
+| --- | --- |
+| `ONESA_IDENTITY_ENABLED` and `ONESA_IDENTITY_MODE` | `true` and `managed` |
+| `ONESA_IDENTITY_ISSUER` | `https://auth.onesa.eu/`, including the trailing slash |
+| `ONESA_IDENTITY_AUDIENCE` | Registered resource identifier, proposed `https://api.farmer.onesa.eu` |
+| `ONESA_IDENTITY_CLIENT_ID`, `ONESA_IDENTITY_CLIENT_SECRET`, `ONESA_IDENTITY_NATIVE_CLIENT_ID` | Web client, its secret, and a distinct public native client |
+| `ONESA_IDENTITY_JWKS` and `ONESA_IDENTITY_JWKS_EXPIRES_AT` | Trusted public RS256 signing keys from the exact issuer's authenticated HTTPS discovery and JWKS endpoints, and a Unix-seconds expiry for that snapshot |
+
+Refresh and distribute the current and next signing keys before provider rotation or snapshot expiry. Remove a compromised key and restart API instances. An expired snapshot fails closed. Managed claims in the `https://onesa.eu/claims/` namespace carry the verified `user_id`, `products`, audience-scoped `roles` and, for recent MFA, `mfa_time`. A valid Farmer grant enters the app with its existing local memberships. Changing or removing a farm member requires both fresh MFA and local owner authorization.
+
+Rehearse against a copy of the Farmer database. Apply migration 019 before starting this API. Existing records continue to bind to the historic Portal issuer and stable Onesa ID, including their Farmer UUIDs, vault keys and memberships. Managed sessions record their actual token issuer independently. An Identity outage allows a current authorized session to read locally until access-token expiry. New sign-in and interactive step-up require the provider. Reopen the original Farmer link to renew using the existing provider browser session. Product grant removal or suspension takes effect by expiry for an already-issued token. Local member changes take effect on the next protected request.
+
+For rollback, restore the previous issuer, client and `portal` mode. Preserve data written after cutover and retain migration 019. The API rejects managed sessions in Portal mode. Reconcile Identity-side user/grant changes to the rollback authority before reopening its sign-in. Keep the old binary and callback in place until signed-out, existing-session and offline cases pass for each supported client.

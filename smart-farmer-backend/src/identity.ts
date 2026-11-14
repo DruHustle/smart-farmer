@@ -148,7 +148,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context, localCredenti
     return reply.code(201).send(result);
   });
   app.patch('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
+    const id=await user(req,reply,true);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     const b=z.object({role:z.enum(['owner','manager','worker','adviser'])}).strict().parse(req.body);
     await transaction(async c=>{
       const previous=await lockMembershipChange(c,farmId,id,userId,b.role);
@@ -157,7 +157,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context, localCredenti
     });return {userId,role:b.role};
   });
   app.delete('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
+    const id=await user(req,reply,true);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     await transaction(async c=>{
       await lockMembershipChange(c,farmId,id,userId,null);
       const assignment=[farmId,userId];
