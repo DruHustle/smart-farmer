@@ -32,7 +32,7 @@ appId: eu.onesa.smartfarmer
     centerElement: true
     element:
       id: finance-tabs
-    direction: DOWN
+    direction: UP
     timeout: 30000
 - tapOn:
     id: finance-tabs
