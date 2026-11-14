@@ -5,6 +5,15 @@ on:
     paths:
       - '.github/workflows/ios-device-archive.yml'
       - 'scripts/ios-device-distribution.sh'
+      - 'smart-farmer-frontend/mobile/App.tsx'
+      - 'smart-farmer-frontend/mobile/index.js'
+      - 'smart-farmer-frontend/mobile/app.json'
+      - 'smart-farmer-frontend/mobile/package*.json'
+      - 'smart-farmer-frontend/mobile/src/**'
+      - 'smart-farmer-frontend/mobile/assets/**'
+      - 'smart-farmer-frontend/mobile/locales/**'
+      - 'smart-farmer-frontend/mobile/plugins/**'
+      - 'smart-farmer-frontend/mobile/ios/**'
 permissions:
   contents: read
 concurrency:

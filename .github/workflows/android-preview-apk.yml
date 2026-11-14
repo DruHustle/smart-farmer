@@ -5,7 +5,14 @@ on:
       - '.github/workflows/android-preview-apk.yml'
       - 'scripts/android-delivery.py'
       - 'scripts/android-store-bundle.sh'
+      - 'smart-farmer-frontend/mobile/App.tsx'
+      - 'smart-farmer-frontend/mobile/index.js'
       - 'smart-farmer-frontend/mobile/app.json'
+      - 'smart-farmer-frontend/mobile/package*.json'
+      - 'smart-farmer-frontend/mobile/src/**'
+      - 'smart-farmer-frontend/mobile/assets/**'
+      - 'smart-farmer-frontend/mobile/locales/**'
+      - 'smart-farmer-frontend/mobile/plugins/**'
       - 'smart-farmer-frontend/mobile/android/**'
   workflow_dispatch:
     inputs:
@@ -127,6 +134,11 @@ jobs:
             grep -F 'Status: ok' "$RUNNER_TEMP/bundle-relaunch.txt"
             sleep 8
             adb shell pidof "$APP_ID"
+      - name: Include the installed standalone APK in the qualification package
+        run: |
+          cp "$RUNNER_TEMP/disposable-qualification.apk" "$RUNNER_TEMP/android-bundle-review/SmartFarmer-qualification.apk"
+          cd "$RUNNER_TEMP/android-bundle-review"
+          sha256sum SmartFarmer-qualification.apk >> SHA256SUMS
       - name: Retain the installation-tested qualification bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
