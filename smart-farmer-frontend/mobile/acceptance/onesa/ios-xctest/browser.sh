@@ -64,7 +64,7 @@ case "$mode" in
       -resultBundlePath "$run/identity.xcresult" \
       -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|forum|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|forum|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       report_failure "${last:-test-launch}"
     fi
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary

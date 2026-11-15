@@ -98,9 +98,7 @@ for role in cancel member admin; do
     xcrun simctl bootstatus "$device" -b
     xcrun simctl keychain "$device" add-root-cert "$RUNNER_TEMP/onesa-device/ca.crt"
     xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
-    # Open only the local prewarmed Expo bundle; XCTest, not Maestro, performs
-    # all application and operating-system interactions through the callback.
-    xcrun simctl launch "$device" eu.onesa.smartfarmer --initialUrl 'smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1' > "$RUNNER_TEMP/onesa-device/$role-local-launch.log"
+    # The single XCTest session launches the prewarmed bundle on this fresh installation.
   else
     adb shell pm clear com.android.chrome
     adb shell pm clear eu.onesa.smartfarmer

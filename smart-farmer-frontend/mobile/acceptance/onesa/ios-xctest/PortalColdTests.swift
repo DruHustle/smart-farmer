@@ -2,7 +2,8 @@ import XCTest
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, consent, email, password, remember, firstSubmit
+        case fixture, signedOut, localLauncher, introduction, developerMenu, signInControl
+        case consent, email, password, remember, firstSubmit
         case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm, forum, completed
     }
 
@@ -39,16 +40,50 @@ final class PortalColdTests: XCTestCase {
     // enters the prewarmed Expo app directly, without a Maestro XCTest session
     // that can outlive a browser handoff on the same disposable simulator.
     @MainActor private func signedOutStart() throws -> XCUIElement {
-        app.activate()
-        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
-        let introduction = app.buttons["Continue"].firstMatch
-        _ = waitFor({ start.exists || (introduction.exists && introduction.isHittable) }, seconds: 120)
-        if !start.exists && introduction.exists && introduction.isHittable { introduction.tap() }
-        let close = app.buttons["Close"].firstMatch
-        _ = waitFor({ start.exists || (close.exists && close.isHittable) }, seconds: 90)
-        if !start.exists && close.exists && close.isHittable { close.tap() }
-        return try XCTUnwrap(waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 90) ? start : nil,
-                             "Installed Farmer reached its signed-out Onesa control")
+        let bundle = "http://127.0.0.1:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+        var link = URLComponents()
+        link.scheme = "smartfarmer"
+        link.host = "expo-development-client"
+        link.path = "/"
+        link.queryItems = [URLQueryItem(name: "url", value: bundle),
+                           URLQueryItem(name: "__expo_disable_fab", value: "1"),
+                           URLQueryItem(name: "disableFab", value: "1")]
+        let localURL = try XCTUnwrap(link.url)
+        // The launch argument is consumed on process startup. Give the test
+        // runner ownership from startup so activating the app cannot replace it.
+        app.launchArguments = ["--initialUrl", localURL.absoluteString]
+        app.launch()
+        let nodes = app.descendants(matching: .any)
+        let start = nodes["auth-onesa"].firstMatch
+        let intro = nodes.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
+        let close = nodes.matching(NSPredicate(format: "label == %@", "Close")).firstMatch
+        let chooser = nodes.matching(NSPredicate(format: "label == %@", "Enter URL manually")).firstMatch
+        func ready(_ element: XCUIElement) -> Bool { element.exists && element.isHittable }
+        _ = waitFor({ ready(start) || ready(intro) || ready(close) || ready(chooser) }, seconds: 100)
+        if !ready(start) && ready(chooser) {
+            checkpoint(.localLauncher)
+            let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
+            if ready(savedBundle) { savedBundle.tap() }
+            if !waitFor({ ready(start) || ready(intro) || ready(close) }, seconds: 12), ready(chooser) {
+                // Repeat only before any authentication request and only while
+                // the known local-development chooser remains on screen.
+                app.terminate()
+                app.launch()
+            }
+        }
+        _ = waitFor({ ready(start) || ready(intro) || ready(close) }, seconds: 30)
+        if !ready(start) && ready(intro) {
+            checkpoint(.introduction)
+            intro.tap()
+            _ = waitFor({ ready(start) || ready(close) }, seconds: 45)
+        }
+        if !ready(start) && ready(close) {
+            checkpoint(.developerMenu)
+            close.tap()
+        }
+        let unlocked = waitFor({ ready(start) && start.isEnabled }, seconds: 45)
+        if unlocked { checkpoint(.signInControl) }
+        return try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
