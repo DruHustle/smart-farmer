@@ -133,6 +133,36 @@ test('equipment command creation and owner revocation serialize; queued actuatio
       'A revoked manager\'s queued command must never be delivered to the gateway');
     const afterRevocation=await f.request('POST',`${f.prefix}/assets/${asset}/commands`,{...command,id:randomUUID()},manager);
     assert.equal(afterRevocation.statusCode,404);
+
+    const demoted=await f.register('demoted_manager');
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",[demoted.userId,f.owner.farmId]);
+    const demotedAsset=randomUUID();
+    assert.equal((await f.request('POST',`${f.prefix}/assets`,{id:demotedAsset,name:'Demotion simulator',category:'pump',protocol:'simulator'})).statusCode,201);
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${demotedAsset}/simulate`,{running:false,interlockOk:true})).statusCode,200);
+    const demotedCommand={id:randomUUID(),command:'start',confirmed:true,expiresAt:new Date(Date.now()+60000).toISOString()};
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${demotedAsset}/commands`,demotedCommand,demoted)).statusCode,201);
+    const roleChange=await f.request('PATCH',`/v1/farms/${f.owner.farmId}/members/${demoted.userId}`,{role:'worker'});
+    assert.equal(roleChange.statusCode,200,roleChange.body);
+    assert.deepEqual((await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[demotedCommand.id])).rows[0],
+      {status:'rejected',reason:'actor_role_revoked'});
+
+    const inflight=await f.register('inflight_manager');
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",[inflight.userId,f.owner.farmId]);
+    const inflightAsset=randomUUID();
+    assert.equal((await f.request('POST',`${f.prefix}/assets`,{id:inflightAsset,name:'In-flight simulator',category:'pump',protocol:'simulator'})).statusCode,201);
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${inflightAsset}/simulate`,{running:false,interlockOk:true})).statusCode,200);
+    const inflightGateway=await f.request('POST',`${f.prefix}/assets/${inflightAsset}/gateway-token`,{});
+    assert.equal(inflightGateway.statusCode,200);
+    const inflightEdge={headers:{authorization:`Bearer ${inflightGateway.json().token}`}};
+    const inflightCommand={id:randomUUID(),command:'start',confirmed:true,expiresAt:new Date(Date.now()+60000).toISOString()};
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${inflightAsset}/commands`,inflightCommand,inflight)).statusCode,201);
+    const dispatched=await f.request('POST','/v1/edge/commands/next',{},inflightEdge);
+    assert.equal(dispatched.json().command.id,inflightCommand.id);
+    const inFlightRevocation=await f.request('DELETE',`/v1/farms/${f.owner.farmId}/members/${inflight.userId}`);
+    assert.equal(inFlightRevocation.statusCode,204,inFlightRevocation.body);
+    assert.deepEqual((await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[inflightCommand.id])).rows[0],
+      {status:'outcome_unknown',reason:'actor_membership_revoked'},
+      'A dispatched command may already have reached the device; revocation must record uncertainty, not claim it was cancelled');
   }finally{
     if(locker){await locker.query('ROLLBACK').catch(()=>{});locker.release();}
     if(commandRequest)await commandRequest.catch(()=>{});
