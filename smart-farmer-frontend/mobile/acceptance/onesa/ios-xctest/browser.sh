@@ -38,6 +38,7 @@ case "$mode" in
     run=$(mktemp -d "$work/$role.XXXXXX")
     trap 'rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
+    export FARMER_XCUI_EVIDENCE_DIR="$evidence"
     read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
     export TEST_RUNNER_FARMER_ROLE="$role"
     # Cancellation does not require or load credentials from the fixture.
@@ -64,7 +65,7 @@ case "$mode" in
       -resultBundlePath "$run/identity.xcresult" \
       -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|forum|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       report_failure "${last:-test-launch}"
     fi
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary

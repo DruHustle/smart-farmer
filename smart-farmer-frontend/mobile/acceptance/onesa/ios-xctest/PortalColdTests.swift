@@ -4,7 +4,8 @@ final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
         case fixture, signedOut, localLauncher, introduction, developerMenu, signInControl
         case consent, email, password, remember, firstSubmit
-        case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm, forum, completed
+        case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm
+        case farmWorkspace, forumTab, forumScreen, forumFeed, completed
     }
 
     // Only these fixed names leave the runner. Never print a field, URL or assertion payload.
@@ -87,15 +88,42 @@ final class PortalColdTests: XCTestCase {
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
-        let title = NSPredicate(format: "(label CONTAINS[c] %@ OR label CONTAINS[c] %@) AND label CONTAINS[c] %@",
-                                "localhost", "127.0.0.1", "sign in")
+        // ASWebAuthenticationSession's confirmation can be exposed as more
+        // than one alert node. Inspect every alert and combine its accessible
+        // text instead of requiring host and purpose to share one label.
         for owner in [springboard, app, authSheet, safari] {
-            let alert = owner.alerts.firstMatch
-            guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
-            let button = alert.buttons["Continue"].firstMatch
-            if button.exists && button.isHittable { return button }
+            for alert in owner.alerts.allElementsBoundByIndex {
+                let labels = [alert.label, (alert.value as? String) ?? ""] +
+                    alert.staticTexts.allElementsBoundByIndex.map { $0.label }
+                let text = labels.joined(separator: " ").lowercased()
+                guard (text.contains("localhost") || text.contains("127.0.0.1")),
+                      text.contains("sign in") else { continue }
+                let button = alert.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
+                if button.exists && button.isHittable { return button }
+            }
+        }
+        // Some iOS simulator releases surface the same host confirmation in
+        // SpringBoard's accessibility tree rather than its alerts collection.
+        // Keep this fallback confined to SpringBoard and require both the
+        // loopback host and sign-in purpose before tapping its Continue button.
+        let host = springboard.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "localhost", "127.0.0.1")
+        ).firstMatch
+        let purpose = springboard.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "sign in")
+        ).firstMatch
+        let continueButton = springboard.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
+        if host.exists && purpose.exists && continueButton.exists && continueButton.isHittable {
+            return continueButton
         }
         return nil
+    }
+
+    @MainActor private func captureConsentFailure() {
+        guard let directory = ProcessInfo.processInfo.environment["FARMER_XCUI_EVIDENCE_DIR"] else { return }
+        guard let data = XCUIScreen.main.screenshot().image.pngData() else { return }
+        let destination = URL(fileURLWithPath: directory).appendingPathComponent("ios-consent-unresolved.png")
+        try? data.write(to: destination, options: .atomic)
     }
 
     @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
@@ -107,7 +135,12 @@ final class PortalColdTests: XCTestCase {
         // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
         // live alert once before failing. Rendering Portal gets its own wait
         // after the OS prompt has actually been accepted.
-        guard waitFor(presented) || presented() else { return false }
+        guard waitFor(presented) || presented() else {
+            // This checkpoint occurs before any fixture credentials are entered;
+            // retain the simulator's actual blocking prompt for diagnosis.
+            captureConsentFailure()
+            return false
+        }
         guard let consent else { return true }
         consent.tap()
         if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
@@ -210,10 +243,15 @@ final class PortalColdTests: XCTestCase {
     }
 
     @MainActor private func portalWeb() -> XCUIElement? {
-        for owner in [authSheet, safari] where owner.state == .runningForeground {
+        // SafariViewService may report background state while its embedded
+        // authentication view remains visible inside Farmer. The input helper
+        // already uses a foreground-app coordinate when a descendant is not
+        // independently hittable, so do not discard that valid browser tree.
+        for owner in browserOwners {
             let web = owner.webViews.firstMatch
+            guard web.exists else { continue }
             let email = field("Email address", in: web)
-            if web.exists && email.exists && email.isEnabled && email.isHittable { return web }
+            if email.exists && email.isEnabled && !email.frame.intersection(app.frame).isEmpty { return web }
         }
         return nil
     }
@@ -224,9 +262,11 @@ final class PortalColdTests: XCTestCase {
         for owner in browserOwners {
             guard owner.webViews.count > 0 else { continue }
             let nodes = owner.descendants(matching: .any)
+            let cancelButton = owner.buttons["Cancel sign-in"].firstMatch
+            let cancelLink = owner.links["Cancel sign-in"].firstMatch
             guard nodes["Sign in to Onesa"].firstMatch.exists,
                   nodes["Remember this browser"].firstMatch.exists,
-                  owner.buttons["Cancel sign-in"].firstMatch.exists else { continue }
+                  cancelButton.exists || cancelLink.exists else { continue }
             let email = field("Email address", in: owner)
             let password = field("Password", in: owner)
             guard email.exists, password.exists, email.isEnabled, password.isEnabled,
@@ -380,13 +420,16 @@ final class PortalColdTests: XCTestCase {
         if !join.isHittable { app.scrollViews.firstMatch.swipeUp() }
         _ = try XCTUnwrap(waitFor({ join.exists && join.isEnabled && join.isHittable }) ? true : nil, "Invitation can be submitted")
         join.tap()
-        checkpoint(.forum)
+        checkpoint(.farmWorkspace)
         let farmName = try XCTUnwrap(env["FARMER_FARM"])
         let farm = app.staticTexts[farmName].firstMatch
         XCTAssertTrue(waitFor({ farm.exists && forum.exists && forum.isHittable }), "Farm and forum available")
+        checkpoint(.forumTab)
         forum.tap()
+        checkpoint(.forumScreen)
         let newDiscussion = app.descendants(matching: .any)["forum-new"].firstMatch
         XCTAssertTrue(newDiscussion.waitForExistence(timeout: 30), "Forum opened")
+        checkpoint(.forumFeed)
         let title = try XCTUnwrap(env["FARMER_DISCUSSION"])
         let discussion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "forum-open-", title)).firstMatch
         let scroll = app.scrollViews.firstMatch
