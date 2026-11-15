@@ -109,6 +109,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
 
     blocker=await f.db.connect();
     await blocker.query('SELECT pg_advisory_lock($1::bigint)',[advisoryKey]);
+    const blockerPid=Number((await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
     accept=f.app.inject({method:'POST',url:'/v1/invitations/accept',headers:invitedHeaders,payload:{token:invitation.token}});
     const waitFor=async(predicate:(rows:any[])=>boolean,message:string)=>{
       const deadline=Date.now()+8000;
@@ -124,7 +125,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       assert.fail(message);
     };
     const acceptanceWait=await waitFor(rows=>rows.some(row=>
-      row.wait_event==='advisory'&&String(row.query).includes(String(advisoryKey))
+      row.wait_event==='advisory'&&(row.blockers as number[]).includes(blockerPid)
     ),'Invitation acceptance did not reach the controlled membership insert');
     const acceptancePid=Number(acceptanceWait.find(row=>
       row.wait_event==='advisory'&&String(row.query).includes(String(advisoryKey))
