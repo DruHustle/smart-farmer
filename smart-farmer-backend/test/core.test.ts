@@ -68,6 +68,87 @@ test('worker invitation, multi-farm membership, preference, recovery, one-use to
   }finally{await f.close();}
 });
 
+test('invitation acceptance serializes with the creator owner revocation',async()=>{
+  const f=await fixture();
+  const advisoryKey=873421234;
+  let blocker:pg.PoolClient|null=null;
+  let accept:Promise<any>|null=null;
+  let revoke:Promise<any>|null=null;
+  try{
+    const second=await f.app.inject({method:'POST',url:'/v1/register',payload:{
+      username:'second_farm_owner',password,language:'sn',farmName:'Second owner farm'
+    }});
+    assert.equal(second.statusCode,201,second.body);
+    const secondUser=second.json();
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[secondUser.userId,f.farmId]);
+    const secondLogin=await f.app.inject({method:'POST',url:'/v1/sessions',payload:{username:'second_farm_owner',password}});
+    assert.equal(secondLogin.statusCode,200,secondLogin.body);
+    const secondHeaders={authorization:`Bearer ${secondLogin.json().token}`};
+
+    const invited=await f.app.inject({method:'POST',url:'/v1/register',payload:{
+      username:'invited_existing_user',password,language:'nd',farmName:'Invited user farm'
+    }});
+    assert.equal(invited.statusCode,201,invited.body);
+    const invitedUser=invited.json();
+    const invitedLogin=await f.app.inject({method:'POST',url:'/v1/sessions',payload:{username:'invited_existing_user',password}});
+    assert.equal(invitedLogin.statusCode,200,invitedLogin.body);
+    const invitedHeaders={authorization:`Bearer ${invitedLogin.json().token}`};
+
+    const invitation=await f.post('/invitations',{role:'worker'});
+    await f.db.query(`
+      CREATE FUNCTION hold_invited_membership() RETURNS trigger LANGUAGE plpgsql AS $
+      BEGIN
+        PERFORM pg_advisory_xact_lock(${advisoryKey}::bigint);
+        RETURN NEW;
+      END $;
+      CREATE TRIGGER hold_invited_membership BEFORE INSERT ON memberships
+      FOR EACH ROW WHEN (
+        NEW.user_id='${invitedUser.userId}'::uuid AND NEW.farm_id='${f.farmId}'::uuid
+      ) EXECUTE FUNCTION hold_invited_membership();
+    `);
+
+    blocker=await f.db.connect();
+    await blocker.query('SELECT pg_advisory_lock($1::bigint)',[advisoryKey]);
+    accept=f.app.inject({method:'POST',url:'/v1/invitations/accept',headers:invitedHeaders,payload:{token:invitation.token}});
+    const waitFor=async(predicate:(rows:any[])=>boolean,message:string)=>{
+      const deadline=Date.now()+8000;
+      while(Date.now()<deadline){
+        const result=await f.db.query(`
+          SELECT query,wait_event_type,wait_event FROM pg_stat_activity
+          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+        `);
+        if(predicate(result.rows))return result.rows;
+        await new Promise(resolve=>setTimeout(resolve,40));
+      }
+      assert.fail(message);
+    };
+    await waitFor(rows=>rows.some(row=>row.wait_event==='advisory'&&String(row.query).includes('INSERT INTO memberships')),
+      'Invitation acceptance did not reach the controlled membership insert');
+
+    revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
+    const waiting=await waitFor(rows=>rows.some(row=>
+      row.wait_event_type==='Lock'&&/SELECT id FROM farms WHERE id=\$1 FOR NO KEY UPDATE/i.test(String(row.query))
+    ),'Owner revocation must wait on the same farm lock as invitation acceptance');
+    assert.ok(waiting.some(row=>/SELECT id FROM farms WHERE id=\$1 FOR NO KEY UPDATE/i.test(String(row.query))));
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,1,
+      'The revocation must not remove the creator while an earlier acceptance owns the farm lock');
+
+    await blocker.query('SELECT pg_advisory_unlock($1::bigint)',[advisoryKey]);
+    const accepted=await accept;
+    assert.equal(accepted.statusCode,201,accepted.body);
+    const revoked=await revoke;
+    assert.equal(revoked.statusCode,204,revoked.body);
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,invitedUser.userId])).rowCount,1,
+      'Acceptance serialized before revocation remains a valid completed membership');
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,0);
+  }finally{
+    if(blocker){await blocker.query('SELECT pg_advisory_unlock($1::bigint)',[advisoryKey]).catch(()=>{});blocker.release();}
+    if(accept)await accept.catch(()=>{});
+    if(revoke)await revoke.catch(()=>{});
+    await f.close();
+  }
+});
+
 test('maize facts, version conflict, offline-ID retry, transactional stock/cost/task and competing input use',async()=>{
   const f=await fixture();try{
     const projectId=randomUUID(),p=await f.project('crop',0,{id:projectId});const retry=await f.post('/projects',{id:projectId,name:'Existing maize',crop:'maize',irrigation:true},200);assert.equal(retry.id,p.id);const first=(await f.get('/projects')).items[0];assert.equal(first.planting_date,null);assert.equal(first.area_ha,null);
