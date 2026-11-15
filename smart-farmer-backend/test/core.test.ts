@@ -114,7 +114,8 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       const deadline=Date.now()+8000;
       while(Date.now()<deadline){
         const result=await f.db.query(`
-          SELECT query,wait_event_type,wait_event FROM pg_stat_activity
+          SELECT pid,query,wait_event_type,wait_event,pg_blocking_pids(pid) AS blockers
+          FROM pg_stat_activity
           WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
         `);
         if(predicate(result.rows))return result.rows;
@@ -122,14 +123,22 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       }
       assert.fail(message);
     };
-    await waitFor(rows=>rows.some(row=>row.wait_event==='advisory'&&(String(row.query).includes(String(advisoryKey))||/INSERT INTO memberships/i.test(String(row.query)))),
-      'Invitation acceptance did not reach the controlled membership insert');
+    const acceptanceWait=await waitFor(rows=>rows.some(row=>
+      row.wait_event==='advisory'&&String(row.query).includes(String(advisoryKey))
+    ),'Invitation acceptance did not reach the controlled membership insert');
+    const acceptancePid=Number(acceptanceWait.find(row=>
+      row.wait_event==='advisory'&&String(row.query).includes(String(advisoryKey))
+    )!.pid);
 
     revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
     const waiting=await waitFor(rows=>rows.some(row=>
-      row.wait_event_type==='Lock'&&/SELECT id FROM farms WHERE id=\$1 FOR NO KEY UPDATE/i.test(String(row.query))
+      /SELECT id FROM farms WHERE id=\\$1 FOR NO KEY UPDATE/i.test(String(row.query))&&
+      (row.blockers as number[]).includes(acceptancePid)
     ),'Owner revocation must wait on the same farm lock as invitation acceptance');
-    assert.ok(waiting.some(row=>/SELECT id FROM farms WHERE id=\$1 FOR NO KEY UPDATE/i.test(String(row.query))));
+    assert.ok(waiting.some(row=>
+      /SELECT id FROM farms WHERE id=\\$1 FOR NO KEY UPDATE/i.test(String(row.query))&&
+      (row.blockers as number[]).includes(acceptancePid)
+    ));
     assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,1,
       'The revocation must not remove the creator while an earlier acceptance owns the farm lock');
 
