@@ -258,7 +258,12 @@ final class PortalColdTests: XCTestCase {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
             if notice.exists && notNow.exists && notNow.isHittable { notNow.tap(); return nil }
-            let link = owner.webViews.firstMatch.links.matching(names).firstMatch
+            // SafariViewService can expose the real callback link beneath a
+            // secondary web view or directly in its embedded accessibility
+            // hierarchy. Requiring the first web view to own it produced a
+            // false-negative after the issuer had served the callback page.
+            // Still require the exact localized link and an actual user tap.
+            let link = owner.links.matching(names).firstMatch
             if link.exists && link.isHittable { return link }
         }
         return nil
