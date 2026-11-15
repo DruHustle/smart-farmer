@@ -29,34 +29,40 @@ case "$mode" in
       > "$work/build.log" 2>&1 || report_failure simulator-build
     ;;
   test)
-    role=${3:?member or admin}
-    case "$role" in member|admin) ;; *) exit 2 ;; esac
-    context="$role cold"
+    role=${3:?cancel, member or admin}
+    case "$role" in
+      cancel) context="cancel cancel"; test_name=testCancelPortal ;;
+      member|admin) context="$role cold"; test_name=testColdPortal ;;
+      *) exit 2 ;;
+    esac
     run=$(mktemp -d "$work/$role.XXXXXX")
     trap 'rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
     read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
     export TEST_RUNNER_FARMER_ROLE="$role"
-    if [[ "$role" == admin ]]; then
-      TEST_RUNNER_FARMER_EMAIL=$(read_fixture ADMIN_EMAIL)
-      TEST_RUNNER_FARMER_MFA=$(read_fixture ADMIN_MFA)
-      export TEST_RUNNER_FARMER_MFA
-    else
-      TEST_RUNNER_FARMER_EMAIL=$(read_fixture MEMBER_EMAIL)
+    # Cancellation does not require or load credentials from the fixture.
+    if [[ "$role" != cancel ]]; then
+      if [[ "$role" == admin ]]; then
+        TEST_RUNNER_FARMER_EMAIL=$(read_fixture ADMIN_EMAIL)
+        TEST_RUNNER_FARMER_MFA=$(read_fixture ADMIN_MFA)
+        export TEST_RUNNER_FARMER_MFA
+      else
+        TEST_RUNNER_FARMER_EMAIL=$(read_fixture MEMBER_EMAIL)
+      fi
+      TEST_RUNNER_FARMER_INVITE=$(read_fixture "$(echo "$role" | tr '[:lower:]' '[:upper:]')_INVITE")
+      TEST_RUNNER_FARMER_FARM=$(read_fixture FARM_NAME)
+      TEST_RUNNER_FARMER_DISCUSSION=$(read_fixture FORUM_TITLE)
+      export TEST_RUNNER_FARMER_INVITE TEST_RUNNER_FARMER_FARM TEST_RUNNER_FARMER_DISCUSSION
+      TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
+      export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
     fi
-    TEST_RUNNER_FARMER_INVITE=$(read_fixture "$(echo "$role" | tr '[:lower:]' '[:upper:]')_INVITE")
-    TEST_RUNNER_FARMER_FARM=$(read_fixture FARM_NAME)
-    TEST_RUNNER_FARMER_DISCUSSION=$(read_fixture FORUM_TITLE)
-    export TEST_RUNNER_FARMER_INVITE TEST_RUNNER_FARMER_FARM TEST_RUNNER_FARMER_DISCUSSION
-    TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
-    export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
     # Xcode logs and .xcresult may contain synthetic inputs. Keep them private on the runner.
     if ! xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
       -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
       -resultBundlePath "$run/identity.xcresult" \
-      -only-testing:FarmerBrowserTests/PortalColdTests/testColdPortal > "$run/xcode.log" 2>&1; then
+      -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
       last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|forum|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       report_failure "${last:-test-launch}"
