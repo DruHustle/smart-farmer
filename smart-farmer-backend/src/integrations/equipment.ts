@@ -14,6 +14,7 @@ import {
   authorize,
   hash,
   instant,
+  lockFarmMembership,
   managers,
   operationLock,
   requireRow,
@@ -226,6 +227,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     if (!auth) return;
     const data = assetInput.parse(req.body);
     const result = await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       await operationLock(client, `asset:${data.id}`);
       const existing = (
         await client.query("SELECT * FROM assets WHERE id=$1", [data.id])
@@ -289,6 +291,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     const { assetId } = assetParams.parse(req.params);
     const data = simulation.parse(req.body);
     await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       const asset = requireRow(
         (
           await client.query(
@@ -315,6 +318,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
       const { assetId } = assetParams.parse(req.params);
       const value = token();
       const result = await ctx.transaction(async (c) => {
+        await lockFarmMembership(c, auth.farmId, auth.userId, ["owner"]);
         const changed = await c.query(
           "UPDATE assets SET gateway_token_hash=$3,gateway_expires_at=now()+interval '30 days' WHERE farm_id=$1 AND id=$2 AND integration_state<>'unconfigured' RETURNING gateway_expires_at,protocol",
           [auth.farmId, assetId, sha256(value)],
@@ -364,6 +368,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     const { assetId } = assetParams.parse(req.params);
     const data = commandInput.parse(req.body);
     const result = await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       await operationLock(client, `command:${data.id}`);
       const prior = (
         await client.query("SELECT * FROM equipment_commands WHERE id=$1", [
@@ -449,6 +454,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
         .parse(req.params);
       const data = resultInput.parse(req.body);
       return ctx.transaction(async (client) => {
+        await lockFarmMembership(client, auth.farmId, auth.userId, managers);
         const asset = requireRow(
           (
             await client.query(
