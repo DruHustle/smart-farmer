@@ -30,6 +30,24 @@ async function lockMembershipChange(client:PoolClient,farmId:string,actorId:stri
   return target.rows[0];
 }
 
+async function revokeEquipmentCommands(client:PoolClient,farmId:string,userId:string,reason:string) {
+  const changed=await client.query(
+    `UPDATE equipment_commands
+     SET status=CASE WHEN status='authorized' THEN 'rejected' ELSE 'outcome_unknown' END,
+         completed_at=clock_timestamp(),reason=$3
+     WHERE farm_id=$1 AND actor_id=$2
+       AND status IN ('authorized','dispatched','acknowledged')
+     RETURNING id,status`,
+    [farmId,userId,reason]
+  );
+  for(const command of changed.rows) {
+    await client.query(
+      'INSERT INTO command_audit(command_id,status,detail) VALUES($1,$2,$3)',
+      [command.id,command.status,reason]
+    );
+  }
+}
+
 export function registerIdentity(app:FastifyInstance, ctx:Context) {
   const {db,user,member,transaction}=ctx;
   app.post('/v1/register',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
@@ -137,6 +155,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     await transaction(async c=>{
       const previous=await lockMembershipChange(c,farmId,id,userId,b.role);
       await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);
+      if(!manageRoles.includes(b.role))await revokeEquipmentCommands(c,farmId,userId,'actor_role_revoked');
       await audit(c,farmId,id,'membership',userId,'role_changed','owner_review',previous,b);
     });return {userId,role:b.role};
   });
@@ -150,6 +169,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
       await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
       await c.query("UPDATE asset_maintenance SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2 AND status='planned'",assignment);
       await c.query('UPDATE assets SET responsible_id=NULL,version=version+1 WHERE farm_id=$1 AND responsible_id=$2',assignment);
+      await revokeEquipmentCommands(c,farmId,userId,'actor_membership_revoked');
       await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',assignment);
       await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',assignment);
       await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');
