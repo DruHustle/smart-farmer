@@ -69,11 +69,14 @@ export async function stockMovement(client:pg.PoolClient,o:{farmId:string,itemId
   const delta=convertQuantity(o.quantity,o.unit,item.unit);
   if(!['kg','g','l','ml'].includes(item.unit)&&!Number.isInteger(delta))throw new ApiError('whole_count_required');
   if(delta<0&&Number(item.quantity)-Number(item.reserved_quantity)+delta < -0.0000001)throw new ApiError('insufficient_stock',409);
-  await client.query('UPDATE stock_items SET quantity=quantity+$3,version=version+1 WHERE farm_id=$1 AND id=$2',[o.farmId,o.itemId,delta]);
+  const movement = await client.query(
+    'UPDATE stock_items SET quantity=quantity+$3,version=version+1 WHERE farm_id=$1 AND id=$2 RETURNING round(abs($3::numeric)*unit_cost,2) AS value',
+    [o.farmId,o.itemId,delta],
+  );
   await client.query('INSERT INTO stock_movements(id,farm_id,stock_item_id,project_id,actor_id,kind,quantity,unit,source_type,source_id,observed_at,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[randomUUID(),o.farmId,o.itemId,o.projectId,o.actorId,o.kind,delta,item.unit,o.sourceType,o.sourceId,o.observedAt,o.note??'']);
-  return {...item,delta};
+  return {...item,delta,movementValue: movement.rows[0].value as string | null};
 }
-export async function finance(client:pg.PoolClient,o:{farmId:string,projectId:string|null,actorId:string,kind:'expense'|'input_consumption'|'revenue'|'payment'|'cash_out',amount:number,currency:string,sourceType:string,sourceId:string,observedAt:string,note?:string}) {
+export async function finance(client:pg.PoolClient,o:{farmId:string,projectId:string|null,actorId:string,kind:'expense'|'input_consumption'|'revenue'|'payment'|'cash_out',amount:number|string,currency:string,sourceType:string,sourceId:string,observedAt:string,note?:string}) {
   await client.query('INSERT INTO financial_entries(id,farm_id,project_id,actor_id,kind,amount,currency,source_type,source_id,observed_at,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[randomUUID(),o.farmId,o.projectId,o.actorId,o.kind,o.amount,o.currency,o.sourceType,o.sourceId,o.observedAt,o.note??'']);
 }
 const pageQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(100),cursor:uuid.optional()});
@@ -121,7 +124,7 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
       if(['harvest','input_use'].includes(a.kind)){
         if(a.kind==='harvest')await assertReleaseAllowed(c,farmId,a.projectId,'harvest');
         const item=await stockMovement(c,{farmId,itemId:a.stockItemId!,projectId:a.projectId,actorId:actor,kind:a.kind,quantity:a.kind==='input_use'?-a.quantity!:a.quantity!,unit:a.unit!,sourceType:'activity',sourceId:a.id,observedAt:a.observedAt,requireProject:a.kind==='harvest'});
-        if(a.kind==='input_use'&&item.unit_cost!==null)await finance(c,{farmId,projectId:a.projectId,actorId:actor,kind:'input_consumption',amount:Math.round(Math.abs(item.delta)*Number(item.unit_cost)*100)/100,currency:item.currency,sourceType:'activity',sourceId:a.id,observedAt:a.observedAt});
+        if(a.kind==='input_use'&&item.movementValue!==null)await finance(c,{farmId,projectId:a.projectId,actorId:actor,kind:'input_consumption',amount:item.movementValue,currency:item.currency,sourceType:'activity',sourceId:a.id,observedAt:a.observedAt});
       }
       if(a.kind==='cost')await finance(c,{farmId,projectId:a.projectId,actorId:actor,kind:'expense',amount:a.amount!,currency:a.currency!,sourceType:'activity',sourceId:a.id,observedAt:a.observedAt,note:a.note});
       if(a.taskId){
@@ -160,7 +163,7 @@ export function registerCore(app:FastifyInstance,ctx:Context) {
       if(projectId){await c.query('SELECT id FROM projects WHERE farm_id=$1 AND id=$2 FOR NO KEY UPDATE',[farmId,projectId]);if(b.kind==='consumption')await assertReleaseAllowed(c,farmId,projectId,'sale');}
       const delta=['loss','consumption'].includes(b.kind)?-b.quantity:b.quantity;
       const valuation=await stockMovement(c,{farmId,itemId,projectId,actorId:actor,kind:b.kind,quantity:delta,unit:b.unit,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});if(b.kind==='purchase'){const known=b.amount!==null&&(Number(valuation.quantity)===0||(valuation.unit_cost!==null&&valuation.currency===b.currency));const cost=known?(Number(valuation.quantity)*Number(valuation.unit_cost??0)+b.amount!)/(Number(valuation.quantity)+valuation.delta):null;await c.query('UPDATE stock_items SET unit_cost=$3,currency=$4 WHERE farm_id=$1 AND id=$2',[farmId,itemId,cost===null?null:Math.round(cost*1e6)/1e6,cost===null?null:b.currency]);}
-      if(b.amount!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'expense',amount:b.amount,currency:b.currency!,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});if(['consumption','loss'].includes(b.kind)&&valuation.unit_cost!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:Math.round(Math.abs(valuation.delta)*Number(valuation.unit_cost)*100)/100,currency:valuation.currency,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});return true;
+      if(b.amount!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'expense',amount:b.amount,currency:b.currency!,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});if(['consumption','loss'].includes(b.kind)&&valuation.movementValue!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:valuation.movementValue,currency:valuation.currency,sourceType:'stock_record',sourceId:b.id,observedAt:b.observedAt,note:b.reason});return true;
     });return reply.code(created?201:200).send({id:b.id});
   });
   app.get('/v1/farms/:farmId/tasks',async(req,reply)=>{const actor=await user(req,reply);if(!actor)return;const {farmId}=params.parse(req.params);if(!await member(farmId,actor))throw new ApiError('not_found',404);const q=pageQuery.parse(req.query);const r=await db.query('SELECT * FROM tasks WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return page(r.rows,q.limit);});

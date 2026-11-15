@@ -82,7 +82,7 @@ export function registerLivestock(app:FastifyInstance,ctx:Context) {
         const n=requireCount(e);increase(n);if(eggSourceId)await assertReleaseAllowed(c,farmId,eggSourceId,'transfer');
         const item=await stockMovement(c,{farmId,itemId:e.stockItemId,projectId,actorId:actor,kind:'incubation',quantity:-n,unit:'egg',sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});if(item.unit!=='egg')throw new ApiError('egg_stock_required');
         if(eggSourceId)await propagateRestrictions(c,farmId,eggSourceId,projectId,actor);
-        if(item.unit_cost!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:Math.round(n*Number(item.unit_cost)*100)/100,currency:item.currency,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
+        if(item.movementValue!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:item.movementValue,currency:item.currency,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
       }else if(e.type==='hatch'){
         if(p.enterprise_type!=='hatchery'||e.count===null)throw new ApiError('hatchery_required');
         const n=e.count;if(n>0&&(!dest||!['broiler','layer','breeder'].includes(dest.enterprise_type)))throw new ApiError('chick_destination_required');
@@ -110,7 +110,7 @@ export function registerLivestock(app:FastifyInstance,ctx:Context) {
       }else if(e.type==='feed'){
         if(!e.stockItemId||!e.quantity||!e.unit)throw new ApiError('feed_quantity_required');if(eggSourceId&&eggSourceId!==projectId){await assertReleaseAllowed(c,farmId,eggSourceId,'transfer');await propagateRestrictions(c,farmId,eggSourceId,projectId,actor);}
         const item=await stockMovement(c,{farmId,itemId:e.stockItemId,projectId,actorId:actor,kind:'feed',quantity:-e.quantity,unit:e.unit,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
-        if(item.unit_cost!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:Math.round(Math.abs(item.delta)*Number(item.unit_cost)*100)/100,currency:item.currency,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
+        if(item.movementValue!==null)await finance(c,{farmId,projectId,actorId:actor,kind:'input_consumption',amount:item.movementValue,currency:item.currency,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt});
       }else if(e.type==='harvest'){
         if(!['broiler','rabbit_growout','fish','fish_nursery'].includes(p.enterprise_type))throw new ApiError('harvest_project_required');if(!e.stockItemId||!e.quantity||!e.unit)throw new ApiError('harvest_quantity_required');
         await assertReleaseAllowed(c,farmId,projectId,'harvest');decrease(requireCount(e));await stockMovement(c,{farmId,itemId:e.stockItemId,projectId,actorId:actor,kind:'harvest',quantity:e.quantity,unit:e.unit,sourceType:'animal_event',sourceId:e.id,observedAt:e.observedAt,requireProject:true});
