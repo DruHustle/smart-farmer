@@ -163,6 +163,13 @@ test('equipment command creation and owner revocation serialize; queued actuatio
     assert.deepEqual((await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[inflightCommand.id])).rows[0],
       {status:'outcome_unknown',reason:'actor_membership_revoked'},
       'A dispatched command may already have reached the device; revocation must record uncertainty, not claim it was cancelled');
+    const lateFeedback=await f.request('POST',`/v1/edge/commands/${inflightCommand.id}/result`,{
+      status:'confirmed',feedback:{running:true,interlock_ok:true}
+    },inflightEdge);
+    assert.equal(lateFeedback.statusCode,200,lateFeedback.body);
+    assert.equal(lateFeedback.json().status,'confirmed');
+    assert.equal(lateFeedback.json().reason,'actor_membership_revoked',
+      'Authenticated device feedback resolves the physical outcome without erasing the revocation audit reason');
   }finally{
     if(locker){await locker.query('ROLLBACK').catch(()=>{});locker.release();}
     if(commandRequest)await commandRequest.catch(()=>{});
