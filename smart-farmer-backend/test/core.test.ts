@@ -96,11 +96,11 @@ test('invitation acceptance serializes with the creator owner revocation',async(
 
     const invitation=await f.post('/invitations',{role:'worker'});
     await f.db.query(`
-      CREATE FUNCTION hold_invited_membership() RETURNS trigger LANGUAGE plpgsql AS $
+      CREATE FUNCTION hold_invited_membership() RETURNS trigger LANGUAGE plpgsql AS $hold$
       BEGIN
         PERFORM pg_advisory_xact_lock(${advisoryKey}::bigint);
         RETURN NEW;
-      END $;
+      END $hold$;
       CREATE TRIGGER hold_invited_membership BEFORE INSERT ON memberships
       FOR EACH ROW WHEN (
         NEW.user_id='${invitedUser.userId}'::uuid AND NEW.farm_id='${f.farmId}'::uuid
@@ -132,7 +132,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
 
     revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
     const waiting=await waitFor(rows=>rows.some(row=>
-      /SELECT id FROM farms WHERE id=\\$1 FOR NO KEY UPDATE/i.test(String(row.query))&&
+      String(row.query).includes('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE')&&
       (row.blockers as number[]).includes(acceptancePid)
     ),'Owner revocation must wait on the same farm lock as invitation acceptance');
     assert.ok(waiting.some(row=>
