@@ -1,19 +1,22 @@
-FROM node:24-bookworm-slim AS build
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
-FROM postgres:17-trixie
-RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
+FROM postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+# Match the API image's node UID/GID so owner-only media remains readable.
+# This image runs the backup directly and never invokes gosu.
+RUN apk add --no-cache 'python3=3.14.10-r1' 'ca-certificates=20261020-r0' 'musl=1.2.6-r3' 'musl-utils=1.2.6-r3' 'zlib=1.4-r0' && \
+    rm /usr/local/bin/gosu && addgroup -g 1000 farmer && adduser -D -H -u 1000 -G farmer farmer
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
-COPY --from=build --chown=postgres:postgres /app/node_modules ./node_modules
-COPY --from=build --chown=postgres:postgres /app/dist ./dist
-COPY --chown=postgres:postgres scripts ./scripts
+COPY --from=build --chown=farmer:farmer /app/node_modules ./node_modules
+COPY --from=build --chown=farmer:farmer /app/dist ./dist
+COPY --chown=farmer:farmer scripts ./scripts
 ENV NODE_ENV=production
-USER postgres
+USER farmer
 RUN python3 scripts/check-backup-runtime.py
 ENTRYPOINT ["node", "scripts/offhost-backup.mjs"]
 CMD ["--drill"]
