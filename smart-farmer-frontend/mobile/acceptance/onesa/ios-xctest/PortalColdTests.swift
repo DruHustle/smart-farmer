@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
