@@ -173,7 +173,7 @@ async function recordResult(
   );
   const revokedInFlight =
     cmd.status === "outcome_unknown" &&
-    cmd.reason === "actor_membership_revoked" &&
+    ["actor_membership_revoked", "actor_role_revoked"].includes(cmd.reason) &&
     new Date(cmd.expires_at).getTime() > Date.now();
   if (!["authorized", "dispatched", "acknowledged"].includes(cmd.status) && !revokedInFlight) {
     if (
