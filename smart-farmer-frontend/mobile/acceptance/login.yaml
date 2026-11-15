@@ -44,6 +44,9 @@ appId: eu.onesa.smartfarmer
       id: auth-username
     timeout: 120000
 - runFlow: credentials.yaml
+# iOS may display the password-save sheet before the authenticated tab bar is
+# accessible to Maestro. Dismiss it before waiting for workspace navigation.
+- runFlow: dismiss-password-save.yaml
 - extendedWaitUntil:
     visible:
       id: tab-record
