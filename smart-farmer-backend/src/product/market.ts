@@ -486,11 +486,17 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
           )
         ).rows[0],
       );
-      if (
-        !(await isSeller(ctx, o.farm_id, actor)) &&
-        (b.status !== "cancelled" || o.buyer_id !== actor)
-      )
-        throw new ApiError("not_found", 404);
+      // Buyer cancellation needs no seller permission. For seller-side changes,
+      // hold the membership row in this transaction until the stock/order
+      // mutation commits. A concurrent role revocation must not be bypassed
+      // by a stale pool-level membership read.
+      if (b.status !== "cancelled" || o.buyer_id !== actor) {
+        const authorized = await c.query(
+          "SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2 AND role=ANY($3::text[]) FOR SHARE",
+          [o.farm_id, actor, manageRoles],
+        );
+        if (!authorized.rowCount) throw new ApiError("not_found", 404);
+      }
       return changeOrder(c, orderId, b.status, actor);
     });
   });
