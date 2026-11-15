@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NetworkStateType, useNetworkState } from 'expo-network';
+import { createCoalescedRefresh } from './refresh-coordinator';
 import { ApiError, createApi } from './api';
 import { allPages } from './product';
 import { LocalRepository } from './repository';
@@ -30,8 +31,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   const currentFarms = useRef<Farm[]>([]);
   const settings = useRef({ dataSaver, reminders, language, online, wifi: network.type === NetworkStateType.WIFI });
   settings.current = { dataSaver, reminders, language, online, wifi: network.type === NetworkStateType.WIFI };
-  const refreshing = useRef(false);
-  const refreshSelection = useRef(false);
+  const refreshQueue = useRef(createCoalescedRefresh());
   const ready = useRef(false);
 
   const reportError = useCallback((value: unknown) => {
@@ -80,35 +80,35 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   }
 
   async function refresh() {
-    if (refreshing.current || !alive.current || !ready.current) return;
-    refreshing.current = true; setBusy(true); setError(null);
+    if (!alive.current || !ready.current) return;
+    setBusy(true); setError(null);
     try {
-      const result = await api.request<Items<Farm>>('/v1/farms');
-      if (!alive.current) return;
-      setFarmsLoaded(true);
-      const revoked = currentFarms.current.filter(previous => !result.items.some(farm => farm.id === previous.id && farm.role === previous.role));
-      if (revoked.some(previous => previous.id === currentFarm.current)) {
-        setFarmId(''); setSnapshot(null); setMutations([]); setAttachments([]); setNotice(''); setProgress(null);
-      }
-      await Promise.all(revoked.map(previous => repository.revokeFarm(previous.id)));
-      await repository.setPreference('farms', result.items);
-      currentFarms.current = result.items; setFarms(result.items);
-      const selected = result.items.find(farm => farm.id === currentFarm.current) || result.items[0];
-      if (!selected) { currentFarm.current = ''; setFarmId(''); setSnapshot(null); return; }
-      currentFarm.current = selected.id; setFarmId(selected.id);
-      await repository.setPreference('selectedFarm', selected.id);
-      const pendingLanguage = await repository.preference<Language>('languageToSync');
-      if (pendingLanguage) { await api.request('/v1/me', 'PATCH', { language: pendingLanguage }); await repository.setPreference('languageToSync', null); }
-      const resultSync = await flush(selected.id);
-      if (resultSync?.unauthorized || !alive.current) return;
-      await download(selected);
-    } catch (value) { reportError(value); }
-    finally {
-      refreshing.current = false;
-      if (alive.current) {
-        setBusy(false);
-        if (refreshSelection.current) { refreshSelection.current = false; void refresh(); }
-      }
+      await refreshQueue.current(async () => {
+        if (!alive.current || !ready.current) return;
+        try {
+          const result = await api.request<Items<Farm>>('/v1/farms');
+          if (!alive.current) return;
+          setFarmsLoaded(true);
+          const revoked = currentFarms.current.filter(previous => !result.items.some(farm => farm.id === previous.id && farm.role === previous.role));
+          if (revoked.some(previous => previous.id === currentFarm.current)) {
+            setFarmId(''); setSnapshot(null); setMutations([]); setAttachments([]); setNotice(''); setProgress(null);
+          }
+          await Promise.all(revoked.map(previous => repository.revokeFarm(previous.id)));
+          await repository.setPreference('farms', result.items);
+          currentFarms.current = result.items; setFarms(result.items);
+          const selected = result.items.find(farm => farm.id === currentFarm.current) || result.items[0];
+          if (!selected) { currentFarm.current = ''; setFarmId(''); setSnapshot(null); return; }
+          currentFarm.current = selected.id; setFarmId(selected.id);
+          await repository.setPreference('selectedFarm', selected.id);
+          const pendingLanguage = await repository.preference<Language>('languageToSync');
+          if (pendingLanguage) { await api.request('/v1/me', 'PATCH', { language: pendingLanguage }); await repository.setPreference('languageToSync', null); }
+          const resultSync = await flush(selected.id);
+          if (resultSync?.unauthorized || !alive.current) return;
+          await download(selected);
+        } catch (value) { reportError(value); }
+      });
+    } finally {
+      if (alive.current) setBusy(false);
     }
   }
 
@@ -123,10 +123,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
     if (!alive.current || currentFarm.current !== id || revision !== repository.farmRevision(id)) return;
     if (cached?.farm.role === farm.role) setSnapshot(cached);
     await reloadLocal(id);
-    if (settings.current.online && currentFarm.current === id) {
-      if (refreshing.current) refreshSelection.current = true;
-      else await refresh();
-    }
+    if (settings.current.online && currentFarm.current === id) await refresh();
   }
 
   async function sync(forceMedia = false) {
