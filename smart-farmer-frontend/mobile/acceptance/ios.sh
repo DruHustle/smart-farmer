@@ -47,7 +47,25 @@ xcrun simctl boot "$NATIVE_PHONE"
 xcrun simctl bootstatus "$NATIVE_PHONE" -b
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" "$NATIVE_DIR/acceptance/login.yaml"
+run_phone_login() {
+  maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-login.xml" \
+    --debug-output "$EVIDENCE/ios-login" --flatten-debug-output --test-output-dir "$EVIDENCE/ios-login" \
+    "$NATIVE_DIR/acceptance/login.yaml"
+}
+if ! run_phone_login; then
+  python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$NATIVE_PHONE" || exit 1
+  stop_native_log
+  mv "$EVIDENCE/ios-login" "$EVIDENCE/ios-login-first-driver"
+  for file in ios-phone-startup.log ios-phone-log-capture.txt ios-thread-observation.json; do
+    [[ ! -f "$EVIDENCE/$file" ]] || mv "$EVIDENCE/$file" "$EVIDENCE/first-$file"
+  done
+  xcrun simctl shutdown "$NATIVE_PHONE"
+  xcrun simctl boot "$NATIVE_PHONE"
+  xcrun simctl bootstatus "$NATIVE_PHONE" -b
+  rm -f "$RUNNER_TEMP/farmer-darwin-thread/stop-ios-phone"
+  start_native_log "$NATIVE_PHONE" ios-phone
+  run_phone_login
+fi
 touch "$NATIVE_OFFLINE_FLAG"
 maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
