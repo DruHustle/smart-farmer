@@ -12,11 +12,15 @@ test('overlapping workspace refresh requests coalesce into one awaited follow-up
   const queue = createCoalescedRefresh();
   const first = deferred();
   const second = deferred();
+  const secondStarted = deferred();
   let calls = 0;
   const refresh = async () => {
     calls += 1;
     if (calls === 1) await first.promise;
-    if (calls === 2) await second.promise;
+    if (calls === 2) {
+      secondStarted.resolve();
+      await second.promise;
+    }
   };
 
   const initial = queue(refresh);
@@ -28,7 +32,7 @@ test('overlapping workspace refresh requests coalesce into one awaited follow-up
   assert.equal(calls, 1, 'join/create refresh requests do not overlap the in-flight request');
 
   first.resolve();
-  await Promise.resolve();
+  await secondStarted.promise;
   assert.equal(calls, 2, 'a request received during the first refresh schedules one follow-up');
 
   const selection = queue(refresh);
