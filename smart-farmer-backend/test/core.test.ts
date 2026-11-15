@@ -128,7 +128,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       row.wait_event==='advisory'&&(row.blockers as number[]).includes(blockerPid)
     ),'Invitation acceptance did not reach the controlled membership insert');
     const acceptancePid=Number(acceptanceWait.find(row=>
-      row.wait_event==='advisory'&&String(row.query).includes(String(advisoryKey))
+      row.wait_event==='advisory'&&(row.blockers as number[]).includes(blockerPid)
     )!.pid);
 
     revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
@@ -137,7 +137,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       (row.blockers as number[]).includes(acceptancePid)
     ),'Owner revocation must wait on the same farm lock as invitation acceptance');
     assert.ok(waiting.some(row=>
-      /SELECT id FROM farms WHERE id=\\$1 FOR NO KEY UPDATE/i.test(String(row.query))&&
+      String(row.query).includes('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE')&&
       (row.blockers as number[]).includes(acceptancePid)
     ));
     assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,1,
