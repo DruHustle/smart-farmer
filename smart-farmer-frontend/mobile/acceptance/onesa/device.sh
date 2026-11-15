@@ -75,26 +75,19 @@ run_identity_flow() {
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
     mkdir -p "$phase_dir/complete"
-    # Prepare the native driver before the app creates the timed PKCE request.
+    # XCTest alone owns the native UI and Safari sign-in sheet for cancel and
+    # first sign-in. Starting Maestro's XCTest server on the same freshly erased
+    # simulator left a second driver attached and made browser snapshots hang.
+    # Keep both the denial and the positive return assertions in XCTest.
     if [[ "$phase_state" != active ]]; then
-      ios_maestro 300 hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
-    fi
-    local flow=ios-journey
-    if [[ "$phase_state" == cold ]]; then
-      # The original entry flow stops at the signed-out Farmer screen. Build and
-      # start the native test runner before it taps the timed authorization button.
-      mkdir -p "$phase_dir/entry"
-      ios_maestro 360 test --no-reinstall-driver "$@" \
-        --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" \
-        "$dir/entry.yaml" > "$phase_dir/entry.log" 2>&1 || return 1
-      # XCTest completes the native invitation and forum checks on the same
-      # connection. Ordered HTTP receipts and SQL subject checks follow here.
       bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role"
       return $?
     fi
+    # Warm same-account replay happens only after the cold XCTest process exits.
+    ios_maestro 300 hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
     ios_maestro 480 test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
       --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \
-      "$dir/$flow.yaml" > "$phase_dir/complete.log" 2>&1
+      "$dir/ios-journey.yaml" > "$phase_dir/complete.log" 2>&1
   fi
 }
 status=0
@@ -105,6 +98,9 @@ for role in cancel member admin; do
     xcrun simctl bootstatus "$device" -b
     xcrun simctl keychain "$device" add-root-cert "$RUNNER_TEMP/onesa-device/ca.crt"
     xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+    # Open only the local prewarmed Expo bundle; XCTest, not Maestro, performs
+    # all application and operating-system interactions through the callback.
+    xcrun simctl launch "$device" eu.onesa.smartfarmer --initialUrl 'smartfarmer://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081%2Findex.bundle%3Fplatform%3Dios%26dev%3Dtrue%26hot%3Dfalse%26lazy%3Dtrue%26transform.engine%3Dhermes%26transform.bytecode%3D1%26transform.routerRoot%3Dapp%26unstable_transformProfile%3Dhermes-stable&__expo_disable_fab=1&disableFab=1' > "$RUNNER_TEMP/onesa-device/$role-local-launch.log"
   else
     adb shell pm clear com.android.chrome
     adb shell pm clear eu.onesa.smartfarmer
