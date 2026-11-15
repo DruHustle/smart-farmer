@@ -100,7 +100,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       BEGIN
         PERFORM pg_advisory_xact_lock(${advisoryKey}::bigint);
         RETURN NEW;
-      END $hold$;
+      END; $hold$;
       CREATE TRIGGER hold_invited_membership BEFORE INSERT ON memberships
       FOR EACH ROW WHEN (
         NEW.user_id='${invitedUser.userId}'::uuid AND NEW.farm_id='${f.farmId}'::uuid
