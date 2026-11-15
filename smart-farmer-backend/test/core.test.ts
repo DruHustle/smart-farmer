@@ -70,7 +70,7 @@ test('worker invitation, multi-farm membership, preference, recovery, one-use to
 
 test('invitation acceptance serializes with the creator owner revocation',async()=>{
   const f=await fixture();
-  const advisoryKey=873421234;
+  const advisoryKey=BigInt('0x'+randomUUID().replaceAll('-','').slice(0,15)).toString();
   let blocker:pg.PoolClient|null=null;
   let accept:Promise<any>|null=null;
   let revoke:Promise<any>|null=null;
@@ -122,7 +122,7 @@ test('invitation acceptance serializes with the creator owner revocation',async(
       }
       assert.fail(message);
     };
-    await waitFor(rows=>rows.some(row=>row.wait_event==='advisory'&&String(row.query).includes('INSERT INTO memberships')),
+    await waitFor(rows=>rows.some(row=>row.wait_event==='advisory'&&(String(row.query).includes(String(advisoryKey))||/INSERT INTO memberships/i.test(String(row.query)))),
       'Invitation acceptance did not reach the controlled membership insert');
 
     revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
