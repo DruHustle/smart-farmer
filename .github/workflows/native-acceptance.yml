@@ -24,6 +24,9 @@ env:
   NATIVE_OFFLINE_FLAG: /tmp/smart-farmer-native-offline
 jobs:
   android:
+    # Draft diagnostic PRs first isolate iOS Onesa. Remove this PR marker
+    # and require the complete Android/iOS matrix before any merge.
+    if: ${{ !contains(github.event.pull_request.body, '[ios-onesa-only]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -169,8 +172,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # For a focused replay, the PR description may include [ios-invoice-replay].
-        suite: ${{ fromJSON((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]') }}
+        # A diagnostic-only draft PR can run Onesa iPhone first, without
+        # spending three simulator jobs on code unrelated to the failure.
+        # Remove [ios-onesa-only] and requalify all suites before merging.
+        suite: ${{ fromJSON(contains(github.event.pull_request.body, '[ios-onesa-only]') && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
