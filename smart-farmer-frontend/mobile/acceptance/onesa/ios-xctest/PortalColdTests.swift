@@ -35,9 +35,26 @@ final class PortalColdTests: XCTestCase {
         return owners
     }
 
+    // The iOS release flow needs one automation owner. Native test setup now
+    // enters the prewarmed Expo app directly, without a Maestro XCTest session
+    // that can outlive a browser handoff on the same disposable simulator.
+    @MainActor private func signedOutStart() throws -> XCUIElement {
+        app.activate()
+        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        let introduction = app.buttons["Continue"].firstMatch
+        _ = waitFor({ start.exists || (introduction.exists && introduction.isHittable) }, seconds: 120)
+        if !start.exists && introduction.exists && introduction.isHittable { introduction.tap() }
+        let close = app.buttons["Close"].firstMatch
+        _ = waitFor({ start.exists || (close.exists && close.isHittable) }, seconds: 90)
+        if !start.exists && close.exists && close.isHittable { close.tap() }
+        return try XCTUnwrap(waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 90) ? start : nil,
+                             "Installed Farmer reached its signed-out Onesa control")
+    }
+
     @MainActor private func browserConsent() -> XCUIElement? {
-        let title = NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "localhost", "sign in")
-        for owner in [springboard, app] {
+        let title = NSPredicate(format: "(label CONTAINS[c] %@ OR label CONTAINS[c] %@) AND label CONTAINS[c] %@",
+                                "localhost", "127.0.0.1", "sign in")
+        for owner in [springboard, app, authSheet, safari] {
             let alert = owner.alerts.firstMatch
             guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
             let button = alert.buttons["Continue"].firstMatch
@@ -227,19 +244,57 @@ final class PortalColdTests: XCTestCase {
         try XCTUnwrap(found ? link : nil, "Real browser return link").tap()
     }
 
+    @MainActor private func portalCancel() -> XCUIElement? {
+        // The localized issuer is real WebKit UI, not a synthetic callback.
+        // XCUITest may expose it under SafariViewService or the foreground app.
+        for owner in browserOwners {
+            let button = owner.buttons["Cancel sign-in"].firstMatch
+            if button.exists && button.isHittable { return button }
+            let link = owner.links["Cancel sign-in"].firstMatch
+            if link.exists && link.isHittable { return link }
+        }
+        return nil
+    }
+
+    @MainActor func testCancelPortal() throws {
+        continueAfterFailure = false
+        checkpoint(.fixture)
+        checkpoint(.signedOut)
+        try signedOutStart().tap()
+        checkpoint(.consent)
+        var cancel: XCUIElement?
+        let visible = awaitBrowser {
+            cancel = self.portalCancel()
+            return cancel != nil
+        }
+        try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
+        // A real denied issuer callback must return through the operating-system
+        // browser link. Merely observing an HTTP 200 is not sufficient.
+        try returnToFarmer()
+        let denied = NSPredicate(format: "label IN %@", [
+            "Onesa haina kupa mvumo yekupinda muSmart Farmer.",
+            "I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer."
+        ])
+        let error = app.staticTexts.matching(denied).firstMatch
+        let signIn = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        XCTAssertTrue(waitFor({
+            self.app.state == .runningForeground && error.exists && signIn.exists && signIn.isEnabled
+        }, seconds: 45), "Denied issuer callback restores signed-out Farmer with a visible error")
+        XCTAssertFalse(app.descendants(matching: .any)["tab-forum"].firstMatch.exists,
+                       "Cancelled sign-in must not create an authenticated farm session")
+        checkpoint(.completed)
+    }
+
     @MainActor func testColdPortal() throws {
         continueAfterFailure = false
         checkpoint(.fixture)
         let env = ProcessInfo.processInfo.environment
         let role = try XCTUnwrap(env["FARMER_ROLE"], "Known synthetic role")
         XCTAssertTrue(["member", "admin"].contains(role), "Known synthetic role")
-        // Maestro has already navigated the installed Farmer to the signed-out screen.
-        // Activating the existing app here does not start the timed request or open a URL.
+        // App setup is part of this one XCTest session, before the timed
+        // authorization request. No second UI driver may remain attached.
         checkpoint(.signedOut)
-        app.activate()
-        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
-        let startReady = waitFor({ start.exists && start.isHittable && start.isEnabled }, seconds: 30)
-        try XCTUnwrap(startReady ? start : nil, "Signed-out Farmer sign-in control").tap()
+        try signedOutStart().tap()
         checkpoint(.consent)
         var surface: XCUIElement?
         let visible = awaitBrowser {
