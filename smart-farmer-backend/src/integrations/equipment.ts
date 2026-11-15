@@ -171,7 +171,11 @@ async function recordResult(
       )
     ).rows[0],
   );
-  if (!["authorized", "dispatched", "acknowledged"].includes(cmd.status)) {
+  const revokedInFlight =
+    cmd.status === "outcome_unknown" &&
+    cmd.reason === "actor_membership_revoked" &&
+    new Date(cmd.expires_at).getTime() > Date.now();
+  if (!["authorized", "dispatched", "acknowledged"].includes(cmd.status) && !revokedInFlight) {
     if (
       cmd.status === data.status &&
       (data.status !== "confirmed" ||
@@ -199,7 +203,7 @@ async function recordResult(
   if (data.status === "acknowledged" && cmd.status === "acknowledged")
     return cmd;
   const result = await client.query(
-    "UPDATE equipment_commands SET status=$2,feedback=$3,reason=$4,acknowledged_at=CASE WHEN $2='acknowledged' THEN now() ELSE acknowledged_at END,completed_at=CASE WHEN $2='acknowledged' THEN NULL ELSE now() END WHERE id=$1 RETURNING *",
+    "UPDATE equipment_commands SET status=$2,feedback=$3,reason=COALESCE($4,reason),acknowledged_at=CASE WHEN $2='acknowledged' THEN now() ELSE acknowledged_at END,completed_at=CASE WHEN $2='acknowledged' THEN NULL ELSE now() END WHERE id=$1 RETURNING *",
     [cmd.id, data.status, data.feedback ?? null, data.reason ?? null],
   );
   await client.query(
