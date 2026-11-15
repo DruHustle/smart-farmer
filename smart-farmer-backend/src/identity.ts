@@ -118,8 +118,25 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     if(!existingUser&&(!b.username||!b.password||!b.language))throw new ApiError('credentials_required');
     const newHash=existingUser?null:await hashPassword(b.password!),recoveryCode=existingUser?undefined:token();
     const result=await transaction(async client=>{
-      const r=await client.query('SELECT * FROM invitations WHERE token_hash=$1 AND expires_at>now() AND accepted_at IS NULL FOR UPDATE',[sha256(b.token)]);
-      if(!r.rowCount)throw new ApiError('invalid_invitation',400);const invitation=r.rows[0];
+      // Invitation acceptance and owner membership changes must share the same
+      // farm-level lock. Otherwise a creator can be revoked after this check but
+      // before the invited membership is inserted, leaving a stale invitation
+      // usable while the revocation transaction waits to delete that invitation.
+      // Read only the farm ID first, then acquire locks in the same farm -> row
+      // order used by lockMembershipChange before revalidating the single-use token.
+      const hint=await client.query(
+        'SELECT farm_id FROM invitations WHERE token_hash=$1 AND expires_at>now() AND accepted_at IS NULL',
+        [sha256(b.token)]
+      );
+      if(!hint.rowCount)throw new ApiError('invalid_invitation',400);
+      const farmId=hint.rows[0].farm_id as string;
+      await client.query('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE',[farmId]);
+      const r=await client.query(
+        'SELECT * FROM invitations WHERE token_hash=$1 AND farm_id=$2 AND expires_at>now() AND accepted_at IS NULL FOR UPDATE',
+        [sha256(b.token),farmId]
+      );
+      if(!r.rowCount)throw new ApiError('invalid_invitation',400);
+      const invitation=r.rows[0];
       const creator=await client.query('SELECT role FROM memberships WHERE user_id=$1 AND farm_id=$2',[invitation.created_by,invitation.farm_id]);
       if(!creator.rowCount||!manageRoles.includes(creator.rows[0].role)||(invitation.role==='manager'&&creator.rows[0].role!=='owner'))throw new ApiError('invalid_invitation',400);
       const userId=existingUser??randomUUID();
