@@ -1175,6 +1175,12 @@ test("service quotes, deposits, actual work, accepted amendments and project-lin
       buyer,
     );
     assert.equal(booking.indicativeCharge, 70);
+    const hourlyRequest = await f.post(`/v1/services/${service.id}/bookings`, {
+      id: randomUUID(), farmId: buyer.farmId, startsAt: "2026-12-02T08:00:00Z",
+      endsAt: "2026-12-02T12:00:00Z", requestedQuantity: 3, requestedUnit: "hour",
+    }, 201, buyer);
+    assert.equal(hourlyRequest.indicativeCharge, null);
+    assert.equal(hourlyRequest.quoteRequired, true);
     const quote = {
       status: "quoted",
       version: 1,
@@ -2298,6 +2304,31 @@ test("advertised bag or lot prices require an explicit base quantity and orders 
       20,
       "accepted order retains its price snapshot",
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("market orders and stock consumption round half cents at the recorded decimal price", async () => {
+  const f = await fixture();
+  try {
+    const project = await f.project();
+    const stock = await f.stock("Maize", "kg", 10, { projectId: project.id, unitCost: 2.01, currency: "USD" });
+    const activityId = randomUUID();
+    await f.post("/activities", {
+      id: activityId, projectId: project.id, kind: "input_use", stockItemId: stock.id,
+      quantity: 0.5, unit: "kg", observedAt: at,
+    });
+    const ledger = await f.db.query("SELECT amount FROM financial_entries WHERE source_id=$1", [activityId]);
+    assert.equal(ledger.rows[0].amount, "1.01");
+    const listing = await f.post("/listings", {
+      id: randomUUID(), stockItemId: stock.id, title: "Maize by weight",
+      quantity: 9, price: 2.01, currency: "USD", collectionArea: "District",
+    });
+    const order = await f.post(`/v1/market/listings/${listing.id}/orders`, {
+      id: randomUUID(), quantity: 0.5,
+    });
+    assert.equal(Number(order.amount), 1.01);
   } finally {
     await f.close();
   }

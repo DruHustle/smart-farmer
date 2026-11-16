@@ -64,13 +64,15 @@ run_native_login() {
     # XCTest failed before it could launch the form. Keep the failed install
     # trace, then give the same simulator one clean driver installation.
     mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
-    if [[ "$label" == ipad-large-font ]]; then
-      # Re-register the same installed tablet with CoreSimulator and Xcode.
+    if [[ "$label" == ipad-large-font || "$label" == ios-login ]]; then
+      # Re-register the same installed simulator with CoreSimulator and Xcode.
       # The detector already verified that no Farmer UI command was issued.
       xcrun simctl shutdown "$device" || return 1
       xcrun simctl boot "$device" || return 1
       xcrun simctl bootstatus "$device" -b || return 1
-      xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
+      if [[ "$label" == ipad-large-font ]]; then
+        xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
+      fi
     fi
     echo 'Retrying the initial XCTest driver on the same simulator.'
     if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then

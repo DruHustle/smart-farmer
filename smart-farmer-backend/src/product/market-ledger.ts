@@ -100,12 +100,14 @@ export async function reserveOrder(
         Number(animal ? s.reserved_count : s.reserved_quantity)
   )
     throw new ApiError("insufficient_stock", 409);
-  const amount =
-      o.amount ??
-      Math.round(
-        ((o.quantity * Number(l.price)) / Number(l.price_quantity)) * 100,
-      ) / 100,
-    code = o.currency ?? l.currency;
+  // Round the nonnegative ratio to the nearest cent. PostgreSQL div truncates
+  // the final quotient, so an intermediate division cannot round twice.
+  const amount = o.amount ?? Number((await c.query(
+    `SELECT div(2 * ($1::numeric * $2::numeric * 100) + $3::numeric,
+                2 * $3::numeric) / 100 AS total`,
+    [o.quantity, l.price, l.price_quantity],
+  )).rows[0].total);
+  const code = o.currency ?? l.currency;
   if (amount > 999999999) throw new ApiError("amount_too_large");
   if (code !== l.currency) throw new ApiError("currency_mismatch", 409);
   let ids = o.identityIds ?? [];

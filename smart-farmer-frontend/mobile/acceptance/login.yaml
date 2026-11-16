@@ -43,4 +43,6 @@ appId: eu.onesa.smartfarmer
     timeout: 120000
 - takeScreenshot: signed-out-smart-farmer
 - runFlow: credentials.yaml
+# The OS can cover the authenticated navigation immediately after sign-in.
+- runFlow: dismiss-password-save.yaml
 - runFlow: record-after-login.yaml

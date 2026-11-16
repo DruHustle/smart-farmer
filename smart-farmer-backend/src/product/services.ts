@@ -388,8 +388,10 @@ export function registerServices(app: FastifyInstance, ctx: Context) {
         const service = row(
           (
             await c.query(
-              "SELECT * FROM service_listings WHERE id=$1 AND active",
-              [serviceId],
+              `SELECT *, CASE WHEN $2::numeric IS NOT NULL AND lower($3::text) = lower(rate_basis)
+                THEN round(greatest(minimum_charge, $2::numeric * rate) + mobilisation_charge, 2)
+                END AS indicative_charge FROM service_listings WHERE id=$1 AND active`,
+              [serviceId, b.requestedQuantity, b.requestedUnit],
             )
           ).rows[0],
         );
@@ -443,16 +445,7 @@ export function registerServices(app: FastifyInstance, ctx: Context) {
         return {
           ...booking,
           indicativeCharge:
-            b.requestedQuantity === null
-              ? null
-              : Math.round(
-                  (Math.max(
-                    Number(service.minimum_charge),
-                    b.requestedQuantity * Number(service.rate),
-                  ) +
-                    Number(service.mobilisation_charge)) *
-                    100,
-                ) / 100,
+            service.indicative_charge === null ? null : Number(service.indicative_charge),
           indicativeCurrency: service.currency,
           quoteRequired: true,
         };

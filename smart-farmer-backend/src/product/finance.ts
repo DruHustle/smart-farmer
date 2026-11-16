@@ -830,7 +830,7 @@ export function registerFinance(app: FastifyInstance, ctx: Context) {
           item.unit,
         );
         if (n > 1e9) throw new ApiError("quantity_limit");
-        await stockMovement(c, {
+        const movement = await stockMovement(c, {
           farmId: a.farmId,
           itemId,
           projectId: item.project_id,
@@ -876,14 +876,14 @@ export function registerFinance(app: FastifyInstance, ctx: Context) {
             });
         } else if (
           ["consumption", "loss"].includes(b.kind) &&
-          item.unit_cost !== null
+          movement.movementValue !== null
         )
           await finance(c, {
             farmId: a.farmId,
             projectId: item.project_id,
             actorId: a.actor,
             kind: "input_consumption",
-            amount: Math.round(n * Number(item.unit_cost) * 100) / 100,
+            amount: movement.movementValue,
             currency: item.currency,
             sourceType: "stock_pack",
             sourceId: b.id,

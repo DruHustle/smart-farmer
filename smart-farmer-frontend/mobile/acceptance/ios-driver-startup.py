@@ -1,4 +1,4 @@
-"""Identify an XCTest accessibility startup failure before the first login command."""
+"""Identify an XCTest startup failure before the first login command."""
 from pathlib import Path
 import re
 import sys
@@ -15,6 +15,19 @@ def failed_before_test(evidence, label, device=None):
     if len(runners) != 1:
         return False
     runner = runners[0].read_text()
+    driver = (folder / "maestro.log").read_text().splitlines()
+    # A refused transport is distinct from an Accessibility initialization
+    # error, but both precede UI work. Require every status probe to be either
+    # a start or this exact refusal, bound to the selected simulator.
+    if label == "ios-login" and device and re.fullmatch(r"[0-9a-fA-F-]{36}", device):
+        probes = [line for line in driver if "xcTestDriverStatusCheck:" in line]
+        failure = f"[Failed] Perform XCUITest driver status check on {device}, exception: java.net.ConnectException: Failed to connect to /127.0.0.1:"
+        transport_only = f"id:{device}," in runner and bool(probes) and failure in probes[-1] and all(
+            f"[Start] Perform XCUITest driver status check on {device}" in line or failure in line
+            for line in probes
+        )
+        if transport_only:
+            return (evidence / "proxy.log").read_text().strip() == "Native acceptance network proxy ready."
     if label == "ipad-large-font":
         # The driver cannot send even its first UI command when Xcode does not
         # enumerate the exact simulator that simctl just booted.
@@ -28,7 +41,6 @@ def failed_before_test(evidence, label, device=None):
     elif ("The test runner failed to initialize for UI testing. "
           "(Underlying Error: Timed out while loading Accessibility.)") not in runner:
         return False
-    driver = (folder / "maestro.log").read_text().splitlines()
     refused = "xcTestDriverStatusCheck: [Failed] Perform XCUITest driver status check"
     if not driver or refused not in driver[-1]:
         return False
