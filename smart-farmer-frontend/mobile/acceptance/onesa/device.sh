@@ -98,6 +98,16 @@ for role in cancel member admin; do
     xcrun simctl bootstatus "$device" -b
     xcrun simctl keychain "$device" add-root-cert "$RUNNER_TEMP/onesa-device/ca.crt"
     xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
+    # Each clean boot can temporarily starve the local services. Exercise the
+    # TLS issuer and its real API on both localhost routes before opening Safari.
+    portal_origin=${PORTAL_TEST_ORIGIN:-https://localhost:46501}
+    families=(--ipv4)
+    if [[ "$portal_origin" == https://localhost:* ]]; then families+=(--ipv6); fi
+    for family in "${families[@]}"; do
+      curl "$family" --cacert "$RUNNER_TEMP/onesa-device/ca.crt" --noproxy '*' \
+        --fail --silent --show-error --max-time 5 --retry 8 --retry-all-errors --retry-max-time 60 \
+        "$portal_origin/api/v1/account/config" --output /dev/null
+    done
     # The single XCTest session launches the prewarmed bundle on this fresh installation.
   else
     adb shell pm clear com.android.chrome

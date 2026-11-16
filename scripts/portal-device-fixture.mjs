@@ -218,7 +218,7 @@ async function publicApi(path, data, bearer) {
 const page =
   '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Onesa account</title><link rel="stylesheet" href="/portal.css"><div id="root"></div><script src="/portal.js" defer></script></html>';
 async function listen(origin, isPortal) {
-  const server = https.createServer(tls, (request, response) => {
+  const handleRequest = (request, response) => {
     const path = new URL(request.url, origin).pathname;
     // Record only the known surface and server receipt time. Query strings,
     // state, codes, cookies, and form inputs stay off this evidence channel.
@@ -292,12 +292,16 @@ async function listen(origin, isPortal) {
     }
     response.writeHead(404);
     response.end();
-  });
-  servers.push(server);
-  await new Promise((res, rej) => {
-    server.once("error", rej);
-    server.listen(Number(origin.port), "127.0.0.1", res);
-  });
+  };
+  // Safari can resolve localhost to either loopback family. Keep the fixture
+  // private and serve the same issuer and pending authorization on both.
+  const addresses = origin.hostname === "localhost" ? ["127.0.0.1", "::1"] : [origin.hostname];
+  for (const host of addresses) {
+    const server = https.createServer(tls, handleRequest);
+    servers.push(server);
+    server.listen({ port: Number(origin.port), host });
+    await once(server, "listening");
+  }
 }
 try {
   const { build } = createRequire(join(portalApi, "package.json"))("esbuild");

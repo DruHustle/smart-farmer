@@ -478,8 +478,22 @@ final class PortalColdTests: XCTestCase {
         try returnToFarmer(issuerOwner: web as? XCUIApplication)
         checkpoint(.nativeInvitation)
         let invitation = app.descendants(matching: .any)["first-farm-invitation"].firstMatch
-        try XCTUnwrap(waitFor({ self.app.state == .runningForeground && invitation.exists }, seconds: 40) ? true : nil,
-                      "Native callback opened the expected unaffiliated account")
+        let invitationVisible = { self.app.state == .runningForeground && invitation.exists }
+        if !waitFor(invitationVisible, seconds: 25) {
+            // Only retry membership discovery in the signed-in, unjoined workspace.
+            // Never replay sign-in, token exchange, or farm invitation acceptance.
+            XCTAssertEqual(app.state, .runningForeground, "Callback did not return to Farmer")
+            let workspace = app.descendants(matching: .any)["workspace-language"].firstMatch
+            XCTAssertTrue(workspace.exists, "The signed-in workspace did not open")
+            XCTAssertFalse(app.descendants(matching: .any)["tab-forum"].firstMatch.exists,
+                           "The fixture already belongs to a farm")
+            let sync = app.buttons["workspace-sync"].firstMatch
+            XCTAssertTrue(waitFor({ invitationVisible() || (sync.exists && sync.isEnabled && sync.isHittable) }, seconds: 10),
+                          "Membership loading did not finish or offer Sync")
+            if !invitationVisible() { sync.tap() }
+            XCTAssertTrue(waitFor(invitationVisible, seconds: 25),
+                          "The first-farm invitation did not appear after membership discovery")
+        }
         // Keep the XCTest session that observed the native callback. Starting
         // a second runner here used to lose the visible invitation mid-handoff.
         checkpoint(.joinFarm)
