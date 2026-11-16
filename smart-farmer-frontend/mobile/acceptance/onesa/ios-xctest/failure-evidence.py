@@ -12,6 +12,8 @@ CHECKPOINTS = set("fixture signedOut localLauncher introduction developerMenu si
 PATTERNS = {
     "execution-timeout": r"exceeded (?:its |the )?execution time allowance|test (?:case )?.{0,180}timed out|test execution time allowance",
     "snapshot-failure": r"failed to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)|unable to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)",
+    "hit-point-failure": r"failed to compute hit point|activation point invalid",
+    "element-query-failure": r"failed to no matches found|no matches found for",
     "application-not-running": r"application.{0,160}(?:is not running|isn't running|not running)",
     "runner-connection": r"failed to establish communication with the test runner|test runner never began|lost connection to the test runner|failed to get automation session",
     "assertion-failure": r"XCTUnwrap failed|XCTAssert\w* failed|assertion failure",

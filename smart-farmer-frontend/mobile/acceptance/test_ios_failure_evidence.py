@@ -26,6 +26,13 @@ class FailureEvidence(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence.classify("", "cancel", "synthetic-secret")
 
+    def test_remote_alert_hit_point_failure_does_not_export_the_element_payload(self):
+        secret = "synthetic-private-element"
+        log = f"Failed to compute hit point for {secret}: Activation point invalid\nFailed to no matches found for {secret}\n"
+        receipt = evidence.classify(log, "member", "returnLink")
+        self.assertEqual(receipt["signals"], ["hit-point-failure", "element-query-failure"])
+        self.assertNotIn(secret, json.dumps(receipt))
+
     def test_screenshots_are_forbidden_after_any_credential_checkpoint(self):
         with patch.object(evidence.subprocess, "run") as run:
             for checkpoint in ["email", "password", "mfa", "firstSubmit", "farmWorkspace"]:

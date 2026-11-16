@@ -221,7 +221,11 @@ final class PortalColdTests: XCTestCase {
         // A focused descendant receives real OS typing. Verify privately that
         // the intended field received it before entering another value.
         let typingTarget = web is XCUIApplication ? input : web
-        try XCTUnwrap(ready ? typingTarget : nil, "Browser keyboard is ready for input").typeText(value)
+        let keyboardTarget = try XCTUnwrap(ready ? typingTarget : nil, "Browser keyboard is ready for input")
+        // A bulk XCTest key stream dropped characters in the live WebKit email
+        // field. Dispatch each key separately so the remote keyboard completes
+        // one event before the next. Never submit or retry a mismatched value.
+        for character in value { keyboardTarget.typeText(String(character)) }
         let received = waitFor({
             let current = self.field(label, in: web)
             guard let actual = current.value as? String else { return false }
@@ -304,7 +308,17 @@ final class PortalColdTests: XCTestCase {
         for owner in browserOwners + [springboard] {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
-            if notice.exists && notNow.exists && notNow.isHittable { notNow.tap(); return nil }
+            if app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
+                let frame = notNow.frame
+                // Apple's remote AutoFill alert can report a hittable button
+                // with an invalid activation point. Use the exact identified
+                // button's live, fully visible frame in the foreground app.
+                if !frame.isEmpty && frame.intersection(app.frame) == frame && notice.frame.intersects(app.frame) {
+                    let point = CGVector(dx: frame.midX - app.frame.minX, dy: frame.midY - app.frame.minY)
+                    app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+                    return nil
+                }
+            }
             // SafariViewService can expose the real callback link beneath a
             // secondary web view or directly in its embedded accessibility
             // hierarchy. Requiring the first web view to own it produced a
@@ -423,6 +437,16 @@ final class PortalColdTests: XCTestCase {
         XCTAssertFalse(forum.exists, "Uninvited account has no workspace")
         invitation.tap()
         invitation.typeText(try XCTUnwrap(env["FARMER_INVITE"]))
+        // The secure native keyboard covers the Join control. Use Farmer's
+        // visible dismissal action before scrolling; a full-screen swipe can
+        // otherwise start over the keyboard and never reach the ScrollView.
+        if app.keyboards.firstMatch.exists {
+            let dismiss = app.descendants(matching: .any)["keyboard-dismiss"].firstMatch
+            try XCTUnwrap(waitFor({ dismiss.exists && dismiss.isHittable }, seconds: 10) ? dismiss : nil,
+                          "Native invitation keyboard dismissal is available").tap()
+            XCTAssertTrue(waitFor({ !self.app.keyboards.firstMatch.exists }, seconds: 10),
+                          "Native invitation keyboard dismissed before joining")
+        }
         let join = app.descendants(matching: .any)["first-farm-join"].firstMatch
         if !join.isHittable { app.scrollViews.firstMatch.swipeUp() }
         _ = try XCTUnwrap(waitFor({ join.exists && join.isEnabled && join.isHittable }) ? true : nil, "Invitation can be submitted")
