@@ -120,7 +120,9 @@ jobs:
       - name: Native business rules and durable repository
         run: npm test
       - name: Native recovery evidence regression tests
-        run: python3 -m unittest discover -s acceptance -p 'test_*.py' -v
+        run: |
+          python3 -m unittest discover -s acceptance -p 'test_*.py' -v
+          node --test ../../scripts/device-fixture/diagnostics.test.mjs
       - name: Typecheck and export iOS and Android JavaScript bundles
         run: npm run build
 

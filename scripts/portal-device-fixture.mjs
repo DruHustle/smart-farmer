@@ -26,9 +26,13 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { once } from "node:events";
+import { createRecorder, recordError, responseClass, startHttpProbes } from "./device-fixture/diagnostics.mjs";
+
+const diagnostic = createRecorder();
+diagnostic("process", "fixture", "started");
 
 const scripts = dirname(fileURLToPath(import.meta.url)),
   farmer = resolve(scripts, "..");
@@ -115,6 +119,7 @@ Object.assign(localEnv, {
   NODE_ENV: "test",
   NODE_EXTRA_CA_CERTS: cert,
   AWS_EC2_METADATA_DISABLED: "true",
+  FIXTURE_DIAGNOSTICS_MODULE: pathToFileURL(join(scripts, "device-fixture/diagnostics.mjs")).href,
 });
 const password = "Device fixture " + randomBytes(18).toString("hex"),
   codes = Array.from({ length: 8 }, () => randomUUID()),
@@ -166,9 +171,12 @@ const farmerEnv = {
   LOG_LEVEL: "silent",
 };
 let stopping = false;
+let stopHealth = () => {};
 function cleanup() {
   if (stopping) return;
   stopping = true;
+  diagnostic("process", "fixture", "stopping");
+  stopHealth();
   for (const server of servers) server.close();
   for (const child of children) child.kill();
   rmSync(temp, { recursive: true, force: true });
@@ -182,16 +190,18 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 process.on("exit", cleanup);
-function start(cwd, env, args, longLived = false) {
+function start(cwd, env, args, role = null) {
   const child = spawn(process.execPath, args, {
     cwd,
     env,
     stdio: ["ignore", "inherit", "inherit"],
   });
   children.add(child);
-  child.once("exit", () => {
+  if (role) diagnostic("process", role, "started");
+  child.once("exit", (code, signal) => {
     children.delete(child);
-    if (longLived && !stopping) {
+    if (role) diagnostic("process", role, signal ? "exit-signal" : code === 0 ? "exit-ok" : "exit-error");
+    if (role && !stopping) {
       cleanup();
       process.exitCode = 1;
     }
@@ -225,8 +235,10 @@ async function listen(origin, isPortal) {
     if (request.method === "GET") {
       const stage = isPortal && path === "/api/v1/identity/auth" ? "authorize" :
         !isPortal && path === "/auth/onesa/callback" ? "callback-page" : null;
+      if (stage === "authorize") diagnostic("request", "authorize", "proxy-start");
       if (stage) response.once("finish", () => {
         console.log(`ONESA_DEVICE_HTTP ${stage} ${response.statusCode} ${Date.now()}`);
+        if (stage === "authorize") diagnostic("request", "authorize", responseClass(response.statusCode));
       });
     }
     if (
@@ -259,7 +271,8 @@ async function listen(origin, isPortal) {
           reply.pipe(response);
         },
       );
-      upstream.on("error", () => {
+      upstream.on("error", (error) => {
+        recordError(diagnostic, isPortal ? "portal-proxy" : "farmer-proxy", error);
         response.writeHead(502);
         response.end();
       });
@@ -357,9 +370,16 @@ try {
       "tsx",
       "--input-type=module",
       "-e",
-      "import {buildApp} from './src/app.ts';const app=await buildApp({logging:false});await app.listen({host:'127.0.0.1',port:46506})",
+      `import {buildApp} from './src/app.ts';
+       import {db} from './src/services/db.ts';
+       const {observeApp,createRecorder}=await import(process.env.FIXTURE_DIAGNOSTICS_MODULE);
+       const diagnostic=createRecorder();
+       const app=await buildApp({logging:false});
+       observeApp(app,db,'portal',diagnostic);
+       await app.listen({host:'127.0.0.1',port:46506});
+       diagnostic('process','portal','listening');`,
     ],
-    true,
+    "portal",
   );
   start(
     farmerApi,
@@ -371,15 +391,19 @@ try {
       "-e",
       `import {buildApp} from './src/app.ts';
        import {pool} from './src/db.ts';
+       const {observeApp,createRecorder}=await import(process.env.FIXTURE_DIAGNOSTICS_MODULE);
+       const diagnostic=createRecorder();
        const app=buildApp(pool,process.env.WEB_ORIGIN);
+       observeApp(app,pool,'farmer',diagnostic);
        app.addHook('onResponse', async (request, reply) => {
          if (request.method === 'POST' && request.routeOptions.url === '/v1/onesa/sessions') {
            console.log('ONESA_DEVICE_HTTP session ' + reply.statusCode + ' ' + Date.now());
          }
        });
-       await app.listen({host:'127.0.0.1',port:46504});`,
+       await app.listen({host:'127.0.0.1',port:46504});
+       diagnostic('process','farmer','listening');`,
     ],
-    true,
+    "farmer",
   );
   await listen(issuerOrigin, true);
   await listen(appOrigin, false);
@@ -404,6 +428,8 @@ try {
     await delay(250);
   }
   if (!healthy) throw new Error("Both fixture APIs must be listening");
+  diagnostic("process", "fixture", "ready");
+  stopHealth = startHttpProbes(diagnostic);
   const local = { username: "device_fixture_owner", password };
   const account = await publicApi("/v1/register", {
     ...local,

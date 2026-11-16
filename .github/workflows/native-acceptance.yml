@@ -150,6 +150,13 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: bash ${{ matrix.suite == 'onesa' && 'smart-farmer-frontend/mobile/acceptance/onesa/device.sh android' || 'smart-farmer-frontend/mobile/acceptance/android.sh' }}
+      - name: Export finite fixture health and lifecycle evidence
+        if: always() && matrix.suite == 'onesa'
+        run: |
+          if [[ -f "$RUNNER_TEMP/onesa-device/fixture.log" ]]; then
+            mkdir -p "$RUNNER_TEMP/onesa-evidence"
+            node scripts/device-fixture/diagnostics.mjs "$RUNNER_TEMP/onesa-device/fixture.log" "$RUNNER_TEMP/onesa-evidence/fixture-diagnostics.txt"
+          fi
       - name: Retain native Portal role and session evidence
         if: always() && matrix.suite == 'onesa'
         uses: actions/upload-artifact@v4
@@ -280,6 +287,13 @@ jobs:
       - name: Omit system-wide simulator logs from successful automated evidence
         if: success() && github.event_name != 'workflow_dispatch' && matrix.suite != 'onesa'
         run: find "$RUNNER_TEMP/native-evidence" -type f -path '*/logs/device-simulator.log' -delete
+      - name: Export finite fixture health and lifecycle evidence
+        if: always() && matrix.suite == 'onesa'
+        run: |
+          if [[ -f "$RUNNER_TEMP/onesa-device/fixture.log" ]]; then
+            mkdir -p "$RUNNER_TEMP/onesa-evidence"
+            node scripts/device-fixture/diagnostics.mjs "$RUNNER_TEMP/onesa-device/fixture.log" "$RUNNER_TEMP/onesa-evidence/fixture-diagnostics.txt"
+          fi
       - name: Retain native Portal role and session evidence
         if: always() && matrix.suite == 'onesa'
         uses: actions/upload-artifact@v4
