@@ -66,6 +66,10 @@ case "$mode" in
       -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
       # One enum token on a whole line, at most one token in the report.
       last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      # XCTest can abort during a snapshot before the Swift capture hook runs.
+      # Capture from the host only before credentials, and emit fixed categories
+      # plus source line numbers instead of copying private XCTest output.
+      python3 "$dir/failure-evidence.py" "$run/xcode.log" "$role" "${last:-test-launch}" "$device" "$evidence"
       report_failure "${last:-test-launch}"
     fi
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary

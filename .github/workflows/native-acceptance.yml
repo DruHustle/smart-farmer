@@ -2,6 +2,10 @@ name: Native acceptance
 on:
   workflow_dispatch:
     inputs:
+      ios_onesa_diagnostics:
+        description: Run only the iOS Onesa diagnostic suite; full matrix still required before merge
+        type: boolean
+        default: false
       ios_invoice:
         description: Include a separate clean-install iPhone invoice replay
         type: boolean
@@ -26,7 +30,7 @@ jobs:
   android:
     # Draft diagnostic PRs first isolate iOS Onesa. Remove this PR marker
     # and require the complete Android/iOS matrix before any merge.
-    if: ${{ !contains(github.event.pull_request.body, '[ios-onesa-only]') }}
+    if: ${{ !contains(github.event.pull_request.body, '[ios-onesa-only]') && !(github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics) }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,7 +179,7 @@ jobs:
         # A diagnostic-only draft PR can run Onesa iPhone first, without
         # spending three simulator jobs on code unrelated to the failure.
         # Remove [ios-onesa-only] and requalify all suites before merging.
-        suite: ${{ fromJSON(contains(github.event.pull_request.body, '[ios-onesa-only]') && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
+        suite: ${{ fromJSON((contains(github.event.pull_request.body, '[ios-onesa-only]') || (github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics)) && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
     runs-on: macos-26
     timeout-minutes: 75
     concurrency:
