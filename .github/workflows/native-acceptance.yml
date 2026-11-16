@@ -110,7 +110,7 @@ jobs:
         if: matrix.suite == 'onesa'
         uses: actions/checkout@v4
         with:
-          repository: DruHustle/onesa-company-portal
+          repository: DruHustle/onesa-portal
           ref: 5732299004dccef89df144e0ff8362d2342b3a94
           path: qualification-portal
           persist-credentials: false
@@ -235,7 +235,7 @@ jobs:
         if: matrix.suite == 'onesa'
         uses: actions/checkout@v4
         with:
-          repository: DruHustle/onesa-company-portal
+          repository: DruHustle/onesa-portal
           ref: 5732299004dccef89df144e0ff8362d2342b3a94
           path: qualification-portal
           persist-credentials: false

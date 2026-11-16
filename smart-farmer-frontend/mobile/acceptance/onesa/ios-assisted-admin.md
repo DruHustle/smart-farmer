@@ -15,7 +15,7 @@ export MAESTRO_DRIVER_STARTUP_TIMEOUT=240000
 initdb -D "$RUNNER_TEMP/native-pg" -U native_ci -A trust > "$RUNNER_TEMP/init.log"
 pg_ctl -D "$RUNNER_TEMP/native-pg" -l "$RUNNER_TEMP/native-pg.log" -o "-p 55432 -h 127.0.0.1 -k $RUNNER_TEMP" start
 createdb -p 55432 -h 127.0.0.1 -U native_ci smart_farmer_test
-git clone https://github.com/DruHustle/onesa-company-portal.git qualification-portal
+git clone https://github.com/DruHustle/onesa-portal.git qualification-portal
 git -C qualification-portal checkout --detach 5732299004dccef89df144e0ff8362d2342b3a94
 for directory in smart-farmer-frontend/mobile smart-farmer-frontend/web smart-farmer-backend qualification-portal/onesa-company-portal-backend qualification-portal/onesa-company-portal-frontend
 do
