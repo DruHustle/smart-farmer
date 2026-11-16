@@ -825,6 +825,77 @@ test("live-animal orders and direct events share a single reservation ledger und
   }
 });
 
+test("seller revocation serializes with marketplace fulfillment and keeps buyer cancellation available", async () => {
+  const f = await fixture();
+  let blocker: pg.PoolClient | null = null;
+  let transactionOpen = false;
+  let pending: Promise<any> | null = null;
+  try {
+    const seller = await f.register("seller");
+    const buyer = await f.register("buyer");
+    const stock = await f.stock("Verified grain", "kg", 3);
+    await f.db.query(
+      "INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",
+      [seller.userId, f.owner.farmId],
+    );
+    const listing = await f.post("/listings", {
+      id: randomUUID(), stockItemId: stock.id, title: "Verified grain",
+      quantity: 3, price: 2, currency: "USD", collectionArea: "District",
+    });
+    const order = await f.post(`/v1/market/listings/${listing.id}/orders`, {
+      id: randomUUID(), quantity: 1,
+    }, 201, buyer);
+
+    // Hold the membership UPDATE until the fulfillment request reaches the
+    // transaction-scoped FOR SHARE check. With the old pool-level ctx.member()
+    // read the order was fulfilled without waiting for the revocation.
+    blocker = await f.db.connect();
+    await blocker.query("BEGIN");
+    transactionOpen = true;
+    const blockerPid = Number((await blocker.query("SELECT pg_backend_pid() AS pid")).rows[0].pid);
+    await blocker.query(
+      "UPDATE memberships SET role='worker' WHERE farm_id=$1 AND user_id=$2",
+      [f.owner.farmId, seller.userId],
+    );
+    pending = f.send(
+      "POST", `/v1/market/orders/${order.id}/status`,
+      { status: "fulfilled" }, seller,
+    );
+    let waitedForRevocation = false;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const blocked = await f.db.query(
+        `SELECT 1 FROM pg_stat_activity a WHERE a.pid<>pg_backend_pid()
+         AND $1=ANY(pg_blocking_pids(a.pid)) AND a.wait_event_type='Lock'
+         AND a.query LIKE '%memberships%' AND a.query LIKE '%FOR SHARE%'
+         LIMIT 1`,
+        [blockerPid],
+      );
+      if (blocked.rowCount) { waitedForRevocation = true; break; }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    assert.equal(waitedForRevocation, true, "seller mutation must wait for in-flight role revocation");
+    await blocker.query("COMMIT");
+    transactionOpen = false;
+    const denied = await pending;
+    assert.equal(denied.statusCode, 404, denied.body);
+    assert.equal(
+      (await f.db.query("SELECT status FROM market_orders WHERE id=$1", [order.id])).rows[0].status,
+      "reserved",
+    );
+
+    const buyerCancel = await f.send(
+      "POST", `/v1/market/orders/${order.id}/status`,
+      { status: "cancelled" }, buyer,
+    );
+    assert.equal(buyerCancel.statusCode, 200, buyerCancel.body);
+  } finally {
+    if (transactionOpen && blocker) await blocker.query("ROLLBACK");
+    blocker?.release();
+    if (pending) await pending.catch(() => {});
+    await f.close();
+  }
+});
+
 test("identified mortality and corrections cancel incompatible live commitments; expired orders release atomically", async () => {
   const f = await fixture();
   try {
