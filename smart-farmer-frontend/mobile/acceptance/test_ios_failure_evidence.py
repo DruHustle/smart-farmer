@@ -40,6 +40,16 @@ class FailureEvidence(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["stdout"], subprocess.DEVNULL)
             self.assertEqual(run.call_args.kwargs["stderr"], subprocess.DEVNULL)
 
+    def test_cancel_watcher_observes_current_consent_without_starting_another_driver(self):
+        with patch.object(evidence, "read_tail", return_value="FARMER_XCUI_CHECKPOINT consent\n"), patch.object(evidence.time, "sleep"), patch.object(evidence, "capture") as capture:
+            evidence.watch_cancel("private-log", "simulator", "/tmp")
+            capture.assert_called_once_with("simulator", Path("/tmp"), "cancel-live", "consent")
+
+    def test_cancel_watcher_does_not_mislabel_a_screen_after_the_browser_returns(self):
+        with patch.object(evidence, "read_tail", side_effect=["FARMER_XCUI_CHECKPOINT consent\n", "FARMER_XCUI_CHECKPOINT returnLink\n"]), patch.object(evidence.time, "sleep"), patch.object(evidence, "capture") as capture:
+            evidence.watch_cancel("private-log", "simulator", "/tmp")
+            capture.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

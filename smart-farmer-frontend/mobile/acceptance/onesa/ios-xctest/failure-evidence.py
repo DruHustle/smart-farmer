@@ -1,8 +1,10 @@
 """Retain bounded, secret-free XCTest failure metadata and pre-input screenshots."""
 import json
 import re
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -48,14 +50,43 @@ def capture(device, evidence, role, checkpoint):
         return "unavailable"
 
 
+def read_tail(log_path):
+    with Path(log_path).open("rb") as stream:
+        stream.seek(0, 2)
+        stream.seek(max(0, stream.tell() - 1024 * 1024))
+        return stream.read().decode("utf-8", errors="replace")
+
+
+def last_checkpoint(log):
+    checkpoints = re.findall(r"^FARMER_XCUI_CHECKPOINT ([A-Za-z]+)$", log, re.MULTILINE)
+    return checkpoints[-1] if checkpoints and checkpoints[-1] in CHECKPOINTS else None
+
+
+def watch_cancel(log_path, device, directory):
+    # This watcher runs only for the cancellation test, which never loads or
+    # enters credentials. simctl reads the frame without starting a UI driver.
+    # Take the live blocking screen before XCTest's timeout can tear it down.
+    deadline = time.monotonic() + 450
+    while time.monotonic() < deadline:
+        try:
+            checkpoint = last_checkpoint(read_tail(log_path))
+        except FileNotFoundError:
+            checkpoint = None
+        if checkpoint == "consent":
+            time.sleep(3)
+            if last_checkpoint(read_tail(log_path)) == "consent":
+                capture(device, Path(directory), "cancel-live", "consent")
+            return
+        if checkpoint in {"returnLink", "completed"}:
+            return
+        time.sleep(1)
+
+
 def main(args):
     if len(args) != 5:
         raise ValueError("Invalid diagnostic arguments")
     log_path, role, checkpoint, device, directory = args
-    with Path(log_path).open("rb") as stream:
-        stream.seek(0, 2)
-        stream.seek(max(0, stream.tell() - 1024 * 1024))
-        log = stream.read().decode("utf-8", errors="replace")
+    log = read_tail(log_path)
     receipt = classify(log, role, checkpoint)
     evidence = Path(directory)
     evidence.mkdir(parents=True, exist_ok=True)
@@ -64,4 +95,12 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    # subprocess.run kills its child when interrupted by SystemExit, so the
+    # owning shell can stop this bounded watcher without leaving simctl behind.
+    def stop(_signal, _frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
+    if len(sys.argv) == 5 and sys.argv[1] == "watch-cancel":
+        watch_cancel(*sys.argv[2:])
+    else:
+        main(sys.argv[1:])

@@ -36,7 +36,15 @@ case "$mode" in
       *) exit 2 ;;
     esac
     run=$(mktemp -d "$work/$role.XXXXXX")
-    trap 'rm -rf "$run"' EXIT
+    capture_pid=
+    stop_capture() {
+      if [[ -n "$capture_pid" ]]; then
+        if jobs -pr | grep -qx "$capture_pid"; then kill "$capture_pid" 2>/dev/null || true; fi
+        wait "$capture_pid" 2>/dev/null || true
+        capture_pid=
+      fi
+    }
+    trap 'stop_capture; rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
     export TEST_RUNNER_FARMER_XCUI_EVIDENCE_DIR="$evidence"
     read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
@@ -59,11 +67,16 @@ case "$mode" in
     fi
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
+    if [[ "$role" == cancel ]]; then
+      python3 "$dir/failure-evidence.py" watch-cancel "$run/xcode.log" "$device" "$evidence" &
+      capture_pid=$!
+    fi
     # Xcode logs and .xcresult may contain synthetic inputs. Keep them private on the runner.
     if ! xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
       -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
       -resultBundlePath "$run/identity.xcresult" \
       -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
+      stop_capture
       # One enum token on a whole line, at most one token in the report.
       last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
       # XCTest can abort during a snapshot before the Swift capture hook runs.
@@ -72,6 +85,7 @@ case "$mode" in
       python3 "$dir/failure-evidence.py" "$run/xcode.log" "$role" "${last:-test-launch}" "$device" "$evidence"
       report_failure "${last:-test-launch}"
     fi
+    stop_capture
     xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary
     node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1])); if(s.passedTests!==1||s.failedTests!==0||s.skippedTests!==0)process.exit(1)' "$run/summary.json" || report_failure test-count
     ;;
