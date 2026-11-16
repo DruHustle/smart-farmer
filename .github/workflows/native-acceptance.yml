@@ -273,6 +273,9 @@ jobs:
         timeout-minutes: 4
         continue-on-error: true
         run: bash smart-farmer-frontend/mobile/acceptance/onesa/simulator-startup.sh
+      - name: Omit system-wide simulator logs from successful automated evidence
+        if: success() && github.event_name != 'workflow_dispatch' && matrix.suite != 'onesa'
+        run: find "$RUNNER_TEMP/native-evidence" -type f -path '*/logs/device-simulator.log' -delete
       - name: Retain native Portal role and session evidence
         if: always() && matrix.suite == 'onesa'
         uses: actions/upload-artifact@v4
