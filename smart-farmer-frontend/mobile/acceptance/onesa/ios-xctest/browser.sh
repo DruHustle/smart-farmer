@@ -38,7 +38,7 @@ case "$mode" in
     run=$(mktemp -d "$work/$role.XXXXXX")
     trap 'rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
-    export FARMER_XCUI_EVIDENCE_DIR="$evidence"
+    export TEST_RUNNER_FARMER_XCUI_EVIDENCE_DIR="$evidence"
     read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
     export TEST_RUNNER_FARMER_ROLE="$role"
     # Cancellation does not require or load credentials from the fixture.

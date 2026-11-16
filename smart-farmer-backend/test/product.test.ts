@@ -2390,8 +2390,8 @@ test("market orders and stock consumption round half cents at the recorded decim
       id: activityId, projectId: project.id, kind: "input_use", stockItemId: stock.id,
       quantity: 0.5, unit: "kg", observedAt: at,
     });
-    const ledger = await f.db.query("SELECT amount FROM financial_entries WHERE source_id=$1", [activityId]);
-    assert.equal(ledger.rows[0].amount, "1.01");
+    const ledger = await f.db.query("SELECT amount = 1.01::numeric AS exact_amount FROM financial_entries WHERE source_id=$1", [activityId]);
+    assert.equal(ledger.rows[0].exact_amount, true, "Half cents round to the exact decimal amount regardless of the ledger column's scale");
     const listing = await f.post("/listings", {
       id: randomUUID(), stockItemId: stock.id, title: "Maize by weight",
       quantity: 9, price: 2.01, currency: "USD", collectionArea: "District",

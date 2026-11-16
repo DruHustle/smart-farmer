@@ -10,7 +10,7 @@ import { sha256, token } from "../src/security.js";
 import { deliverNotifications, dispatchNotification, queueNotifications } from "../src/operations/notifications.js";
 import { digest, openSecret, sealSecret } from "../src/operations/common.js";
 import { providerStatus } from "../src/operations/farm.js";
-import { notificationRetryWindowMs, sealNotificationRequest, validNotificationFrom } from "../src/operations/notification-request.js";
+import { notificationRetryWindowMs, prepareNotificationRequest, sealNotificationRequest, validNotificationFrom } from "../src/operations/notification-request.js";
 
 const execute = promisify(execFile);
 const environmentKeys = ["NODE_ENV", "NOTIFICATION_MODE", "PROVIDER_SECRET_KEY", "RESEND_API_KEY", "NOTIFICATION_FROM", "RESEND_API_URL", "EXPO_PUSH_URL", "EXPO_ACCESS_TOKEN", "SMS_WEBHOOK_URL", "SMS_WEBHOOK_TOKEN"];
@@ -107,6 +107,13 @@ test("encrypted request and synchronous commit precede POST; resumed retries kee
     assert.equal(frozen.request_body_hash, digest(call.body));
     const request = f.decode(frozen);
     assert.equal(request.body, call.body);
+    assert.equal(typeof JSON.parse(call.body).html, "string");
+    assert.ok(JSON.parse(call.body).html.includes('lang="sn"'));
+    const logo = JSON.parse(call.body).attachments;
+    assert.equal(logo.length, 1);
+    assert.equal(logo[0].content_id, "onesa-company-logo");
+    assert.equal(logo[0].content_type, "image/png");
+    assert.ok(Buffer.from(logo[0].content, "base64").subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
     assert.equal(request.recipientHash, digest(item.address));
     assert.ok(!JSON.stringify(frozen.request_cipher).includes(item.address));
     assert.ok(!JSON.stringify(request).includes(process.env.RESEND_API_KEY!));
@@ -179,6 +186,22 @@ test("recipient changes cannot redirect a pending delivery", async (t) => {
   assert.equal((await f.row(item.id)).last_error, "notification_recipient_changed");
   assert.equal((await f.row(item.id)).state, "unknown");
   assert.equal(f.calls.length, 1);
+});
+
+test("a stored plain-text request from before HTML support is sent without rewriting its bytes", async (t) => {
+  const f = await fixture(t), item = await f.seed(), row = await f.row(item.id);
+  const request = prepareNotificationRequest("email", item.address, { title: "Legacy notice", body: "Original plain-text notice" }, item.id);
+  const legacy = JSON.parse(request.body);
+  delete legacy.html;
+  delete legacy.attachments;
+  request.body = JSON.stringify(legacy);
+  request.bodyHash = digest(request.body);
+  await f.db.query("UPDATE notification_deliveries SET request_cipher=$2,request_body_hash=$3,request_prepared_at=$4 WHERE id=$1", [item.id, sealNotificationRequest(request, row), request.bodyHash, request.preparedAt]);
+  await deliverNotifications(f.db, 1);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].body, request.body);
+  assert.equal(JSON.parse(f.calls[0].body).html, undefined);
+  assert.equal((await f.row(item.id)).state, "accepted");
 });
 
 for (const kind of ["hash", "cipher", "expired", "wrong delivery"] as const)

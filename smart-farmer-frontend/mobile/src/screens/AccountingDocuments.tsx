@@ -69,7 +69,7 @@ export function AccountingDocumentDetail({ work, language, onNativePrompt, onDra
       <Button secondary title={c(language, 'extractedText')} onPress={() => setTextOpen(true)} />
     </> : null}
     {document.state === 'ready' || document.state === 'failed' ? <Button testID="invoice-use-extraction" title={c(language, extraction ? 'useReviewedValues' : 'manualEntry')} onPress={() => onDraft(extractionDraft(document, Crypto.randomUUID(), Crypto.randomUUID, projectId || null))} /> : null}
-    <Sheet title={c(language, 'sourceDocument')} visible={Boolean(photo)} onClose={() => setPhoto(null)} closeLabel={t.close}>{photo ? <Image testID="invoice-source-image" source={{ uri: photo }} resizeMode="contain" style={{ width: '100%', height: 480 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}</Sheet>
-    <Sheet title={c(language, 'extractedText')} visible={textOpen} onClose={() => setTextOpen(false)} closeLabel={t.close}><Text selectable style={styles.text}>{extraction?.text || t.empty}</Text></Sheet>
+    <Sheet title={c(language, 'sourceDocument')} visible={Boolean(photo)} onClose={() => setPhoto(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{photo ? <Image testID="invoice-source-image" source={{ uri: photo }} resizeMode="contain" style={{ width: '100%', height: 480 }} accessibilityLabel={c(language, 'sourceDocument')} /> : null}</Sheet>
+    <Sheet title={c(language, 'extractedText')} visible={textOpen} onClose={() => setTextOpen(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}><Text selectable style={styles.text}>{extraction?.text || t.empty}</Text></Sheet>
   </>;
 }

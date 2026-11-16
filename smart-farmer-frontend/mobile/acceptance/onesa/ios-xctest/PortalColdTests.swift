@@ -74,12 +74,15 @@ final class PortalColdTests: XCTestCase {
             }
         }
         _ = waitFor({ ready(start) || ready(intro) || ready(close) }, seconds: 30)
-        if !ready(start) && ready(intro) {
+        // Expo's sheet can leave the sign-in button visible and hittable above
+        // it. Dismiss onboarding before using that underlying control; its
+        // first tap can otherwise dismiss the sheet without starting sign-in.
+        if ready(intro) {
             checkpoint(.introduction)
             intro.tap()
             _ = waitFor({ ready(start) || ready(close) }, seconds: 45)
         }
-        if !ready(start) && ready(close) {
+        if ready(close) {
             checkpoint(.developerMenu)
             close.tap()
         }
