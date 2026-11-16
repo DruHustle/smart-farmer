@@ -38,22 +38,25 @@ appId: eu.onesa.smartfarmer
     when:
       platform: iOS
     commands:
-      # A fully visible footer cannot always be centered in the review sheet.
-      # Scroll only when the reviewed confirmation is not already available.
-      - runFlow:
-          when:
-            notVisible:
-              id: "invoice-confirm-finalize"
-              enabled: true
-          commands:
-            - scrollUntilVisible:
-                element:
-                  id: "invoice-confirm-finalize"
-                  enabled: true
-                direction: DOWN
-                timeout: 30000
+      # iOS can report a footer visible when its center is clipped by the sheet.
+      # Scroll inside the sheet's content, away from the Switch's touch handler,
+      # before the single finalization tap. Swiping on the Switch toggles it.
+      - assertVisible:
+          id: "invoice-reviewed"
+          checked: true
+      - swipe:
+          start: "50%,75%"
+          end: "50%,35%"
+          duration: 600
+      - assertVisible:
+          id: "invoice-reviewed"
+          checked: true
+      - assertVisible:
+          id: "invoice-confirm-finalize"
+          enabled: true
 - tapOn:
     id: "invoice-confirm-finalize"
+    enabled: true
 - extendedWaitUntil:
     notVisible:
       id: "invoice-confirm-finalize"
