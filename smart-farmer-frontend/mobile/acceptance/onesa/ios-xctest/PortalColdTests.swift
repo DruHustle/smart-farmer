@@ -95,7 +95,10 @@ final class PortalColdTests: XCTestCase {
         // ASWebAuthenticationSession's confirmation can be exposed as more
         // than one alert node. Inspect every alert and combine its accessible
         // text instead of requiring host and purpose to share one label.
-        for owner in [springboard, app, authSheet, safari] {
+        // Before consent, SafariViewService and Safari may not have launched.
+        // Querying a stopped application's alerts aborts XCTest before the
+        // SpringBoard fallback can inspect the visible OS confirmation.
+        for owner in [springboard] + browserOwners {
             for alert in owner.alerts.allElementsBoundByIndex {
                 let labels = [alert.label, (alert.value as? String) ?? ""] +
                     alert.staticTexts.allElementsBoundByIndex.map { $0.label }
