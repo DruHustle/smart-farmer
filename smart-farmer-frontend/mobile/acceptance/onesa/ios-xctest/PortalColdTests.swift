@@ -108,30 +108,29 @@ final class PortalColdTests: XCTestCase {
         if !ready(start, .signIn) && ready(chooser, .localChooser) {
             checkpoint(.localLauncher)
             let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
-            if ready(savedBundle, .savedBundle) { savedBundle.tap() }
-            if !waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 12), ready(chooser, .localChooser) {
-                // Repeat only before any authentication request and only while
-                // the known local-development chooser remains on screen.
-                app.terminate()
-                app.launch()
+            if ready(savedBundle, .savedBundle) {
+                savedBundle.tap()
+            } else {
+                // The fresh launcher has no recent bundle yet. Deliver its fixed
+                // local development URL through the OS before starting any login.
+                XCUIDevice.shared.system.open(localURL)
             }
         }
-        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 30)
-        // Expo's sheet can leave the sign-in button visible and hittable above
-        // it. Dismiss onboarding before using that underlying control; its
-        // first tap can otherwise dismiss the sheet without starting sign-in.
-        if ready(intro, .introduction) {
-            checkpoint(.introduction)
-            intro.tap()
-            _ = waitFor({ ready(start, .signIn) || ready(close, .developerMenu) }, seconds: 45)
-        }
-        if ready(close, .developerMenu) {
-            checkpoint(.developerMenu)
-            close.tap()
-        }
-        // The launcher can briefly expose the underlying control during dismissal.
+        // Expo presents its introduction and menu asynchronously above the
+        // loaded application. Observe each overlay throughout startup, including
+        // when it appears after the native sign-in button first becomes visible.
+        var dismissedIntro = false
+        var closedMenu = false
         let unlocked = waitFor({
-            !(close.exists && close.isHittable) && !(intro.exists && intro.isHittable) && ready(start, .signIn) && start.isEnabled
+            if ready(intro, .introduction) {
+                if !dismissedIntro { self.checkpoint(.introduction); intro.tap(); dismissedIntro = true }
+                return false
+            }
+            if ready(close, .developerMenu) {
+                if !closedMenu { self.checkpoint(.developerMenu); close.tap(); closedMenu = true }
+                return false
+            }
+            return ready(start, .signIn) && start.isEnabled
         }, seconds: 45)
         let button = try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
         checkpoint(.signInControl)
@@ -239,26 +238,27 @@ final class PortalColdTests: XCTestCase {
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
     }
 
+    @MainActor private func keyboardReady(_ acceptedTutorial: inout Bool) -> Bool {
+        let owners = browserOwners + [springboard]
+        for surface in owners {
+            let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
+            guard tutorial.exists else { continue }
+            let explanation = surface.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."].firstMatch
+            if !acceptedTutorial && explanation.exists {
+                let buttons = surface.buttons.matching(NSPredicate(format: "label == %@", "Continue")).allElementsBoundByIndex
+                if let button = buttons.first(where: { $0.isHittable && $0.frame.minY >= explanation.frame.maxY &&
+                    tutorial.frame.intersects($0.frame) }) {
+                    button.tap()
+                    acceptedTutorial = true
+                }
+            }
+            return false
+        }
+        return owners.contains { $0.keyboards.firstMatch.exists }
+    }
+
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
-        @MainActor func keyboardReady() -> Bool {
-            let owners = browserOwners + [springboard]
-            for surface in owners {
-                let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
-                guard tutorial.exists else { continue }
-                let explanation = surface.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."].firstMatch
-                if !acceptedTutorial && explanation.exists {
-                    let buttons = surface.buttons.matching(NSPredicate(format: "label == %@", "Continue")).allElementsBoundByIndex
-                    if let button = buttons.first(where: { $0.isHittable && $0.frame.minY >= explanation.frame.maxY &&
-                        tutorial.frame.intersects($0.frame) }) {
-                        button.tap()
-                        acceptedTutorial = true
-                    }
-                }
-                return false
-            }
-            return owners.contains { $0.keyboards.firstMatch.exists }
-        }
         let input = field(label, in: web)
         let editable = waitFor({ input.exists && input.isEnabled && !input.frame.intersection(self.app.frame).isEmpty }, seconds: 15)
         _ = try XCTUnwrap(editable ? true : nil, "Browser input is editable")
@@ -271,7 +271,7 @@ final class PortalColdTests: XCTestCase {
             let point = CGVector(dx: visible.midX - app.frame.minX, dy: visible.midY - app.frame.minY)
             app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
         }
-        if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
+        if !waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 6), input.exists && input.isEnabled && input.isHittable {
             // A newly presented WebKit field can appear before its first tap
             // gives the software keyboard focus. This repeat only focuses it.
             let visible = web.frame.intersection(input.frame)
@@ -282,7 +282,7 @@ final class PortalColdTests: XCTestCase {
                 web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
             }
         }
-        let ready = waitFor(keyboardReady, seconds: 10)
+        let ready = waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 10)
 
         // A focused descendant receives real OS typing. Verify privately that
         // the intended field received it before entering another value.
@@ -307,7 +307,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in browserOwners {
+            for surface in browserOwners + [springboard] {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -315,7 +315,7 @@ final class PortalColdTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
+            (self.browserOwners + [self.springboard]).allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
@@ -381,45 +381,180 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
-    // Embedded WebKit can render the issuer while exposing none of its DOM
-    // controls to XCTest. Locate only a known action on its visible loopback
-    // page. The image and OCR stay in memory, including after sign-in.
-    @MainActor private func renderedAction(labels: Set<String>, landmarks: Set<String>,
-                                          onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
-        guard let foreground = [app, authSheet, safari].first(where: { $0.state == .runningForeground }),
-              let image = XCUIScreen.main.screenshot().image.cgImage else { return nil }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        guard (try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])) != nil else { return nil }
-        let rows = (request.results ?? []).compactMap { observation -> (String, CGRect)? in
-            guard let best = observation.topCandidates(1).first, best.confidence >= 0.55 else { return nil }
-            let label = best.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "‑", with: "-").replacingOccurrences(of: "–", with: "-")
-            return (label, observation.boundingBox)
+    private struct RenderedScreen {
+        let image: CGImage
+        let rows: [(text: String, box: CGRect)]
+        let display: CGRect
+        let owners: [XCUIApplication]
+
+        var words: Set<String> { Set(rows.map { $0.text }) }
+        let hasLoopbackChrome: Bool
+
+        func unique(_ text: String) -> CGRect? {
+            let matches = rows.filter { $0.text == text }
+            return matches.count == 1 ? matches[0].box : nil
         }
-        let frame = foreground.frame
-        let aspect = CGFloat(image.width) / CGFloat(image.height)
-        guard frame.minX == 0, frame.minY == 0, frame.height > 0,
-              abs(frame.width / frame.height - aspect) < 0.02 else { return nil }
-        func point(for rect: CGRect) -> XCUICoordinate {
-            foreground.coordinate(withNormalizedOffset: CGVector(dx: rect.midX, dy: 1 - rect.midY))
-        }
-        let words = Set(rows.map { $0.0 })
-        // Apple's sheet can cover the return link without exposing any AX
-        // controls. Decline only the uniquely identified password prompt.
-        if words.contains("Save Password?"), words.contains("Save") {
-            let declines = rows.filter { $0.0 == "Not Now" }
-            if declines.count == 1 { onPasswordSheet?(point(for: declines[0].1)) }
+
+        // Vision coordinates use the entire captured display and grow upward.
+        // XCTest coordinates use points within the owner, which may be an inset
+        // authentication sheet. Convert through display space before selecting it.
+        @MainActor func point(at normalized: CGPoint) -> XCUICoordinate? {
+            guard normalized.x >= 0, normalized.x <= 1, normalized.y >= 0, normalized.y <= 1 else { return nil }
+            let target = CGPoint(x: display.minX + normalized.x * display.width,
+                                 y: display.minY + (1 - normalized.y) * display.height)
+            for owner in owners {
+                let bounds = owner.frame
+                guard !bounds.isEmpty, !bounds.isInfinite, bounds.contains(target) else { continue }
+                return owner.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: target.x - bounds.minX, dy: target.y - bounds.minY))
+            }
             return nil
         }
-        // Browser chrome identifies the issuer/callback origin. These are the
-        // hostnames in the disposable HTTPS device fixture.
-        guard rows.contains(where: { ["localhost", "127.0.0.1"].contains($0.0) && $0.1.midY > 0.82 }),
-              landmarks.isSubset(of: words) else { return nil }
-        let matches = rows.filter { labels.contains($0.0) && $0.1.midY < 0.88 }
-        guard matches.count == 1 else { return nil }
-        return .point(point(for: matches[0].1))
+    }
+
+    private enum RenderObservation: String { case screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
+    private var renderObservations = Set<RenderObservation>()
+    private func renderObserved(_ value: RenderObservation) {
+        if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
+    }
+
+    @MainActor private func renderedScreen() -> RenderedScreen? {
+        guard let image = XCUIScreen.main.screenshot().image.cgImage else {
+            renderObserved(.screenshotUnavailable); return nil
+        }
+        let display = UIScreen.main.bounds
+        guard !display.isEmpty,
+              abs(display.width / display.height - CGFloat(image.width) / CGFloat(image.height)) < 0.02 else {
+            renderObserved(.displayMismatch); return nil
+        }
+        let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
+        guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
+        func recognize(in region: CGRect) -> [VNRecognizedTextObservation]? {
+            // Hosted simulators do not always expose an accelerated Vision device.
+            // Try CPU execution only if the first request could not run.
+            for cpuOnly in [false, true] {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+                request.usesCPUOnly = cpuOnly
+                request.regionOfInterest = region
+                do {
+                    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+                    return request.results ?? []
+                } catch { continue }
+            }
+            return nil
+        }
+        guard let observations = recognize(in: CGRect(x: 0, y: 0, width: 1, height: 1)) else {
+            renderObserved(.recognitionUnavailable); return nil
+        }
+        let rows = observations.compactMap { observation -> (String, CGRect)? in
+            guard let best = observation.topCandidates(1).first, best.confidence >= 0.55 else { return nil }
+            let text = best.string.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+                .replacingOccurrences(of: "‑", with: "-").replacingOccurrences(of: "–", with: "-")
+            return (text, observation.boundingBox)
+        }
+        let loopback = ["localhost", "127.0.0.1"]
+        var chrome = rows.contains {
+            loopback.contains($0.0) && $0.1.midY > 0.82 && (0.25...0.75).contains($0.1.midX)
+        }
+        if !chrome {
+            // OCR may join the Safari close icon to the address on the same
+            // horizontal line. Read just the title area; the host still must
+            // match exactly and no page content can satisfy this check.
+            if let title = recognize(in: CGRect(x: 0.25, y: 0.82, width: 0.50, height: 0.13)) {
+                chrome = title.contains { observation in
+                    guard let value = observation.topCandidates(1).first, value.confidence >= 0.55 else { return false }
+                    return loopback.contains(value.string.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+            }
+        }
+        return RenderedScreen(image: image, rows: rows, display: display, owners: owners, hasLoopbackChrome: chrome)
+    }
+
+    // Embedded WebKit can render the issuer without publishing its DOM nodes
+    // to XCTest. Recognized controls must belong to the verified visible page.
+    @MainActor private func renderedAction(labels: Set<String>, landmarks: Set<String>,
+                                          onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
+        guard let screen = renderedScreen() else { return nil }
+        if screen.words.contains("Save Password?"), screen.words.contains("Save") {
+            if let decline = screen.unique("Not Now"),
+               let point = screen.point(at: CGPoint(x: decline.midX, y: decline.midY)) {
+                onPasswordSheet?(point)
+            }
+            return nil
+        }
+        guard screen.hasLoopbackChrome else { renderObserved(.chromeMissing); return nil }
+        guard landmarks.isSubset(of: screen.words) else { renderObserved(.landmarksMissing); return nil }
+        let targets = screen.rows.filter { labels.contains($0.text) && $0.box.midY < 0.88 }
+        guard targets.count == 1, let box = targets.first?.box else { renderObserved(.ambiguousAction); return nil }
+        guard let point = screen.point(at: CGPoint(x: box.midX, y: box.midY)) else { renderObserved(.outsideOwner); return nil }
+        renderObserved(.actionReady)
+        return .point(point)
+    }
+
+    // The hosted ASWebAuthenticationSession can render the real form without
+    // exposing its HTML inputs to XCTest. Portal nests every input inside its
+    // visible HTML label. Tapping the label focuses that real input or toggles
+    // the real checkbox. The synthetic credentials only enter the native keyboard.
+    @MainActor private func renderedFormAction(_ label: String) -> BrowserAction? {
+        // Each step has another form landmark in addition to the browser origin.
+        let landmarks: Set<String> = label == "Authenticator or recovery code"
+            ? ["Password", "Remember this browser"] : ["Email address", "Password"]
+        return renderedAction(labels: [label], landmarks: landmarks)
+    }
+
+    @MainActor private func tapRenderedForm(_ label: String) throws {
+        var action: BrowserAction?
+        let ready = waitFor({
+            action = self.renderedFormAction(label)
+            return action != nil
+        }, seconds: 15)
+        try XCTUnwrap(ready ? action : nil, "Unique visible control in the loopback issuer form").tap()
+    }
+
+    @MainActor private func enterRendered(_ value: String, into label: String) throws {
+        try tapRenderedForm(label)
+        var acceptedTutorial = false
+        let ready = waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 10)
+        try XCTUnwrap(ready ? true : nil, "System keyboard opened for the selected issuer input")
+        let owner = try XCTUnwrap(browserOwners.first(where: { $0.keyboards.firstMatch.exists })
+            ?? browserOwners.first(where: { $0.state == .runningForeground }),
+            "System keyboard has an issuer owner")
+        for character in value { owner.typeText(String(character)) }
+        try dismissNativeKeyboard()
+        // Check the exact email within its own field before typing a password.
+        // Password and recovery values stay private. The real issuer validates
+        // both and the external receipt check requires the exact role sequence.
+        if label == "Email address" {
+            let correct = waitFor({
+                guard let screen = self.renderedScreen(), screen.hasLoopbackChrome,
+                      let email = screen.unique("Email address"), let password = screen.unique("Password")
+                else { return false }
+                return screen.rows.contains { row in
+                    row.text == value && row.box.midY < email.minY && row.box.midY > password.maxY
+                }
+            }, seconds: 8)
+            try XCTUnwrap(correct ? true : nil, "Issuer email input received the synthetic account")
+        }
+    }
+
+    @MainActor private func signInWithRenderedForm(email: String, password: String,
+                                                   adminFactor: String?) throws {
+        checkpoint(.email)
+        try enterRendered(email, into: "Email address")
+        checkpoint(.password)
+        try enterRendered(password, into: "Password")
+        checkpoint(.remember)
+        try tapRenderedForm("Remember this browser")
+        checkpoint(.firstSubmit)
+        try tapRenderedForm("Continue")
+        if let code = adminFactor {
+            checkpoint(.mfa)
+            try enterRendered(code, into: "Authenticator or recovery code")
+            checkpoint(.secondSubmit)
+            try tapRenderedForm("Continue")
+        }
     }
 
     @MainActor private func returnLink() -> XCUIElement? {
@@ -537,32 +672,37 @@ final class PortalColdTests: XCTestCase {
         var surface: XCUIElement?
         let visible = awaitBrowser {
             surface = self.portalWeb() ?? self.embeddedIssuer()
-            return surface != nil
+            return surface != nil || self.renderedFormAction("Cancel sign-in") != nil
         }
-        let web = try XCTUnwrap(visible ? surface : nil, "System browser owns the issuer form")
+        try XCTUnwrap(visible ? true : nil, "System browser owns the issuer form")
         let email = try XCTUnwrap(env["FARMER_EMAIL"], "Synthetic email exists")
         let password = try XCTUnwrap(env["FARMER_PASSWORD"], "Synthetic password exists")
-        checkpoint(.email)
-        try enter(email, into: "Email address", in: web)
-        try dismissNativeKeyboard()
-        checkpoint(.password)
-        try enter(password, into: "Password", in: web)
-        try dismissNativeKeyboard()
-        checkpoint(.remember)
-        try remember(web)
-        checkpoint(.firstSubmit)
-        try submit(web)
-        if role == "admin" {
-            checkpoint(.mfa)
-            let code = field("Authenticator or recovery code", in: web)
-            try XCTUnwrap(code.waitForExistence(timeout: 20) ? true : nil, "Issuer requested an administrator factor")
-            try enter(try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists"),
-                      into: "Authenticator or recovery code", in: web)
+        if let web = surface {
+            checkpoint(.email)
+            try enter(email, into: "Email address", in: web)
             try dismissNativeKeyboard()
-            checkpoint(.secondSubmit)
+            checkpoint(.password)
+            try enter(password, into: "Password", in: web)
+            try dismissNativeKeyboard()
+            checkpoint(.remember)
+            try remember(web)
+            checkpoint(.firstSubmit)
             try submit(web)
+            if role == "admin" {
+                checkpoint(.mfa)
+                let code = field("Authenticator or recovery code", in: web)
+                try XCTUnwrap(code.waitForExistence(timeout: 20) ? true : nil, "Issuer requested an administrator factor")
+                try enter(try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists"),
+                          into: "Authenticator or recovery code", in: web)
+                try dismissNativeKeyboard()
+                checkpoint(.secondSubmit)
+                try submit(web)
+            }
+        } else {
+            let code = role == "admin" ? try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists") : nil
+            try signInWithRenderedForm(email: email, password: password, adminFactor: code)
         }
-        try returnToFarmer(issuerOwner: web as? XCUIApplication)
+        try returnToFarmer(issuerOwner: surface as? XCUIApplication)
         checkpoint(.nativeInvitation)
         let invitation = app.descendants(matching: .any)["first-farm-invitation"].firstMatch
         let invitationVisible = { self.app.state == .runningForeground && invitation.exists }

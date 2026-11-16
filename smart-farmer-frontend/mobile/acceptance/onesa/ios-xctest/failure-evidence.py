@@ -35,6 +35,9 @@ def classify(log, role, checkpoint):
         "role": role,
         "checkpoint": checkpoint,
         "signals": [name for name, pattern in PATTERNS.items() if re.search(pattern, log, re.IGNORECASE)],
+        "renderObservations": sorted(set(re.findall(
+            r"^FARMER_RENDER (screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
+            log, re.MULTILINE))),
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
         "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))
                      for fact in list(dict.fromkeys(CONTROL_FACT.findall(log)))[:64]],
