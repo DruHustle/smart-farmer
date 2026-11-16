@@ -14,6 +14,7 @@ import {
   authorize,
   hash,
   instant,
+  lockFarmMembership,
   managers,
   operationLock,
   requireRow,
@@ -170,7 +171,11 @@ async function recordResult(
       )
     ).rows[0],
   );
-  if (!["authorized", "dispatched", "acknowledged"].includes(cmd.status)) {
+  const revokedInFlight =
+    cmd.status === "outcome_unknown" &&
+    ["actor_membership_revoked", "actor_role_revoked"].includes(cmd.reason) &&
+    new Date(cmd.expires_at).getTime() > Date.now();
+  if (!["authorized", "dispatched", "acknowledged"].includes(cmd.status) && !revokedInFlight) {
     if (
       cmd.status === data.status &&
       (data.status !== "confirmed" ||
@@ -198,7 +203,7 @@ async function recordResult(
   if (data.status === "acknowledged" && cmd.status === "acknowledged")
     return cmd;
   const result = await client.query(
-    "UPDATE equipment_commands SET status=$2,feedback=$3,reason=$4,acknowledged_at=CASE WHEN $2='acknowledged' THEN now() ELSE acknowledged_at END,completed_at=CASE WHEN $2='acknowledged' THEN NULL ELSE now() END WHERE id=$1 RETURNING *",
+    "UPDATE equipment_commands SET status=$2,feedback=$3,reason=COALESCE($4,reason),acknowledged_at=CASE WHEN $2='acknowledged' THEN now() ELSE acknowledged_at END,completed_at=CASE WHEN $2='acknowledged' THEN NULL ELSE now() END WHERE id=$1 RETURNING *",
     [cmd.id, data.status, data.feedback ?? null, data.reason ?? null],
   );
   await client.query(
@@ -226,6 +231,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     if (!auth) return;
     const data = assetInput.parse(req.body);
     const result = await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       await operationLock(client, `asset:${data.id}`);
       const existing = (
         await client.query("SELECT * FROM assets WHERE id=$1", [data.id])
@@ -289,6 +295,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     const { assetId } = assetParams.parse(req.params);
     const data = simulation.parse(req.body);
     await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       const asset = requireRow(
         (
           await client.query(
@@ -315,6 +322,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
       const { assetId } = assetParams.parse(req.params);
       const value = token();
       const result = await ctx.transaction(async (c) => {
+        await lockFarmMembership(c, auth.farmId, auth.userId, ["owner"]);
         const changed = await c.query(
           "UPDATE assets SET gateway_token_hash=$3,gateway_expires_at=now()+interval '30 days' WHERE farm_id=$1 AND id=$2 AND integration_state<>'unconfigured' RETURNING gateway_expires_at,protocol",
           [auth.farmId, assetId, sha256(value)],
@@ -364,6 +372,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
     const { assetId } = assetParams.parse(req.params);
     const data = commandInput.parse(req.body);
     const result = await ctx.transaction(async (client) => {
+      await lockFarmMembership(client, auth.farmId, auth.userId, managers);
       await operationLock(client, `command:${data.id}`);
       const prior = (
         await client.query("SELECT * FROM equipment_commands WHERE id=$1", [
@@ -449,6 +458,7 @@ export function registerEquipment(app: FastifyInstance, ctx: Context) {
         .parse(req.params);
       const data = resultInput.parse(req.body);
       return ctx.transaction(async (client) => {
+        await lockFarmMembership(client, auth.farmId, auth.userId, managers);
         const asset = requireRow(
           (
             await client.query(

@@ -18,6 +18,23 @@ export async function authorize(ctx: Context, req: FastifyRequest, reply: Fastif
   if (!await ctx.member(farmId, userId, roles)) throw new ApiError('not_found', 404);
   return {userId, farmId};
 }
+/** Revalidate a user capability under the same farm lock as membership revocation. */
+export async function lockFarmMembership(
+  client: PoolClient,
+  farmId: string,
+  userId: string,
+  roles?: string[],
+) {
+  await client.query("SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE", [farmId]);
+  const membership = await client.query(
+    "SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2 FOR SHARE",
+    [farmId, userId],
+  );
+  if (!membership.rowCount || (roles && !roles.includes(membership.rows[0].role))) {
+    throw new ApiError("not_found", 404);
+  }
+  return membership.rows[0].role as string;
+}
 export async function operationLock(client: PoolClient, scope: string) {
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [scope]);
 }

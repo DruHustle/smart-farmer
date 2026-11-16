@@ -74,6 +74,110 @@ test('equipment: capability gates, freshness, interlocks, command replay, feedba
   }finally{await f.close();}
 });
 
+test('equipment command creation and owner revocation serialize; queued actuation is rejected',async()=>{
+  const f=await fixture();let locker:pg.PoolClient|undefined;
+  let commandRequest:Promise<any>|null=null,revokeRequest:Promise<any>|null=null;
+  try{
+    const manager=await f.register('equipment_manager');
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",[manager.userId,f.owner.farmId]);
+    const asset=randomUUID();
+    const created=await f.request('POST',`${f.prefix}/assets`,{id:asset,name:'Revocation race simulator',category:'pump',protocol:'simulator'});
+    assert.equal(created.statusCode,201,created.body);
+    const simulated=await f.request('POST',`${f.prefix}/assets/${asset}/simulate`,{running:false,interlockOk:true});
+    assert.equal(simulated.statusCode,200,simulated.body);
+    const credential=await f.request('POST',`${f.prefix}/assets/${asset}/gateway-token`,{});
+    assert.equal(credential.statusCode,200,credential.body);
+    const edge={headers:{authorization:`Bearer ${credential.json().token}`}};
+    const command={id:randomUUID(),command:'start',confirmed:true,expiresAt:new Date(Date.now()+60000).toISOString()};
+
+    locker=await f.db.connect();await locker.query('BEGIN');await locker.query('SELECT id FROM assets WHERE id=$1 FOR UPDATE',[asset]);
+    const lockerPid=Number((await locker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
+    commandRequest=f.request('POST',`${f.prefix}/assets/${asset}/commands`,command,manager);
+    const waitFor=async(predicate:(rows:any[])=>boolean,message:string)=>{
+      const deadline=Date.now()+8000;
+      while(Date.now()<deadline){
+        const result=await f.db.query(`
+          SELECT pid,query,wait_event_type,wait_event,pg_blocking_pids(pid) AS blockers
+          FROM pg_stat_activity
+          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+        `);
+        if(predicate(result.rows))return result.rows;
+        await new Promise(resolve=>setTimeout(resolve,40));
+      }
+      assert.fail(message);
+    };
+    const commandWait=await waitFor(rows=>rows.some(row=>
+      String(row.query).includes('SELECT * FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE')&&
+      (row.blockers as number[]).includes(lockerPid)
+    ),'Manager command must reach the asset lock after transaction-scoped authorization');
+    const commandPid=Number(commandWait.find(row=>
+      String(row.query).includes('SELECT * FROM assets WHERE farm_id=$1 AND id=$2 FOR UPDATE')&&
+      (row.blockers as number[]).includes(lockerPid)
+    )!.pid);
+
+    revokeRequest=f.request('DELETE',`/v1/farms/${f.owner.farmId}/members/${manager.userId}`);
+    await waitFor(rows=>rows.some(row=>
+      String(row.query).includes('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE')&&
+      (row.blockers as number[]).includes(commandPid)
+    ),'Owner revocation must wait for the already-authorized command transaction');
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.owner.farmId,manager.userId])).rowCount,1,
+      'The manager remains authorized until the command transaction commits');
+
+    await locker.query('ROLLBACK');locker.release();locker=undefined;
+    const accepted=await commandRequest;assert.equal(accepted.statusCode,201,accepted.body);
+    const revoked=await revokeRequest;assert.equal(revoked.statusCode,204,revoked.body);
+    const state=(await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[command.id])).rows[0];
+    assert.deepEqual(state,{status:'rejected',reason:'actor_membership_revoked'});
+    assert.equal((await f.db.query("SELECT count(*) FROM command_audit WHERE command_id=$1 AND status='rejected' AND detail='actor_membership_revoked'",[command.id])).rows[0].count,'1');
+    assert.equal((await f.request('POST','/v1/edge/commands/next',{},edge)).json().command,null,
+      'A revoked manager\'s queued command must never be delivered to the gateway');
+    const afterRevocation=await f.request('POST',`${f.prefix}/assets/${asset}/commands`,{...command,id:randomUUID()},manager);
+    assert.equal(afterRevocation.statusCode,404);
+
+    const demoted=await f.register('demoted_manager');
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",[demoted.userId,f.owner.farmId]);
+    const demotedAsset=randomUUID();
+    assert.equal((await f.request('POST',`${f.prefix}/assets`,{id:demotedAsset,name:'Demotion simulator',category:'pump',protocol:'simulator'})).statusCode,201);
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${demotedAsset}/simulate`,{running:false,interlockOk:true})).statusCode,200);
+    const demotedCommand={id:randomUUID(),command:'start',confirmed:true,expiresAt:new Date(Date.now()+60000).toISOString()};
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${demotedAsset}/commands`,demotedCommand,demoted)).statusCode,201);
+    const roleChange=await f.request('PATCH',`/v1/farms/${f.owner.farmId}/members/${demoted.userId}`,{role:'worker'});
+    assert.equal(roleChange.statusCode,200,roleChange.body);
+    assert.deepEqual((await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[demotedCommand.id])).rows[0],
+      {status:'rejected',reason:'actor_role_revoked'});
+
+    const inflight=await f.register('inflight_manager');
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'manager')",[inflight.userId,f.owner.farmId]);
+    const inflightAsset=randomUUID();
+    assert.equal((await f.request('POST',`${f.prefix}/assets`,{id:inflightAsset,name:'In-flight simulator',category:'pump',protocol:'simulator'})).statusCode,201);
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${inflightAsset}/simulate`,{running:false,interlockOk:true})).statusCode,200);
+    const inflightGateway=await f.request('POST',`${f.prefix}/assets/${inflightAsset}/gateway-token`,{});
+    assert.equal(inflightGateway.statusCode,200);
+    const inflightEdge={headers:{authorization:`Bearer ${inflightGateway.json().token}`}};
+    const inflightCommand={id:randomUUID(),command:'start',confirmed:true,expiresAt:new Date(Date.now()+60000).toISOString()};
+    assert.equal((await f.request('POST',`${f.prefix}/assets/${inflightAsset}/commands`,inflightCommand,inflight)).statusCode,201);
+    const dispatched=await f.request('POST','/v1/edge/commands/next',{},inflightEdge);
+    assert.equal(dispatched.json().command.id,inflightCommand.id);
+    const inFlightRevocation=await f.request('DELETE',`/v1/farms/${f.owner.farmId}/members/${inflight.userId}`);
+    assert.equal(inFlightRevocation.statusCode,204,inFlightRevocation.body);
+    assert.deepEqual((await f.db.query('SELECT status,reason FROM equipment_commands WHERE id=$1',[inflightCommand.id])).rows[0],
+      {status:'outcome_unknown',reason:'actor_membership_revoked'},
+      'A dispatched command may already have reached the device; revocation must record uncertainty, not claim it was cancelled');
+    const lateFeedback=await f.request('POST',`/v1/edge/commands/${inflightCommand.id}/result`,{
+      status:'confirmed',feedback:{running:true,interlock_ok:true}
+    },inflightEdge);
+    assert.equal(lateFeedback.statusCode,200,lateFeedback.body);
+    assert.equal(lateFeedback.json().status,'confirmed');
+    assert.equal(lateFeedback.json().reason,'actor_membership_revoked',
+      'Authenticated device feedback resolves the physical outcome without erasing the revocation audit reason');
+  }finally{
+    if(locker){await locker.query('ROLLBACK').catch(()=>{});locker.release();}
+    if(commandRequest)await commandRequest.catch(()=>{});
+    if(revokeRequest)await revokeRequest.catch(()=>{});
+    await f.close();
+  }
+});
+
 test('equipment waits cannot outlive expiry or gateway rotation; manual simulation audits dispatch',async()=>{
   const f=await fixture();let locker:pg.PoolClient|undefined;
   try{
