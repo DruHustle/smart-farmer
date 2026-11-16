@@ -45,6 +45,20 @@ class FailureEvidence(unittest.TestCase):
             evidence.watch_cancel("private-log", "simulator", "/tmp")
             capture.assert_called_once_with("simulator", Path("/tmp"), "cancel-live", "consent")
 
+    def test_live_watcher_reaches_the_capture_command_with_its_distinct_filename(self):
+        device = "11111111-2222-3333-4444-555555555555"
+        with tempfile.TemporaryDirectory() as directory, patch.object(evidence.time, "sleep"), patch.object(evidence.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            log = Path(directory) / "private.log"
+            log.write_text("FARMER_XCUI_CHECKPOINT consent\n")
+            # Exercise the real watcher, reader and capture function together.
+            # The live frame must not overwrite the post-failure consent frame.
+            evidence.watch_cancel(log, device, directory)
+            run.assert_called_once_with(
+                ["xcrun", "simctl", "io", device, "screenshot", str(Path(directory) / "ios-cancel-live-consent.png")],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20, check=False,
+            )
+
     def test_cancel_watcher_does_not_mislabel_a_screen_after_the_browser_returns(self):
         with patch.object(evidence, "read_tail", side_effect=["FARMER_XCUI_CHECKPOINT consent\n", "FARMER_XCUI_CHECKPOINT returnLink\n"]), patch.object(evidence.time, "sleep"), patch.object(evidence, "capture") as capture:
             evidence.watch_cancel("private-log", "simulator", "/tmp")
