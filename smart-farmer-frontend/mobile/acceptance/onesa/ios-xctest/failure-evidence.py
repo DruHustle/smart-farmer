@@ -25,6 +25,12 @@ CONTROL_FACT = re.compile(
     r"(absent|present|enabled|disabled|visible-frame|not-visible-frame|hittable-query|hittable|not-hittable)$",
     re.MULTILINE,
 )
+ISSUER_FACT = re.compile(
+    r"^FARMER_XCUI_ISSUER (farmer|safari|authSheet) (owner|web0|web1|web2) "
+    r"(state|webViews|heading|remember|cancelButton|cancelLink|emailNamed|passwordNamed|emailTyped|passwordTyped) "
+    r"(query|zero|one|many|unknown|suspended|background|foreground|not-running)$",
+    re.MULTILINE,
+)
 
 
 def classify(log, role, checkpoint):
@@ -38,6 +44,11 @@ def classify(log, role, checkpoint):
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
         "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))
                      for fact in list(dict.fromkeys(CONTROL_FACT.findall(log)))[:64]],
+        "issuerProbe": list(dict.fromkeys(re.findall(r"^FARMER_XCUI_ISSUER (begin|complete)$", log, re.MULTILINE)))[:2]
+                       if checkpoint == "consent" else [],
+        "issuerExposure": [dict(zip(("owner", "scope", "target", "fact"), fact))
+                           for fact in list(dict.fromkeys(ISSUER_FACT.findall(log)))[:256]]
+                          if checkpoint == "consent" else [],
     }
 
 

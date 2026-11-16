@@ -65,6 +65,51 @@ class FailureEvidence(unittest.TestCase):
         self.assertEqual(receipt["signals"], ["hit-point-failure", "element-query-failure"])
         self.assertNotIn(secret, json.dumps(receipt))
 
+    def test_issuer_probe_retains_only_fixed_pre_input_owner_and_control_facts(self):
+        secret = "synthetic-private-url-or-field-value"
+        log = "\n".join([
+            "FARMER_XCUI_ISSUER begin",
+            "FARMER_XCUI_ISSUER authSheet owner state query",
+            "FARMER_XCUI_ISSUER authSheet owner state foreground",
+            "FARMER_XCUI_ISSUER authSheet owner webViews many",
+            "FARMER_XCUI_ISSUER authSheet web1 heading one",
+            "FARMER_XCUI_ISSUER authSheet web1 emailNamed zero",
+            "FARMER_XCUI_ISSUER authSheet web1 emailTyped one",
+            "FARMER_XCUI_ISSUER complete",
+            f"FARMER_XCUI_ISSUER {secret} owner state foreground",
+            f"FARMER_XCUI_ISSUER farmer {secret} heading one",
+            f"FARMER_XCUI_ISSUER farmer owner {secret} one",
+            f"FARMER_XCUI_ISSUER farmer owner heading {secret}",
+            f"FARMER_XCUI_ISSUER farmer owner heading one https://{secret}/",
+            f"FARMER_XCUI_ISSUER complete {secret}",
+        ])
+        receipt = evidence.classify(log, "member", "consent")
+        self.assertEqual(receipt["issuerProbe"], ["begin", "complete"])
+        self.assertEqual(len(receipt["issuerExposure"]), 6)
+        self.assertEqual(receipt["issuerExposure"][-1], {
+            "owner": "authSheet", "scope": "web1", "target": "emailTyped", "fact": "one",
+        })
+        self.assertNotIn(secret, json.dumps(receipt))
+        self.assertNotIn("https://", json.dumps(receipt))
+
+    def test_incomplete_issuer_query_is_deduplicated_bounded_and_not_exported_after_input(self):
+        log = "FARMER_XCUI_ISSUER begin\n" * 1000
+        log += "FARMER_XCUI_ISSUER farmer owner heading query\n" * 1000
+        receipt = evidence.classify(log, "cancel", "consent")
+        self.assertEqual(receipt["issuerProbe"], ["begin"])
+        self.assertEqual(len(receipt["issuerExposure"]), 1)
+        self.assertEqual(receipt["issuerExposure"][0]["fact"], "query")
+        for checkpoint in ["email", "password", "mfa", "firstSubmit", "returnLink"]:
+            after_input = evidence.classify(log, "admin", checkpoint)
+            self.assertEqual(after_input["issuerProbe"], [])
+            self.assertEqual(after_input["issuerExposure"], [])
+        combinations = (f"FARMER_XCUI_ISSUER {owner} {scope} {target} {fact}\n"
+                        for owner in ["farmer", "safari", "authSheet"]
+                        for scope in ["owner", "web0", "web1", "web2"]
+                        for target in ["heading", "remember", "emailNamed", "passwordNamed", "emailTyped", "passwordTyped"]
+                        for fact in ["query", "zero", "one", "many"])
+        self.assertEqual(len(evidence.classify("".join(combinations), "member", "consent")["issuerExposure"]), 256)
+
     def test_screenshots_are_forbidden_after_any_credential_checkpoint(self):
         with patch.object(evidence.subprocess, "run") as run:
             for checkpoint in ["email", "password", "mfa", "firstSubmit", "farmWorkspace"]:

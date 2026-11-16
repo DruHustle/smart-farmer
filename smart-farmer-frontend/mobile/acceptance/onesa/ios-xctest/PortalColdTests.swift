@@ -59,6 +59,70 @@ final class PortalColdTests: XCTestCase {
     @MainActor private lazy var authSheet = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")
     @MainActor private lazy var springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
+    private enum IssuerScope: String { case owner, web0, web1, web2 }
+    private enum IssuerTarget: String {
+        case state, webViews, heading, remember, cancelButton, cancelLink
+        case emailNamed, passwordNamed, emailTyped, passwordTyped
+    }
+    private enum IssuerFact: String {
+        case query, zero, one, many, unknown, suspended, background, foreground
+        case notRunning = "not-running"
+    }
+    private var recordedIssuerFacts = Set<String>()
+
+    private func issuerFact(_ owner: ControlOwner, _ scope: IssuerScope,
+                            _ target: IssuerTarget, _ fact: IssuerFact) {
+        let value = [owner.rawValue, scope.rawValue, target.rawValue, fact.rawValue].joined(separator: " ")
+        guard recordedIssuerFacts.count < 256, recordedIssuerFacts.insert(value).inserted else { return }
+        print("FARMER_XCUI_ISSUER " + value)
+    }
+
+    // Failure-only, before email/password entry. Do not dump an accessibility
+    // tree or read values/URLs: retain only fixed labels, owner states and
+    // bucketed counts. Query markers survive an AX failure inside the probe.
+    @MainActor private func diagnoseIssuerExposure() {
+        print("FARMER_XCUI_ISSUER begin")
+        let owners: [(ControlOwner, XCUIApplication)] = [(.farmer, app), (.authSheet, authSheet), (.safari, safari)]
+        for (name, owner) in owners {
+            issuerFact(name, .owner, .state, .query)
+            let state = owner.state
+            let fact: IssuerFact
+            switch state {
+            case .notRunning: fact = .notRunning
+            case .runningBackgroundSuspended: fact = .suspended
+            case .runningBackground: fact = .background
+            case .runningForeground: fact = .foreground
+            case .unknown: fact = .unknown
+            @unknown default: fact = .unknown
+            }
+            issuerFact(name, .owner, .state, fact)
+            guard state == .runningForeground || state == .runningBackground else { continue }
+            func count(_ scope: IssuerScope, _ target: IssuerTarget, _ query: () -> Int) -> Int {
+                issuerFact(name, scope, target, .query)
+                let value = query()
+                issuerFact(name, scope, target, value == 0 ? .zero : value == 1 ? .one : .many)
+                return value
+            }
+            func inspect(_ root: XCUIElement, _ scope: IssuerScope) {
+                _ = count(scope, .heading) { root.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Sign in to Onesa")).count }
+                _ = count(scope, .remember) { root.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Remember this browser")).count }
+                _ = count(scope, .cancelButton) { root.buttons.matching(NSPredicate(format: "label == %@", "Cancel sign-in")).count }
+                _ = count(scope, .cancelLink) { root.links.matching(NSPredicate(format: "label == %@", "Cancel sign-in")).count }
+                _ = count(scope, .emailNamed) { root.textFields.matching(NSPredicate(format: "label == %@", "Email address")).count }
+                _ = count(scope, .passwordNamed) { root.secureTextFields.matching(NSPredicate(format: "label == %@", "Password")).count }
+                _ = count(scope, .emailTyped) { root.textFields.count }
+                _ = count(scope, .passwordTyped) { root.secureTextFields.count }
+            }
+            inspect(owner, .owner)
+            let total = count(.owner, .webViews) { owner.webViews.count }
+            let scopes: [IssuerScope] = [.web0, .web1, .web2]
+            for index in 0..<min(total, scopes.count) {
+                inspect(owner.webViews.element(boundBy: index), scopes[index])
+            }
+        }
+        print("FARMER_XCUI_ISSUER complete")
+    }
+
     @MainActor private func waitFor(_ check: () -> Bool, seconds: TimeInterval = 45) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
@@ -418,6 +482,7 @@ final class PortalColdTests: XCTestCase {
             cancel = self.portalCancel()
             return cancel != nil
         }
+        if !visible { diagnoseIssuerExposure() }
         try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
         // A real denied issuer callback must return through the operating-system
         // browser link. Merely observing an HTTP 200 is not sufficient.
@@ -452,6 +517,7 @@ final class PortalColdTests: XCTestCase {
             surface = self.portalWeb() ?? self.embeddedIssuer()
             return surface != nil
         }
+        if !visible { diagnoseIssuerExposure() }
         let web = try XCTUnwrap(visible ? surface : nil, "System browser owns the issuer form")
         let email = try XCTUnwrap(env["FARMER_EMAIL"], "Synthetic email exists")
         let password = try XCTUnwrap(env["FARMER_PASSWORD"], "Synthetic password exists")
