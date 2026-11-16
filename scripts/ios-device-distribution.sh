@@ -9,8 +9,47 @@ case "$archive" in /*.xcarchive) ;; *) echo 'Use an absolute .xcarchive path.' >
 
 inspect_app() {
   local app="$1" binary
-  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = "$bundle"
-  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
+  python3 - "$app/Info.plist" "$bundle" <<'PY'
+import json, plistlib, re, sys
+from pathlib import Path
+info = plistlib.loads(Path(sys.argv[1]).read_bytes())
+config = json.loads(Path('app.json').read_text())['expo']
+expected = {'CFBundleIdentifier': sys.argv[2], 'CFBundleShortVersionString': config['version'],
+            'CFBundleVersion': config['ios']['buildNumber']}
+for key, value in expected.items():
+    if info.get(key) != value:
+        sys.exit(f'{key} differs from the release configuration')
+sdk = re.fullmatch(r'iphoneos(\d+)(?:\.\d+)*', info.get('DTSDKName', ''))
+if not sdk or int(sdk[1]) < 26 or int(info.get('DTXcode', '0')) < 2600 or 'iPhoneOS' not in info.get('CFBundleSupportedPlatforms', []):
+    sys.exit('Expected an iPhoneOS archive built with Xcode 26 and iOS SDK 26 or later')
+schemes = {s for item in info.get('CFBundleURLTypes', []) for s in item.get('CFBundleURLSchemes', [])}
+if config['scheme'] not in schemes:
+    sys.exit('The device app is missing the Onesa return URL scheme')
+for key in ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription', 'NSPhotoLibraryUsageDescription', 'NSFaceIDUsageDescription'):
+    if not info.get(key, '').strip():
+        sys.exit(f'The device app is missing {key}')
+privacy = plistlib.loads(Path(sys.argv[1]).with_name('PrivacyInfo.xcprivacy').read_bytes())
+configured = config['ios']['privacyManifests']
+declared = configured['NSPrivacyCollectedDataTypes']
+collected = {row['NSPrivacyCollectedDataType']: row for row in privacy.get('NSPrivacyCollectedDataTypes', [])}
+if not declared or privacy.get('NSPrivacyTracking') != configured['NSPrivacyTracking']:
+    sys.exit('The archive is missing the configured privacy declarations')
+for row in declared:
+    name = row['NSPrivacyCollectedDataType']
+    if collected.get(name) != row:
+        sys.exit(f'The archive privacy declaration differs for {name}')
+# CocoaPods incorporates the required reasons declared by React Native into the app manifest.
+reasons = {row['NSPrivacyAccessedAPIType']: set(row['NSPrivacyAccessedAPITypeReasons'])
+           for row in privacy.get('NSPrivacyAccessedAPITypes', [])}
+react_native = Path('node_modules/react-native')
+for path in ('React/Resources/PrivacyInfo.xcprivacy', 'ReactCommon/react/timing/PrivacyInfo.xcprivacy'):
+    for row in plistlib.loads((react_native / path).read_bytes())['NSPrivacyAccessedAPITypes']:
+        category = row['NSPrivacyAccessedAPIType']
+        if not set(row['NSPrivacyAccessedAPITypeReasons']).issubset(reasons.get(category, set())):
+            sys.exit(f'The archive is missing React Native privacy reasons for {category}')
+print(f'Verified {len(declared)} app data declarations and {len(reasons)} required-reason API categories')
+print(f"Verified {expected['CFBundleIdentifier']} {config['version']} build {expected['CFBundleVersion']} with SDK {info['DTSDKName']} and Xcode {info['DTXcode']}")
+PY
   binary="$app/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
   xcrun lipo "$binary" -verify_arch arm64
   xcrun vtool -show-build "$binary" | grep -Eq 'platform[[:space:]]+(IOS|2)$'
@@ -28,10 +67,14 @@ check_distribution_identity() {
 case "$action" in
   check|archive)
     test ! -e "$archive" || { echo 'Choose a new archive path.' >&2; exit 1; }
+    # The app fails closed if its release bundle has no API origin.
+    export EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-https://farmer.onesa.eu}
+    node --import tsx --input-type=commonjs -e "require('./src/api.ts').apiOrigin(process.env.EXPO_PUBLIC_API_URL, false)"
     options=()
     if [[ "$action" == check ]]; then
       options+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
     else
+      bash ../../scripts/check-store-policies.sh
       : "${APPLE_TEAM_ID:?Set the enrolled Apple team ID}"
       options+=("DEVELOPMENT_TEAM=$APPLE_TEAM_ID")
     fi

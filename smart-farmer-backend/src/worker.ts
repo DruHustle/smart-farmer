@@ -13,6 +13,7 @@ import {
   reconcileOrphanObjects,
 } from "./operations/retention.js";
 import { expireCommands } from "./integrations/equipment.js";
+import { processAccountingDocument } from "./accounting/documents.js";
 
 export async function runMaintenance(db: Pool) {
   const client = await db.connect();
@@ -57,7 +58,8 @@ export async function runMaintenance(db: Pool) {
   const notifications = await deliverNotifications(db);
   const orphanObjects = await reconcileOrphanObjects(db);
   const removedObjects = await collectGarbage(db);
-  return { ...details, notifications, orphanObjects, removedObjects };
+  const accountingScan = await processAccountingDocument(db);
+  return { ...details, notifications, orphanObjects, removedObjects, accountingScan };
 }
 
 if (

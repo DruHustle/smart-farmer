@@ -8,7 +8,7 @@ export type ForumEntry = {
 };
 export type ForumPage<T> = {items:T[];nextCursor:string|null};
 export type ForumThread = {discussion:ForumEntry;replies:ForumPage<ForumEntry>};
-export type ForumReport = {id:string;reason:typeof reportReasons[number];details:string;reportedVersion:number;createdAt:string;entry:ForumEntry};
+export type ForumReport = {id:string;target?:'author'|'content';reason:typeof reportReasons[number];details:string;reportedVersion:number;createdAt:string;entry:ForumEntry};
 export type ForumComposer = {kind:'discussion'|'reply'|'edit';id:string;entry?:ForumEntry;discussionId?:string};
 
 /** Preliminary Shona and Northern Ndebele copy follows the app's language-review policy. */
@@ -17,6 +17,11 @@ export const forumPhrases = {
   intro:['Goveranai ruzivo, mibvunzo nezvamakaona pakurima.','Yabelanani ulwazi, imibuzo lalokho elikubonileyo ekulimeni.'],
   audience:['Mashoko aunogovera pano anoonekwa nevarimi vose vakapinda. Zita rekuratidza raunonyora rinoonekwa; zita rekupinda, zita repurazi nemafaira ako hazvibatanidzwi.','Ulwazi olwabelana lapha lubonwa ngabalimi bonke abangenileyo. Ibizo lokubonisa olibhalayo liyabonakala; ibizo lokungena, elepulazi lamafayela akho akufakwa.'],
   offline:['Dare rinoda indaneti. Zvinyorwa hazviiswe pamutsetse wekutumirwa uye hazvitumirwi zvoga kana indaneti yadzoka.','Inkundla idinga i-inthanethi. Imibhalo ayifakwa emzileni wokuthumela futhi ayithunyelwa yodwa nxa i-inthanethi ibuyile.'],
+  block:['Vharira munyori','Vimba umbhali'], blockedAuthors:['Vanyori vawakavharira','Ababhali obavimbileyo'],
+  unblock:['Bvisa kuvharira','Vula umbhali'], blockHint:['Iwe nemunyori uyu hamuchaonani zvinyorwa zvenyu mudare.','Wena lombhali lo kalisoze libone imibhalo yomunye enkundleni.'],
+  blockSaved:['Munyori avharirwa.','Umbhali usevinjiwe.'], nobodyBlocked:['Hausati wavharira munyori.','Kawukavimbi umbhali.'],
+  rules:['Mitemo yedare','Imithetho yenkundla'], agreeRules:['Ndaverenga uye ndinobvuma mitemo yedare.','Ngiyibalile njalo ngiyayamukela imithetho yenkundla.'],
+  target:['Zvauri kumhan’ara','Okubikayo'], author:['Munyori','Umbhali'],
   newDiscussion:['Tanga hurukuro','Qalisa ingxoxo'],
   discussions:['Hurukuro','Izingxoxo'], mine:['Zvandakanyora','Engikubhalileyo'],
   all:['Misoro yose','Zonke izihloko'], topic:['Musoro wenyaya','Isihloko sendaba'],

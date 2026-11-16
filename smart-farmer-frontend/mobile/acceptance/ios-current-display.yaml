@@ -1,0 +1,4 @@
+appId: eu.onesa.smartfarmer
+---
+# Capture the live XCTest display, including system overlays above Farmer.
+- takeScreenshot: current-system-view

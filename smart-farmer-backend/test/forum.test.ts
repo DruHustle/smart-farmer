@@ -251,7 +251,7 @@ test('reports are version-bound, idempotent and private; only source-farm owners
   assert.equal((await f.get('/reports',reporter,reporter.farmId)).items.length,0);
   const queueResponse=await f.send('GET','/reports'),queue=queueResponse.json();
   assert.equal(queueResponse.statusCode,200,queueResponse.body);assert.equal(queue.items.length,1);
-  assert.deepEqual(Object.keys(queue.items[0]).sort(),['id','reason','details','reportedVersion','createdAt','entry'].sort());
+  assert.deepEqual(Object.keys(queue.items[0]).sort(),['id','target','reason','details','reportedVersion','createdAt','entry'].sort());
   publicEntry(queue.items[0].entry);
   for(const privateValue of [reporter.userId,reporter.username,reporter.farmId,reporter.farmName])assert.equal(queueResponse.body.includes(privateValue),false,privateValue);
   error(await f.send('POST',`/reports/${report.id}/dismiss`,{version:1,reason:'Reviewed the report.'},reporter,reporter.farmId),404,'not_found');
@@ -420,4 +420,33 @@ test('author edits through another current farm cannot outlive source-farm membe
   } finally {
     await locker.query('ROLLBACK');locker.release();if(pending)await pending;
   }
+});
+
+test('blocking a forum author hides both sides of ordinary interaction, survives farm changes and can be undone by its owner', async t => {
+  const f=await fixture(t), other=await f.register('other'), neighbor=await f.register('reader');
+  const post=await f.post('/discussions',discussion()), ownThread=await f.post('/discussions',discussion(),other,other.farmId);
+  const neutral=await f.post('/discussions',discussion(),neighbor,neighbor.farmId);
+  await f.post('/discussions/'+neutral.id+'/replies',replyBody());
+  const fromOther=(method:HTTPMethods,path:string,body?:Record<string,unknown>)=>f.send(method,path,body,other,other.farmId);
+  for(const target of ['author','content']) await f.post('/entries/'+post.id+'/reports',{id:randomUUID(),version:1,reason:'abuse',target},other,other.farmId);
+  assert.deepEqual((await f.get('/reports')).items.map((row:{target:string})=>row.target).sort(),['author','content']);
+  const blockPath='/entries/'+post.id+'/author-block';
+  assert.equal((await fromOther('PUT',blockPath)).statusCode,204);
+  assert.equal((await fromOther('PUT',blockPath)).statusCode,204);
+  const blocked=(await f.get('/blocked-authors',other,other.farmId)).items;
+  assert.equal(blocked.length,1); assert.deepEqual(Object.keys(blocked[0]).sort(),['displayName','id']); assert.notEqual(blocked[0].id,f.owner.userId);
+  await f.join(other);
+  assert.equal((await f.get('/blocked-authors?limit=1',other)).items[0].id,blocked[0].id);
+  assert.equal((await fromOther('GET','/discussions/'+post.id)).statusCode,404);
+  assert.equal((await f.send('GET','/discussions/'+ownThread.id)).statusCode,404);
+  assert.equal((await fromOther('POST','/discussions/'+post.id+'/replies',replyBody())).statusCode,404);
+  const feed=await f.get('/discussions',other,other.farmId);
+  assert.equal(feed.items.some((item:{id:string})=>item.id===post.id),false);
+  assert.equal(feed.items.find((item:{id:string})=>item.id===neutral.id).replyCount,0);
+  assert.equal((await f.get('/discussions/'+neutral.id,other,other.farmId)).replies.items.length,0);
+  assert.equal((await f.get('/discussions/'+neutral.id,neighbor,neighbor.farmId)).replies.items.length,1);
+  await f.send('DELETE','/blocked-authors/'+blocked[0].id);
+  assert.equal((await fromOther('GET','/discussions/'+post.id)).statusCode,404);
+  assert.equal((await fromOther('DELETE','/blocked-authors/'+blocked[0].id)).statusCode,204);
+  assert.equal((await fromOther('GET','/discussions/'+post.id)).statusCode,200);
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
+import { ApiError } from '../api';
 import { Action, assetOptions, c, dateField, Facts, farmPath, Form, memberOptions, numericField, options, projectOptions, Records, selectField, textField, usePanel } from '../completion-ui';
 import { allPages, object, rows, string, type FormField, type Row } from '../product';
 import { textFor } from '../i18n';
@@ -19,10 +20,10 @@ export function EquipmentPanel({ work, language, onNativePrompt }: Props & { onN
   return <><Notice text={textFor(language).equipmentHint} /><Button secondary title={textFor(language).refresh} busy={work.busy} onPress={() => { void work.refresh(); }} />
     {work.canManage ? <Button title={textFor(language).newAsset} onPress={() => setCreate(true)} /> : null}
     <Records items={(work.snapshot?.assets || []).map(item => ({ ...item }))} language={language} timezone={zone(work)} titleKey="name" fields={['category', 'make', 'model', 'integration_state', 'fresh', 'last_observed_at']}>{item => <Button testID={`asset-open-${item.id}`} secondary title={c(language, 'details')} onPress={() => setSelected(string(item.id))} />}</Records>
-    <Sheet title={textFor(language).newAsset} visible={create} onClose={() => setCreate(false)} closeLabel={textFor(language).close}>
+    <Sheet title={textFor(language).newAsset} visible={create} onClose={() => setCreate(false)} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>
       <Form work={work} language={language} fields={[textField('name', true), selectField('category', options(language, ['borehole', 'pump', 'pivot', 'valve', 'tank', 'sensor', 'power', 'camera', 'other']), true), textField('model'), selectField('protocol', options(language, ['unconfigured', 'simulator']), true), selectField('parentAssetId', assetOptions(work)), numericField('staleAfterSeconds', true, { type: 'integer', minimum: 10, maximum: 3600 })]} initial={{ protocol: 'unconfigured', staleAfterSeconds: 120 }} submit={body => work.api.request(farmPath(work, '/assets'), 'POST', body)} onSaved={async () => { setCreate(false); await work.refresh(); }} />
     </Sheet>
-    <Sheet title={asset?.name || textFor(language).equipment} visible={Boolean(asset)} onClose={() => setSelected('')} closeLabel={textFor(language).close}>{asset ? <AssetDetail key={asset.id} work={work} language={language} asset={{ ...asset }} onNativePrompt={onNativePrompt} /> : null}</Sheet>
+    <Sheet title={asset?.name || textFor(language).equipment} visible={Boolean(asset)} onClose={() => setSelected('')} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{asset ? <AssetDetail key={asset.id} work={work} language={language} asset={{ ...asset }} onNativePrompt={onNativePrompt} /> : null}</Sheet>
   </>;
 }
 
@@ -53,7 +54,7 @@ function AssetDetail({ work, language, asset, onNativePrompt }: Props & { asset:
     {tab === 'maintenance' ? <>
       {work.canManage ? <Form work={work} language={language} title={c(language, 'add')} fields={[textField('title', true), dateField('dueAt'), numericField('intervalDays', false, { type: 'integer', minimum: 1 }), textField('instructions', false, { multiline: true }), selectField('assigneeId', memberOptions(work)), selectField('projectId', projectOptions(work))]} submit={body => work.api.request(`${base}/maintenance`, 'POST', body)} onSaved={data.reload} /> : null}
       <Records items={data.value?.maintenance || []} language={language} timezone={zone(work)} fields={['status', 'due_at', 'interval_days', 'instructions', 'performed_at', 'hours', 'note']}>{item => work.canManage && item.status === 'planned' ? <Button secondary title={textFor(language).complete} onPress={() => setMaintenance(item)} /> : null}</Records>
-      <Sheet title={c(language, 'maintenance')} visible={Boolean(maintenance)} onClose={() => setMaintenance(null)} closeLabel={textFor(language).close}>{maintenance ? <Form work={work} language={language} includeId={false} fields={[selectField('status', options(language, ['completed', 'cancelled']), true), textField('note', true), dateField('performedAt', false), numericField('hours'), numericField('amount'), textField('currency', false, { maxLength: 3 })]} initial={{ status: 'completed', performedAt: farmNow(zone(work)) }} submit={body => work.api.request(farmPath(work, `/maintenance/${maintenance.id}`), 'PATCH', { ...body, version: maintenance.version })} onSaved={async () => { setMaintenance(null); await data.reload(); }} /> : null}</Sheet>
+      <Sheet title={c(language, 'maintenance')} visible={Boolean(maintenance)} onClose={() => setMaintenance(null)} closeLabel={textFor(language).close} keyboardDismissLabel={textFor(language).hideKeyboard}>{maintenance ? <Form work={work} language={language} includeId={false} fields={[selectField('status', options(language, ['completed', 'cancelled']), true), textField('note', true), dateField('performedAt', false), numericField('hours'), numericField('amount'), textField('currency', false, { maxLength: 3 })]} initial={{ status: 'completed', performedAt: farmNow(zone(work)) }} submit={body => work.api.request(farmPath(work, `/maintenance/${maintenance.id}`), 'PATCH', { ...body, version: maintenance.version })} onSaved={async () => { setMaintenance(null); await data.reload(); }} /> : null}</Sheet>
     </> : null}
     {tab === 'media' ? <MediaPanel work={work} language={language} assetId={string(asset.id)} onNativePrompt={onNativePrompt} /> : null}
     {tab === 'edit' && work.canManage ? <Form work={work} language={language} key={string(asset.version)} includeId={false} fields={[textField('name', true), ...['make', 'model', 'controller', 'firmware'].map(key => textField(key)), selectField('locationId', (data.value?.locations || []).map(item => ({ value: string(item.id), label: string(item.name) }))), selectField('responsibleId', memberOptions(work)), numericField('staleAfterSeconds', true, { type: 'integer', minimum: 10, maximum: 3600 }), textField('notes', false, { multiline: true }), textField('reason', true)]} initial={{ ...asset, locationId: asset.location_id, responsibleId: asset.responsible_id, staleAfterSeconds: asset.stale_after_seconds }} submit={body => work.api.request(base, 'PATCH', { ...body, version: asset.version })} onSaved={reload} /> : null}
@@ -67,6 +68,38 @@ function IntegrationForm({ work, language, asset, onSaved }: Props & { asset: Ro
 }
 
 function CommandButton({ work, language, asset, command, onSaved }: Props & { asset: Row; command: 'start' | 'stop'; onSaved: () => Promise<void> }) {
-  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const request = useRef<Row | null>(null);
-  return <><Button testID={`command-${command}`} title={c(language, command)} disabled={!work.online || command === 'start' && object(asset.latest_telemetry).interlock_ok !== true} onPress={() => { request.current = { id: Crypto.randomUUID(), command, confirmed: true, expiresAt: new Date(Date.now() + 90_000).toISOString() }; setOpen(true); }} /><Sheet title={`${asset.name} · ${c(language, command)}`} visible={open} onClose={() => setOpen(false)} closeLabel={textFor(language).cancel}><Notice text={c(language, 'commandHint')} /><Facts value={asset} fields={['name', 'model', 'integration_state', 'last_observed_at']} language={language} timezone={zone(work)} /><Button testID="command-confirm" title={c(language, 'confirm')} busy={busy} disabled={!work.online} onPress={() => { if (busy || !request.current) return; setBusy(true); void work.onlineAction(async () => { await work.api.request(farmPath(work, `/assets/${asset.id}/commands`), 'POST', request.current); setOpen(false); await onSaved(); }).finally(() => setBusy(false)); }} /></Sheet></>;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
+  const pending = useRef<{id: string; command: string; confirmed: true; expiresAt: string} | null>(null);
+  async function confirm() {
+    if (!work.online || sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    try {
+      await work.onlineAction(async () => {
+        const intent = pending.current ?? {id: Crypto.randomUUID(), command, confirmed: true as const, expiresAt: new Date(Date.now() + 90_000).toISOString()};
+        pending.current = intent;
+        try {
+          const receipt = await work.api.request<Row>(farmPath(work, `/assets/${asset.id}/commands`), 'POST', intent);
+          if (receipt?.id !== intent.id || typeof receipt.status !== 'string') throw new Error('invalid_response');
+          pending.current = null;
+        } catch (error) {
+          if (error instanceof ApiError && ['command_expired', 'invalid_command_expiry', 'control_not_commissioned', 'telemetry_stale', 'command_in_progress', 'interlock_open'].includes(error.code)) pending.current = null;
+          throw error;
+        }
+        setOpen(false);
+        await onSaved();
+      });
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+  return <><Button testID={`command-${command}`} title={c(language, command)} disabled={!work.online || command === 'start' && object(asset.latest_telemetry).interlock_ok !== true} onPress={() => setOpen(true)} />
+    <Sheet title={`${asset.name} · ${c(language, command)}`} visible={open} onClose={() => setOpen(false)} closeLabel={textFor(language).cancel}>
+      <Notice text={c(language, 'commandHint')} />
+      <Facts value={asset} fields={['name', 'model', 'integration_state', 'last_observed_at']} language={language} timezone={zone(work)} />
+      <Button testID="command-confirm" title={c(language, 'confirm')} busy={busy} disabled={!work.online} onPress={() => { void confirm(); }} />
+    </Sheet></>;
 }

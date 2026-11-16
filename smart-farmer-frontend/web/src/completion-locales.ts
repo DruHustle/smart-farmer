@@ -82,7 +82,7 @@ export const completionPhrases = {
   recordedAt: ["Nguva yakanyorwa", "Isikhathi sokubhala"],
   freshnessSeconds: ["Masekondi chiyero chisati chanzi chekare", "Amasekhondi ukulinganisa kungakabi kudala"],
   connectionReference: ["Zita rekubatanidza rakavanzika", "Ibizo lokuxhuma okuyimfihlo"],
-  privateConnectionHint: ["Shandisa zita rakarongwa pamudziyo wekubatanidza. Usaise pasiwwedhi kana URL yemudziyo.", "Sebenzisa ibizo elilungiselelwe kusixhumi. Ungafaki igama lokudlula kumbe i-URL yesisetshenziswa."],
+  privateConnectionHint: ["Shandisa zita rakarongwa pamudziyo wekubatanidza. Usaise pasiwedhi kana URL yemudziyo.", "Sebenzisa ibizo elilungiselelwe kusixhumi. Ungafaki igama lokudlula kumbe i-URL yesisetshenziswa."],
   address: ["Kero", "Ikheli"],
   scale: ["Chinowedzera chiyero", "Okuphindaphinda isilinganiso"],
   offset: ["Chinowedzerwa pachiyero", "Okwengezwa esilinganisweni"],

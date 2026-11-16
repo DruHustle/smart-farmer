@@ -1,6 +1,20 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {farmTimeToUtc, localDateTime, farmDate} from '../src/lib/time.ts';
+import {farmTimeToUtc, localDateTime, farmDate, currencyMinorUnit, displayMoney, displayNumber} from '../src/lib/time.ts';
+
+test('legacy money and report cells preserve supported currency precision without converting unknown amounts to zero', () => {
+  assert.equal(currencyMinorUnit('USD'), 2);
+  assert.equal(currencyMinorUnit('JPY'), 0);
+  assert.equal(currencyMinorUnit('KWD'), 3);
+  for (const language of ['sn', 'nd']) {
+    assert.equal(displayMoney('12.50', 'USD', language), 'USD 12.50');
+    assert.equal(displayMoney('1250', 'JPY', language), 'JPY 1,250');
+    assert.equal(displayMoney('12.345', 'KWD', language), 'KWD 12.345');
+    assert.equal(displayMoney(null, 'KWD', language), '—');
+    assert.equal(displayNumber('12.345', language, currencyMinorUnit('KWD')), '12.345');
+    assert.equal(displayNumber('1250', language, currencyMinorUnit('JPY')), '1,250');
+  }
+});
 
 test('farm entry keeps Harare wall time independent of the owner device timezone', () => {
   const oldTZ = process.env.TZ;

@@ -52,14 +52,14 @@ export function TodayScreen({ work, language, onRecord }: { work: Workspace; lan
       </Card>
     </View>
     {snapshot.assets.some(asset => ['offline', 'degraded'].includes(asset.integration_state)) ? <Card title={t.equipment}>{snapshot.assets.filter(asset => ['offline', 'degraded'].includes(asset.integration_state)).map(asset => <Text key={asset.id} style={styles.text}>{asset.name} · {label(language, asset.integration_state)}</Text>)}</Card> : null}
-    <Sheet title={task?.title || t.task} visible={Boolean(task)} onClose={() => setTask(null)} closeLabel={t.close}>
+    <Sheet title={task?.title || t.task} visible={Boolean(task)} onClose={() => setTask(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       {work.error ? <Notice error text={errorText(language, work.error)} /> : null}
       <Choice label={t.stage} value={status} onChange={setStatus} closeLabel={t.close} options={(['started', 'completed', 'blocked', ...(work.canManage ? ['cancelled'] : [])] as TaskStatus[]).map(value => ({ value, label: label(language, value) }))} />
       <Field label={t.evidence} value={evidence} onChangeText={setEvidence} multiline maxLength={2000} /><Field label={t.reason} value={reason} onChangeText={setReason} multiline maxLength={2000} />
       <Button title={t.save} onPress={() => { void saveStatus(); }} />
       {task && work.canManage ? <Form work={work} language={language} title={c(language, 'taskDetails')} includeId={false} fields={[textField('title', true, { maxLength: 200 }), textField('instructions', false, { multiline: true }), dateField('dueAt', false), selectField('assigneeId', memberOptions(work)), textField('reason', true, { maxLength: 1000 })]} initial={{ ...task, dueAt: task.due_at ? farmNow(snapshot.farm.timezone, new Date(task.due_at)) : '', assigneeId: task.assignee_id }} submit={body => work.api.request(`/v1/farms/${work.farmId}/tasks/${task.id}`, 'PATCH', { ...body, dueAt: body.dueAt ?? null, assigneeId: body.assigneeId ?? null, version: task.version })} onSaved={async () => { setTask(null); await work.refresh(); }} /> : null}
     </Sheet>
-    <Sheet title={t.newTask} visible={newTask} onClose={() => setNewTask(false)} closeLabel={t.close}>
+    <Sheet title={t.newTask} visible={newTask} onClose={() => setNewTask(false)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>
       <Form work={work} language={language} fields={[textField('title', true, { maxLength: 200 }), textField('instructions', false, { multiline: true }), selectField('projectId', projectOptions(work)), selectField('assigneeId', memberOptions(work)), dateField('dueAt', false)]} submit={body => work.api.request(`/v1/farms/${work.farmId}/tasks`, 'POST', body)} onSaved={async () => { setNewTask(false); await work.refresh(); }} />
     </Sheet>
   </>;

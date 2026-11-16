@@ -1,0 +1,25 @@
+import { z } from 'zod';
+
+export const date = z.iso.date();
+export const currency = z.string().regex(/^[A-Z]{3}$/);
+export const amount = z.string().regex(/^(0|[1-9]\d{0,14})$/);
+const decimal = z.string().regex(/^\d{1,15}(\.\d{1,6})?$/);
+const short = z.string().trim().max(160);
+const email = z.string().trim().max(254).refine(v => !v || z.email().safeParse(v).success, 'invalid_email');
+export const party = z.object({name:short.min(1),address:z.string().trim().max(500).default(''),email:email.default(''),phone:z.string().trim().max(50).default(''),taxNumber:z.string().trim().max(100).default('')}).strict();
+export const business = z.object({legalName:short.min(1),tradingName:short.default(''),address:z.string().trim().max(500).default(''),email:email.default(''),phone:z.string().trim().max(50).default(''),registrationNumber:z.string().trim().max(100).default(''),taxNumber:z.string().trim().max(100).default('')}).strict();
+export const reason = z.string().trim().min(3).max(1000);
+export const requestVersion = {id:z.uuid(),version:z.number().int().positive()};
+export const line = z.object({id:z.uuid(),description:z.string().trim().min(1).max(500),quantity:decimal,unitPrice:decimal,discountMinor:amount,taxRateBps:z.number().int().min(0).max(10000),accountCode:z.string().regex(/^[A-Za-z0-9_-]{2,20}$/).optional(),projectId:z.uuid().nullable().default(null)}).strict();
+export const draftFields = {party,currency,issueDate:date,dueDate:date.nullable().default(null),reference:z.string().trim().max(100).default(''),notes:z.string().max(2000).default(''),terms:z.string().max(2000).default(''),documentId:z.uuid().nullable().default(null),sourceEntryId:z.uuid().nullable().default(null),lines:z.array(line).min(1).max(100).refine(lines=>new Set(lines.map(l=>l.id)).size===lines.length,'duplicate_line_id')};
+export const draftInput = z.object({id:z.uuid(),kind:z.enum(['purchase','sale']),...draftFields}).strict().refine(b=>!b.dueDate||b.dueDate>=b.issueDate,'invalid_due_date');
+export const editInput = z.object({...requestVersion,...draftFields}).strict().refine(b=>!b.dueDate||b.dueDate>=b.issueDate,'invalid_due_date');
+export const finalizeInput = z.object({...requestVersion,confirmed:z.literal(true),reviewed:z.literal(true),duplicateOverrideReason:reason.optional()}).strict();
+export const paymentInput = z.object({...requestVersion,amountMinor:amount,currency,paidOn:date,method:z.enum(['cash','bank','mobile_money','other']),reference:z.string().trim().max(100).default(''),note:z.string().max(1000).default(''),confirmed:z.literal(true)}).strict();
+export const reversePaymentInput = z.object({...requestVersion,paidOn:date,reason,confirmed:z.literal(true)}).strict();
+export const voidInput = z.object({...requestVersion,reason,confirmed:z.literal(true)}).strict();
+export const creditInput = z.object({...requestVersion,amountMinor:amount,issueDate:date,reason,confirmed:z.literal(true)}).strict();
+export const settingsInput = z.object({id:z.uuid(),version:z.number().int().nonnegative(),business,defaultCurrency:currency,invoicePrefix:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/),startingNumber:z.number().int().min(1).max(999999999).optional(),taxRates:z.array(z.object({name:short.min(1),rateBps:z.number().int().min(0).max(10000)}).strict()).max(30).refine(r=>new Set(r.map(x=>x.name.toLocaleLowerCase('en'))).size===r.length,'duplicate_tax_name'),lockedThrough:date.nullable(),reason}).strict();
+export const accountInput = z.object({id:z.uuid(),code:z.string().regex(/^[A-Za-z0-9_-]{2,20}$/),name:short.min(1),type:z.enum(['asset','liability','equity','income','expense'])}).strict();
+export const journalInput = z.object({id:z.uuid(),currency,postedOn:date,description:z.string().trim().min(1).max(500),reason,confirmed:z.literal(true),lines:z.array(z.object({accountCode:z.string().regex(/^[A-Za-z0-9_-]{2,20}$/),debitMinor:amount,creditMinor:amount,description:z.string().max(500).default(''),projectId:z.uuid().nullable().default(null)}).strict()).min(2).max(200)}).strict();
+export const reverseJournalInput = z.object({id:z.uuid(),postedOn:date,reason,confirmed:z.literal(true)}).strict();

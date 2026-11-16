@@ -1,0 +1,10 @@
+# Routing excerpt for the existing dedicated Smart Farmer tunnel. These are the
+# Compose example's host-loopback ports. Credentials and tunnel settings stay
+# in the operator's existing configuration.
+ingress:
+  - hostname: farmer.onesa.eu
+    path: '^/(v1(/.*)?|health|ready|version)$'
+    service: http://127.0.0.1:18131
+  - hostname: farmer.onesa.eu
+    service: http://127.0.0.1:18132
+  - service: http_status:404

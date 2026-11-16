@@ -1,7 +1,7 @@
 import type {FastifyReply, FastifyRequest} from 'fastify';
 import type pg from 'pg';
 import {randomUUID} from 'node:crypto';
-import {currentAdmin, identityConfig, openGrant} from './onesa-identity.js';
+import {currentFarmerAccount, identityConfig, openGrant} from './onesa-identity.js';
 import {sha256} from './security.js';
 
 export class ApiError extends Error {
@@ -11,18 +11,42 @@ export class ApiError extends Error {
 }
 export const writeRoles = ['owner','manager','worker'];
 export const manageRoles = ['owner','manager'];
-export function createContext(db: pg.Pool, central: ReturnType<typeof identityConfig> = null) {
-  async function user(req: FastifyRequest, reply: FastifyReply) {
+export function createContext(db: pg.Pool, central: ReturnType<typeof identityConfig>, localCredentials: boolean) {
+  async function user(req: FastifyRequest, reply: FastifyReply, requireFreshMfa = false) {
     const value = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
     if (!value) { reply.code(401).send({error:'unauthorized'}); return null; }
-    const result = await db.query('SELECT s.user_id,s.onesa_grant,u.onesa_subject,u.onesa_issuer FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [sha256(value)]);
+    const result = await db.query('SELECT s.user_id,s.onesa_grant,s.onesa_token_issuer,u.onesa_subject,u.onesa_issuer FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [sha256(value)]);
     if (!result.rowCount) { reply.code(401).send({error:'unauthorized'}); return null; }
     const account = result.rows[0];
+    if (!account.onesa_subject && !localCredentials) {
+      reply.code(401).send({error:'onesa_sign_in_required'}); return null;
+    }
     if (account.onesa_subject) {
-      if (!central || central.issuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
-      await currentAdmin(central, openGrant(account.onesa_grant, value), account.onesa_subject);
-      const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
-      if (!live.rowCount) throw new ApiError('unauthorized',401);
+      try {
+        if (central && central.issuer !== (account.onesa_token_issuer ?? account.onesa_issuer)) {
+          // A session minted by the other authority cannot cross a cutover or rollback.
+          reply.code(401).send({error:'onesa_sign_in_required'}); return null;
+        }
+        if (!central || central.accountIssuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
+        const claims = await currentFarmerAccount(central, openGrant(account.onesa_grant, value), account.onesa_subject);
+        if (requireFreshMfa && central.managed) {
+          const proof = 'mfaTime' in claims ? claims.mfaTime : undefined;
+          const now = Math.floor(Date.now()/1000);
+          if (typeof proof !== 'number' || !Number.isSafeInteger(proof) || proof > now || now-proof >= 300) {
+            reply.code(403).send({error:'fresh_mfa_required'}); return null;
+          }
+        }
+        const live = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [sha256(value)]);
+        if (!live.rowCount) throw new ApiError('unauthorized',401);
+      } catch (error) {
+        // Restored central access requires a fresh sign-in after an explicit
+        // rejection. Delete only this session and its encrypted grant; a
+        // temporary issuer outage remains retryable on the same bearer.
+        if (error instanceof ApiError && [401,403].includes(error.status)) {
+          await db.query('DELETE FROM sessions WHERE token_hash=$1', [sha256(value)]);
+        }
+        throw error;
+      }
     }
     return account.user_id as string;
   }

@@ -1,6 +1,6 @@
 export type Language = 'sn' | 'nd';
 export type Role = 'owner' | 'manager' | 'worker' | 'adviser' | 'veterinarian';
-export type Session = { token: string; userId: string; username: string; language: Language; expiresAt: string; origin: string };
+export type Session = { token: string; userId: string; username: string; language: Language; expiresAt: string; origin: string; localFixture?: true; portalAccountUrl?: string };
 export type Farm = { id: string; name: string; timezone: string; role: Role };
 export const enterpriseTypes = ['crop', 'broiler', 'layer', 'breeder', 'hatchery', 'rabbit_breeding', 'rabbit_growout', 'fish', 'fish_nursery', 'fish_breeder', 'fish_hatchery'] as const;
 export type EnterpriseType = typeof enterpriseTypes[number];
@@ -55,7 +55,7 @@ export type Mutation = {
 };
 export type MediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'audio/mp4' | 'audio/mpeg' | 'audio/webm' | 'audio/wav' | 'application/pdf';
 export type Attachment = {
-  id: string; farmId: string; activityId?: string; assetId?: string; financial?: boolean; mimeType: MediaType; filename: string;
+  id: string; farmId: string; activityId?: string; assetId?: string; accountingDocument?: boolean; documentId?: string; financial?: boolean; mimeType: MediaType; filename: string;
   dataBase64: string; sizeBytes: number; state: 'draft' | 'pending' | 'synced' | 'blocked' | 'conflict';
   attempts: number; lastError: string | null; createdAt: string;
 };

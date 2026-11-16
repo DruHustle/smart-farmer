@@ -161,7 +161,7 @@ export async function collectGarbage(db: Pool, max = 20) {
       await c.query("SELECT id FROM farms WHERE id=$1 FOR UPDATE", [r.farm_id]);
       const referenced = (
         await c.query(
-          "SELECT 1 FROM private_media WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_segments WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_snapshots WHERE object_key=$1 LIMIT 1",
+          "SELECT 1 FROM private_media WHERE object_key=$1 UNION ALL SELECT 1 FROM accounting_documents WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_segments WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_snapshots WHERE object_key=$1 LIMIT 1",
           [r.object_key],
         )
       ).rowCount;
@@ -233,7 +233,7 @@ export async function reconcileOrphanObjects(db: Pool) {
       if (object.modifiedAt.getTime() > Date.now() - 86400000) continue;
       const referenced = (
         await c.query(
-          "SELECT 1 FROM private_media WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_segments WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_snapshots WHERE object_key=$1 LIMIT 1",
+          "SELECT 1 FROM private_media WHERE object_key=$1 UNION ALL SELECT 1 FROM accounting_documents WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_segments WHERE object_key=$1 UNION ALL SELECT 1 FROM camera_snapshots WHERE object_key=$1 LIMIT 1",
           [object.key],
         )
       ).rowCount;

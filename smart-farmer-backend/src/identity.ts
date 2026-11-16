@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ApiError, audit, type Context, manageRoles} from './context.js';
 import {hashPassword, verifyPassword, sha256, token} from './security.js';
+import {idempotent} from './product/common.js';
 import {NODE_RED_CAPABILITY} from './node-red/types.js';
 
 const uuid=z.string().uuid();
@@ -30,9 +31,28 @@ async function lockMembershipChange(client:PoolClient,farmId:string,actorId:stri
   return target.rows[0];
 }
 
-export function registerIdentity(app:FastifyInstance, ctx:Context) {
+async function revokeEquipmentCommands(client:PoolClient,farmId:string,userId:string,reason:string) {
+  const changed=await client.query(
+    `UPDATE equipment_commands
+     SET status=CASE WHEN status='authorized' THEN 'rejected' ELSE 'outcome_unknown' END,
+         completed_at=clock_timestamp(),reason=$3
+     WHERE farm_id=$1 AND actor_id=$2
+       AND status IN ('authorized','dispatched','acknowledged')
+     RETURNING id,status`,
+    [farmId,userId,reason]
+  );
+  for(const command of changed.rows) {
+    await client.query(
+      'INSERT INTO command_audit(command_id,status,detail) VALUES($1,$2,$3)',
+      [command.id,command.status,reason]
+    );
+  }
+}
+
+export function registerIdentity(app:FastifyInstance, ctx:Context, localCredentials:boolean) {
   const {db,user,member,transaction}=ctx;
   app.post('/v1/register',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=credentials.extend({language,farmName:z.string().trim().min(1).max(100)}).strict().parse(req.body);
     const passwordHash=await hashPassword(b.password), recoveryCode=token();
     const result=await transaction(async client=>{
@@ -46,6 +66,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     return reply.code(201).send(result);
   });
   app.post('/v1/sessions',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=credentials.extend({deviceName:z.string().trim().max(80).default('Device')}).strict().parse(req.body);
     const result=await db.query('SELECT id,username,password_hash,language FROM users WHERE username=$1',[b.username]);
     const account=result.rows[0];
@@ -71,6 +92,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   app.delete('/v1/sessions/current',async(req,reply)=>{const id=await user(req,reply);if(!id)return;await db.query('DELETE FROM sessions WHERE token_hash=$1',[sha256(req.headers.authorization!.slice(7))]);return reply.code(204).send();});
   app.delete('/v1/sessions/:sessionId',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {sessionId}=z.object({sessionId:uuid}).parse(req.params);await db.query('DELETE FROM sessions WHERE user_id=$1 AND id=$2',[id,sessionId]);return reply.code(204).send();});
   app.post('/v1/recovery-codes',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const id=await user(req,reply);if(!id)return;const b=z.object({password}).strict().parse(req.body);
     const a=await db.query('SELECT password_hash FROM users WHERE id=$1',[id]);
     if(!await verifyPassword(b.password,a.rows[0].password_hash))throw new ApiError('invalid_credentials',401);
@@ -82,6 +104,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     reply.header('Cache-Control','no-store');return {recoveryCode};
   });
   app.post('/v1/recover',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
     const b=z.object({username,password,recoveryCode:z.string().min(32).max(100)}).strict().parse(req.body);
     const newHash=await hashPassword(b.password);
     await transaction(async client=>{
@@ -97,9 +120,19 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   });
   app.get('/v1/farms',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const r=await db.query('SELECT f.id,f.name,f.timezone,m.role FROM farms f JOIN memberships m ON m.farm_id=f.id WHERE m.user_id=$1 ORDER BY f.name',[id]);return {items:r.rows,capabilities:[NODE_RED_CAPABILITY]};});
   app.post('/v1/farms',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const b=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(80).default('Africa/Harare')}).strict().parse(req.body);
-    try{new Intl.DateTimeFormat('en',{timeZone:b.timezone});}catch{throw new ApiError('invalid_timezone');}
-    const farmId=randomUUID();await transaction(async c=>{await c.query('INSERT INTO farms(id,name,timezone) VALUES($1,$2,$3)',[farmId,b.name,b.timezone]);await c.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[id,farmId]);});return reply.code(201).send({id:farmId});
+    const actor = await user(req,reply);
+    if (!actor) return;
+    const body = z.object({id:uuid.optional(), name:z.string().trim().min(1).max(100), timezone:z.string().max(80).default('Africa/Harare')}).strict().parse(req.body);
+    try { new Intl.DateTimeFormat('en',{timeZone:body.timezone}); } catch { throw new ApiError('invalid_timezone'); }
+    const result = await idempotent(ctx, null, actor, body.id ?? randomUUID(),
+      {operation:'create-farm', name:body.name, timezone:body.timezone}, async client => {
+        const farmId = randomUUID();
+        await client.query('INSERT INTO farms(id,name,timezone) VALUES($1,$2,$3)',[farmId,body.name,body.timezone]);
+        await client.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[actor,farmId]);
+        return {id:farmId};
+      });
+    if (result.replayed && !await member(result.body.id,actor)) throw new ApiError('not_found',404);
+    return reply.code(result.replayed ? 200 : 201).send(result.body);
   });
   app.get('/v1/farms/:farmId/members',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id))throw new ApiError('not_found',404);const r=await db.query('SELECT u.id,u.username,m.role FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.farm_id=$1 ORDER BY u.username',[farmId]);return {items:r.rows};});
   app.post('/v1/farms/:farmId/invitations',async(req,reply)=>{
@@ -113,13 +146,31 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
   app.get('/v1/farms/:farmId/invitations',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id,manageRoles))throw new ApiError('not_found',404);const q=z.object({limit:z.coerce.number().int().min(1).max(100).default(100),cursor:uuid.optional()}).parse(req.query);const r=await db.query('SELECT id,role,expires_at,accepted_at,created_at FROM invitations WHERE farm_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3',[farmId,q.cursor??null,q.limit+1]);return {items:r.rows.slice(0,q.limit),nextCursor:r.rows.length>q.limit?r.rows[q.limit-1].id:null};});
   app.delete('/v1/farms/:farmId/invitations/:invitationId',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId,invitationId}=z.object({farmId:uuid,invitationId:uuid}).parse(req.params);if(!await member(farmId,id,manageRoles))throw new ApiError('not_found',404);await db.query('DELETE FROM invitations WHERE farm_id=$1 AND id=$2 AND accepted_at IS NULL',[farmId,invitationId]);return reply.code(204).send();});
   app.post('/v1/invitations/accept',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if (!localCredentials && !req.headers.authorization) throw new ApiError('onesa_sign_in_required',403);
     const b=z.object({token:z.string().length(43),username:username.optional(),password:password.optional(),language:language.optional()}).strict().parse(req.body);
     const existingUser=req.headers.authorization?await user(req,reply):null;if(req.headers.authorization&&!existingUser)return;
     if(!existingUser&&(!b.username||!b.password||!b.language))throw new ApiError('credentials_required');
     const newHash=existingUser?null:await hashPassword(b.password!),recoveryCode=existingUser?undefined:token();
     const result=await transaction(async client=>{
-      const r=await client.query('SELECT * FROM invitations WHERE token_hash=$1 AND expires_at>now() AND accepted_at IS NULL FOR UPDATE',[sha256(b.token)]);
-      if(!r.rowCount)throw new ApiError('invalid_invitation',400);const invitation=r.rows[0];
+      // Invitation acceptance and owner membership changes must share the same
+      // farm-level lock. Otherwise a creator can be revoked after this check but
+      // before the invited membership is inserted, leaving a stale invitation
+      // usable while the revocation transaction waits to delete that invitation.
+      // Read only the farm ID first, then acquire locks in the same farm -> row
+      // order used by lockMembershipChange before revalidating the single-use token.
+      const hint=await client.query(
+        'SELECT farm_id FROM invitations WHERE token_hash=$1 AND expires_at>now() AND accepted_at IS NULL',
+        [sha256(b.token)]
+      );
+      if(!hint.rowCount)throw new ApiError('invalid_invitation',400);
+      const farmId=hint.rows[0].farm_id as string;
+      await client.query('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE',[farmId]);
+      const r=await client.query(
+        'SELECT * FROM invitations WHERE token_hash=$1 AND farm_id=$2 AND expires_at>now() AND accepted_at IS NULL FOR UPDATE',
+        [sha256(b.token),farmId]
+      );
+      if(!r.rowCount)throw new ApiError('invalid_invitation',400);
+      const invitation=r.rows[0];
       const creator=await client.query('SELECT role FROM memberships WHERE user_id=$1 AND farm_id=$2',[invitation.created_by,invitation.farm_id]);
       if(!creator.rowCount||!manageRoles.includes(creator.rows[0].role)||(invitation.role==='manager'&&creator.rows[0].role!=='owner'))throw new ApiError('invalid_invitation',400);
       const userId=existingUser??randomUUID();
@@ -132,16 +183,17 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
     return reply.code(201).send(result);
   });
   app.patch('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
+    const id=await user(req,reply,true);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     const b=z.object({role:z.enum(['owner','manager','worker','adviser'])}).strict().parse(req.body);
     await transaction(async c=>{
       const previous=await lockMembershipChange(c,farmId,id,userId,b.role);
       await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);
+      if(!manageRoles.includes(b.role))await revokeEquipmentCommands(c,farmId,userId,'actor_role_revoked');
       await audit(c,farmId,id,'membership',userId,'role_changed','owner_review',previous,b);
     });return {userId,role:b.role};
   });
   app.delete('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
-    const id=await user(req,reply);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
+    const id=await user(req,reply,true);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
     await transaction(async c=>{
       await lockMembershipChange(c,farmId,id,userId,null);
       const assignment=[farmId,userId];
@@ -150,6 +202,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context) {
       await c.query('UPDATE incidents SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2',assignment);
       await c.query("UPDATE asset_maintenance SET assignee_id=NULL,version=version+1 WHERE farm_id=$1 AND assignee_id=$2 AND status='planned'",assignment);
       await c.query('UPDATE assets SET responsible_id=NULL,version=version+1 WHERE farm_id=$1 AND responsible_id=$2',assignment);
+      await revokeEquipmentCommands(c,farmId,userId,'actor_membership_revoked');
       await c.query('DELETE FROM memberships WHERE farm_id=$1 AND user_id=$2',assignment);
       await c.query('DELETE FROM invitations WHERE farm_id=$1 AND created_by=$2 AND accepted_at IS NULL',assignment);
       await audit(c,farmId,id,'membership',userId,'access_revoked','owner_review');

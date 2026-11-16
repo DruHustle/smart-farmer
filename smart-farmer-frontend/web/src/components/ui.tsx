@@ -17,6 +17,7 @@ export function Icon({name, size = 20}: {name: string; size?: number}) {
     equipment: <><path d="M4 8h16v10H4ZM8 8V4h8v4M1 13h3m16 0h3M8 18v3m8-3v3"/><circle cx="12" cy="13" r="2"/></>,
     people: <><circle cx="9" cy="7" r="3"/><path d="M2 21v-4a7 7 0 0 1 14 0v4M16 4a3 3 0 0 1 0 6m3 3a7 7 0 0 1 3 6v2"/></>,
     reports: <><path d="M5 2h10l4 4v16H5ZM14 2v5h5M8 12h8m-8 4h8"/></>,
+    accounting: <><path d="M5 2h14v20H5ZM8 6h8M8 11h2m4 0h2M8 15h2m4 0h2M8 19h2m4 0h2"/></>,
     incidents: <><path d="m12 3 10 18H2Zm0 6v5"/><circle cx="12" cy="17" r=".5"/></>,
     security: <><path d="m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Z"/><path d="m8 12 3 3 5-6"/></>,
     lock: <><rect x="5" y="10" width="14" height="12" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4m-4 5v3"/></>,
@@ -62,7 +63,7 @@ export function Form({onSubmit, children, className = ''}: {onSubmit: (data: For
   const submit = async (e: FormEvent<HTMLFormElement>) => {e.preventDefault(); if (submitting.current) return; const form = e.currentTarget; const invalid = [...form.elements].find(element => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? !element.validity.valid : false) as HTMLElement | undefined; if (invalid) {notify(t.invalid_input); invalid.focus(); return;} submitting.current=true; setPending(true); try {await onSubmit(new FormData(form),form);} finally {submitting.current=false; setPending(false);}};
   return <form noValidate className={`form-grid ${className}`} aria-busy={pending} inert={pending} onSubmit={submit}>{children}</form>;
 }
-export function Submit({children}: {children?: ReactNode}) {const {busy, t} = useFarm(); return <button type="submit" className="primary" disabled={busy}>{children ?? t.save}</button>;}
+export function Submit({children, disabled = false}: {children?: ReactNode; disabled?: boolean}) {const {busy, t} = useFarm(); return <button type="submit" className="primary" disabled={busy || disabled}>{children ?? t.save}</button>;}
 export function CurrencyFields({required = false}: {required?: boolean}) {const {t} = useFarm(); return <div className="field-row"><Field label={t.amount}><input name="amount" type="number" min="0" step="0.01" required={required}/></Field><Field label={t.currency}><input name="currency" maxLength={3} minLength={3} pattern="[A-Za-z]{3}" placeholder="USD" required={required} autoCapitalize="characters"/></Field></div>;}
 export function VoiceRecorder({onFile}: {onFile: (file: File) => void}) {
   const {t, notify} = useFarm(); const [active, setActive] = useState(false); const recorder = useRef<MediaRecorder | null>(null); const stream = useRef<MediaStream | null>(null);

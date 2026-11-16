@@ -1,0 +1,4 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: accounting-intake-pick.yaml
+- runFlow: accounting-intake-check-local.yaml

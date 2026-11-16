@@ -16,7 +16,8 @@ export async function storageUsage(db: Pool | PoolClient, farmId: string) {
   const row = (
     await db.query(
       `SELECT
-    (SELECT COALESCE(sum(size_bytes),0) FROM private_media WHERE farm_id=$1) AS media,
+    (SELECT COALESCE(sum(size_bytes),0) FROM private_media WHERE farm_id=$1) +
+    (SELECT COALESCE(sum(size_bytes),0) FROM accounting_documents WHERE farm_id=$1) AS media,
     (SELECT COALESCE(sum(size_bytes),0) FROM camera_segments WHERE farm_id=$1) +
     (SELECT COALESCE(sum(size_bytes),0) FROM camera_snapshots WHERE farm_id=$1) AS camera,
     (SELECT COALESCE(sum(size_bytes),0) FROM object_garbage WHERE farm_id=$1 AND deleted_at IS NULL AND media_kind IN ('field','unknown')) AS pending_media,

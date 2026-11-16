@@ -68,6 +68,97 @@ test('worker invitation, multi-farm membership, preference, recovery, one-use to
   }finally{await f.close();}
 });
 
+test('invitation acceptance serializes with the creator owner revocation',async()=>{
+  const f=await fixture();
+  const advisoryKey=BigInt('0x'+randomUUID().replaceAll('-','').slice(0,15)).toString();
+  let blocker:pg.PoolClient|null=null;
+  let accept:Promise<any>|null=null;
+  let revoke:Promise<any>|null=null;
+  try{
+    const second=await f.app.inject({method:'POST',url:'/v1/register',payload:{
+      username:'second_farm_owner',password,language:'sn',farmName:'Second owner farm'
+    }});
+    assert.equal(second.statusCode,201,second.body);
+    const secondUser=second.json();
+    await f.db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'owner')",[secondUser.userId,f.farmId]);
+    const secondLogin=await f.app.inject({method:'POST',url:'/v1/sessions',payload:{username:'second_farm_owner',password}});
+    assert.equal(secondLogin.statusCode,200,secondLogin.body);
+    const secondHeaders={authorization:`Bearer ${secondLogin.json().token}`};
+
+    const invited=await f.app.inject({method:'POST',url:'/v1/register',payload:{
+      username:'invited_existing_user',password,language:'nd',farmName:'Invited user farm'
+    }});
+    assert.equal(invited.statusCode,201,invited.body);
+    const invitedUser=invited.json();
+    const invitedLogin=await f.app.inject({method:'POST',url:'/v1/sessions',payload:{username:'invited_existing_user',password}});
+    assert.equal(invitedLogin.statusCode,200,invitedLogin.body);
+    const invitedHeaders={authorization:`Bearer ${invitedLogin.json().token}`};
+
+    const invitation=await f.post('/invitations',{role:'worker'});
+    await f.db.query(`
+      CREATE FUNCTION hold_invited_membership() RETURNS trigger LANGUAGE plpgsql AS $hold$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(${advisoryKey}::bigint);
+        RETURN NEW;
+      END; $hold$;
+      CREATE TRIGGER hold_invited_membership BEFORE INSERT ON memberships
+      FOR EACH ROW WHEN (
+        NEW.user_id='${invitedUser.userId}'::uuid AND NEW.farm_id='${f.farmId}'::uuid
+      ) EXECUTE FUNCTION hold_invited_membership();
+    `);
+
+    blocker=await f.db.connect();
+    await blocker.query('SELECT pg_advisory_lock($1::bigint)',[advisoryKey]);
+    const blockerPid=Number((await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
+    accept=f.app.inject({method:'POST',url:'/v1/invitations/accept',headers:invitedHeaders,payload:{token:invitation.token}});
+    const waitFor=async(predicate:(rows:any[])=>boolean,message:string)=>{
+      const deadline=Date.now()+8000;
+      while(Date.now()<deadline){
+        const result=await f.db.query(`
+          SELECT pid,query,wait_event_type,wait_event,pg_blocking_pids(pid) AS blockers
+          FROM pg_stat_activity
+          WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+        `);
+        if(predicate(result.rows))return result.rows;
+        await new Promise(resolve=>setTimeout(resolve,40));
+      }
+      assert.fail(message);
+    };
+    const acceptanceWait=await waitFor(rows=>rows.some(row=>
+      row.wait_event==='advisory'&&(row.blockers as number[]).includes(blockerPid)
+    ),'Invitation acceptance did not reach the controlled membership insert');
+    const acceptancePid=Number(acceptanceWait.find(row=>
+      row.wait_event==='advisory'&&(row.blockers as number[]).includes(blockerPid)
+    )!.pid);
+
+    revoke=f.app.inject({method:'DELETE',url:`/v1/farms/${f.farmId}/members/${f.registration.userId}`,headers:secondHeaders});
+    const waiting=await waitFor(rows=>rows.some(row=>
+      String(row.query).includes('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE')&&
+      (row.blockers as number[]).includes(acceptancePid)
+    ),'Owner revocation must wait on the same farm lock as invitation acceptance');
+    assert.ok(waiting.some(row=>
+      String(row.query).includes('SELECT id FROM farms WHERE id=$1 FOR NO KEY UPDATE')&&
+      (row.blockers as number[]).includes(acceptancePid)
+    ));
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,1,
+      'The revocation must not remove the creator while an earlier acceptance owns the farm lock');
+
+    await blocker.query('SELECT pg_advisory_unlock($1::bigint)',[advisoryKey]);
+    const accepted=await accept;
+    assert.equal(accepted.statusCode,201,accepted.body);
+    const revoked=await revoke;
+    assert.equal(revoked.statusCode,204,revoked.body);
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,invitedUser.userId])).rowCount,1,
+      'Acceptance serialized before revocation remains a valid completed membership');
+    assert.equal((await f.db.query('SELECT 1 FROM memberships WHERE farm_id=$1 AND user_id=$2',[f.farmId,f.registration.userId])).rowCount,0);
+  }finally{
+    if(blocker){await blocker.query('SELECT pg_advisory_unlock($1::bigint)',[advisoryKey]).catch(()=>{});blocker.release();}
+    if(accept)await accept.catch(()=>{});
+    if(revoke)await revoke.catch(()=>{});
+    await f.close();
+  }
+});
+
 test('maize facts, version conflict, offline-ID retry, transactional stock/cost/task and competing input use',async()=>{
   const f=await fixture();try{
     const projectId=randomUUID(),p=await f.project('crop',0,{id:projectId});const retry=await f.post('/projects',{id:projectId,name:'Existing maize',crop:'maize',irrigation:true},200);assert.equal(retry.id,p.id);const first=(await f.get('/projects')).items[0];assert.equal(first.planting_date,null);assert.equal(first.area_ha,null);
@@ -87,7 +178,7 @@ test('maize facts, version conflict, offline-ID retry, transactional stock/cost/
     await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:100,currency:'ZAR'});
     for(const amount of [0.1,0.3])await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount,currency:'USD'});
     const fractionalMoney=await f.send('POST','/activities',{id:randomUUID(),projectId:p.id,kind:'cost',observedAt,amount:0.000000001,currency:'USD'});assert.equal(fractionalMoney.statusCode,400);
-    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.40');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.00');
+    const reports=await f.get('/reports');assert.equal(reports.profit,null);assert.equal(reports.totals.find((r:any)=>r.currency==='USD'&&r.kind==='expense').amount,'5.400');assert.equal(reports.totals.find((r:any)=>r.currency==='ZAR'&&r.kind==='expense').amount,'100.000');
     const stock=await f.stock('Harvested maize','kg',0,{projectId:p.id});await f.post('/activities',{id:randomUUID(),projectId:p.id,kind:'harvest',observedAt,stockItemId:stock.id,quantity:12,unit:'kg'});
     await f.post(`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'consumption',quantity:2,unit:'kg',observedAt,reason:'Household consumption'});assert.equal(await f.balance(stock.id),10);
     const tiny=await f.send('POST',`/stock/${stock.id}/movements`,{id:randomUUID(),kind:'adjustment',quantity:0.000000001,unit:'kg',observedAt,reason:'Must not round a recorded operation to zero'});assert.equal(tiny.statusCode,400);assert.equal(await f.balance(stock.id),10);
@@ -129,7 +220,7 @@ test('broilers: placement, feeding, sampled growth, losses, partial sales, payme
     const over=await f.send('POST',`/projects/${p.id}/payments`,{...pay,id:randomUUID(),amount:1});assert.equal(over.statusCode,409);
     await f.event(p.id,'close',{note:'All birds reconciled'});assert.equal((await f.get('/projects')).items[0].status,'closed');
     const after=await f.send('POST',`/projects/${p.id}/events`,{id:randomUUID(),type:'observation',observedAt,note:'Should not mutate closed cycle'});assert.equal(after.statusCode,409);
-    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.00');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.50');
+    const totals=(await f.get('/reports')).totals;assert.equal(totals.find((r:any)=>r.kind==='revenue').amount,'38.000');assert.equal(totals.find((r:any)=>r.kind==='input_consumption').amount,'1.500');
   }finally{await f.close();}
 });
 
@@ -193,4 +284,48 @@ test('treatment restrictions follow animals and egg/chick transfers and cannot b
     await f.event(layer.id,'egg_collection',{count:2,stockItemId:eggs.id});await f.event(incubator.id,'incubation',{count:2,stockItemId:eggs.id});await f.event(incubator.id,'hatch',{count:2,destinationProjectId:chicks.id,metadata:{eggsProcessed:2}});
     const restriction=await f.get(`/projects/${chicks.id}/restrictions`);assert.equal(restriction.items.length,1);const blocked=await f.send('POST',`/projects/${chicks.id}/events`,{id:randomUUID(),type:'sale',observedAt,count:1,amount:2,currency:'USD'});assert.equal(blocked.statusCode,409);
   }finally{await f.close();}
+});
+
+test('deletion requests are private, replayable and withdrawable until claimed', async t => {
+  const f = await fixture(); t.after(f.close);
+  const path = '/v1/me/deletion-request';
+  assert.equal((await f.app.inject({method: 'GET', url: path})).statusCode, 401);
+  assert.equal((await f.send('POST', path, {confirm: false})).statusCode, 400);
+  const submit = () => f.send('POST', path, {confirm: true});
+  const [first, retry] = await Promise.all([submit(), submit()]);
+  assert.equal(first.statusCode, 202, first.body);
+  assert.deepEqual(first.json().request, retry.json().request);
+  assert.equal((await f.send('GET', path)).json().request.id, first.json().request.id);
+  const other = {username: 'other_farmer', password};
+  await f.app.inject({method: 'POST', url: '/v1/register', payload: {...other, language: 'nd', farmName: 'Other farm'}});
+  const login = await f.app.inject({method: 'POST', url: '/v1/sessions', payload: other});
+  const headers = {authorization: 'Bearer ' + login.json().token};
+  assert.equal((await f.app.inject({method:'GET', url:path, headers})).json().request, null);
+  assert.equal((await f.send('DELETE', path)).statusCode, 204);
+  assert.equal((await f.send('GET', path)).json().request, null);
+  const next = await submit();
+  await f.db.query("UPDATE account_deletion_requests SET status='in_review' WHERE id=$1", [next.json().request.id]);
+  assert.equal((await f.send('DELETE', path)).statusCode, 409);
+  assert.equal((await submit()).json().request.status, 'in_review');
+});
+
+test('a farm creation retry returns its original farm and cannot grant another actor a membership', async () => {
+  const f = await fixture();
+  try {
+    const request = {id: randomUUID(), name: 'New irrigation farm'};
+    const replies = await Promise.all([f.send('POST', '/v1/farms', request), f.send('POST', '/v1/farms', request)]);
+    assert.deepEqual(replies.map(reply => reply.statusCode).sort(), [200, 201]);
+    const farm = replies[0]!.json().id;
+    assert.equal(replies[1]!.json().id, farm);
+    assert.equal((await f.send('POST', '/v1/farms', {...request, name:'Another farm'})).statusCode, 409);
+    const other = {username:'other_owner',password};
+    assert.equal((await f.app.inject({method:'POST',url:'/v1/register',payload:{...other,language:'nd',farmName:'Other farm'}})).statusCode, 201);
+    const login = await f.app.inject({method:'POST',url:'/v1/sessions',payload:other});
+    const headers = {authorization: 'Bearer ' + login.json().token};
+    assert.equal((await f.send('POST', '/v1/farms', request, headers)).statusCode, 409);
+    assert.equal((await f.send('GET', '/v1/farms/' + farm + '/members', undefined, headers)).statusCode, 404);
+    assert.equal((await f.db.query('SELECT COUNT(*)::int AS total FROM farms WHERE name=$1',[request.name])).rows[0].total, 1);
+    await f.db.query('DELETE FROM memberships WHERE farm_id=$1', [farm]);
+    assert.equal((await f.send('POST', '/v1/farms', request)).statusCode, 404);
+  } finally { await f.close(); }
 });

@@ -74,10 +74,17 @@ export async function nodeRedJourneys({page, context, api, farm, username, passw
     evidence = JSON.parse(await readFile(controlPath + '.evidence.json', 'utf8'));
     assert.equal(evidence['fixture-north'].posts, 1);
     assert.equal(evidence['fixture-south'].posts, 1);
+    // A rendered locale precedes its profile write. Finish the online change
+    // before the next journey deliberately disconnects this browser.
+    const languageSaved = language => page.waitForResponse(response => response.url() === api + '/v1/me' && response.request().method() === 'PATCH' && response.request().postDataJSON()?.language === language);
+    let savedLanguage = languageSaved('nd');
     await page.getByLabel(sn.language, {exact: true}).selectOption('nd');
+    assert.equal((await savedLanguage).status(), 200);
     await panel.getByRole('heading', {name: nd.nodeRedTitle, exact: true}).waitFor();
     await panel.getByRole('heading', {name: nd.nodeRedInstalled, exact: true}).waitFor();
+    savedLanguage = languageSaved('sn');
     await page.getByLabel(nd.language, {exact: true}).selectOption('sn');
+    assert.equal((await savedLanguage).status(), 200);
     await panel.getByRole('heading', {name: sn.nodeRedTitle, exact: true}).waitFor();
     pass('Node-RED exact review, explicit acknowledgement, gateway invalidation, one POST per action, durable uncertainty, read-only reconciliation and normal-success unlock');
 

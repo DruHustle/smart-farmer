@@ -1,0 +1,6 @@
+
+# Private local engineering artifacts
+/local-tools/worktrees/
+/local-tools/deployment-evidence/
+/local-tools/release-verification/
+/local-tools/migrations/

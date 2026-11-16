@@ -466,22 +466,22 @@ test("manual market, animal and service receipts remain manual, idempotent and i
         {
           source_type: "manual_animal_payment",
           kind: "payment",
-          amount: "3.00",
+          amount: "3.000",
         },
         {
           source_type: "manual_market_payment",
           kind: "payment",
-          amount: "2.00",
+          amount: "2.000",
         },
         {
           source_type: "manual_service_payment",
           kind: "cash_out",
-          amount: "4.00",
+          amount: "4.000",
         },
         {
           source_type: "manual_service_payment",
           kind: "payment",
-          amount: "4.00",
+          amount: "4.000",
         },
       ],
     );

@@ -180,7 +180,9 @@ test("published 001–006 records upgrade through the real migration runner with
           [expense],
         )
       ).rows[0],
-      before,
+      // Widening to three decimal places preserves the exact old value while
+      // allowing currencies such as KWD; only its textual scale changes.
+      { ...before, amount: before.amount + "0" },
     );
     assert.equal(
       (

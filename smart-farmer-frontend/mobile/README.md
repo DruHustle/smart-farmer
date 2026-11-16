@@ -8,6 +8,8 @@ source-farm-owner moderation. It does not attach private farm data or media, and
 it does not queue or replay publication offline. Unsent composer text stays in
 memory only while the form is open. See the [sharing and authority model](../../smart-farmer-backend/docs/forum.md).
 
+Successful device archive and Android package workflows retain review binaries for three days under their Actions run. `ios-unsigned-validation-archive` contains the inspected unsigned ARM64 Xcode archive. `android-disposable-validation-bundle` contains the AAB whose generated APK was installed and relaunched. The workflow deletes its APKs and temporary signing key after the checks. Each review artifact includes its tested Git revision, tree, app version and SHA-256 digest. Store builds require the operator’s production policy URLs and signing identities.
+
 ## Setup and builds
 
 Use Node 24.3 or newer on the Node 24 line. Dependencies are locked to Expo SDK 58 (`expo` 58.0.23), React Native 0.88.1 and React 19.3.0.
@@ -102,6 +104,8 @@ Latest local verification after the document-picker dependency:
 - Native generation completed with document-picker, SQLCipher and private-storage configuration. Review and normalize generated changes before committing; platform generation alone does not establish device behavior.
 
 [Native acceptance CI](../../.github/workflows/native-acceptance.yml) uses Ubuntu/Android emulator and macOS/iPhone/iPad simulators with real compiled development apps. It starts a disposable PostgreSQL API, creates test fixtures through authenticated endpoints, and runs Maestro against the actual app. Its proxy creates a deliberate network outage without mocking the business API. The restart path preserves an encrypted offline record, reauthenticates, reconnects and checks that the server has exactly one record. Additional checks cover permission denial, account privacy, language and tablet layout; acceptance files describe the exact scope. Raw databases, credentials and key material are not uploaded as artifacts. Each run retains native acceptance diagnostics for three days on pull requests and seven days on main or manual runs. Successful main and manual runs also retain a separate debug APK or simulator preview for three days. Failed and manual iOS runs keep the complete Maestro simulator-system logs. Successful automated runs retain app-scoped logs, screenshots, JUnit, observations and assertions.
+
+For the independently witnessed administrator cold and remembered-session checks on a Mac, follow [the iPhone simulator procedure](acceptance/onesa/ios-assisted-admin.md).
 
 Both platforms have compiled the final dependency set, including SQLCipher and the document picker, and passed executed native acceptance:
 

@@ -12,7 +12,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV APP_REVISION=$APP_REVISION
 ENV MEDIA_ROOT=/data/media
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx && \
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng poppler-utils && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx && \
     mkdir -p /data/media && chown node:node /data/media
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist

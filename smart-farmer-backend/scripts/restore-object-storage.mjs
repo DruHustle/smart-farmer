@@ -14,6 +14,7 @@ export async function restoreObjects(db, store, directory) {
   let verified = 0;
   for (const table of [
     "private_media",
+    "accounting_documents",
     "camera_segments",
     "camera_snapshots",
   ]) {

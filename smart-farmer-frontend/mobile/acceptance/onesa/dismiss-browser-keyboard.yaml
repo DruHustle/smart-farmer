@@ -1,0 +1,21 @@
+appId: eu.onesa.smartfarmer
+---
+# WebKit can expose a form button's bounds behind the native keyboard.
+# Safari has a Done toolbar control; native ScrollView swipe behavior does not apply.
+- runFlow:
+    when:
+      platform: iOS
+      visible:
+        id: '^inputView$'
+    commands:
+      - tapOn:
+          text: '^Done$'
+          above:
+            id: '^inputView$'
+      - assertNotVisible:
+          id: '^inputView$'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow: ../dismiss-keyboard.yaml

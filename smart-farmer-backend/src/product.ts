@@ -7,12 +7,14 @@ import { registerFinancialCorrections } from "./product/financial-admin.js";
 import { registerInventory } from "./product/inventory.js";
 import { registerProduction } from "./product/production.js";
 import { runMarketMaintenance } from "./product/market-ledger.js";
+import { registerMarketDiscovery } from "./product/market-discovery.js";
 export function registerProduct(app: FastifyInstance, ctx: Context) {
   registerPlanning(app, ctx);
   registerFinance(app, ctx);
   registerProduction(app, ctx);
   registerInventory(app, ctx);
   registerFinancialCorrections(app, ctx);
+  registerMarketDiscovery(app, ctx);
 }
 export async function runProductMaintenance(client: PoolClient) {
   return runMarketMaintenance(client);

@@ -1,0 +1,27 @@
+appId: eu.onesa.smartfarmer
+---
+# Returning from the Finance choice on iOS can leave the date form on screen.
+# The Finance selector is always above Accounting, regardless of saved offset.
+- runFlow:
+    when:
+      platform: iOS
+      notVisible:
+        id: accounting-tabs
+    commands:
+      - scrollUntilVisible:
+          element: {id: finance-tabs}
+          direction: UP
+          timeout: 30000
+      - scrollUntilVisible:
+          element: {id: accounting-tabs}
+          direction: DOWN
+          timeout: 30000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          centerElement: true
+          element: {id: accounting-tabs}
+          direction: DOWN
+          timeout: 30000

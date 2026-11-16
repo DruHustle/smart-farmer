@@ -14,6 +14,7 @@
 		F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748432D0307B40044C1D9 /* SceneDelegate.swift */; };
 		F6C159959D794017AE538750 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = E6ACC02771B04270AD5C6A2F /* InfoPlist.strings */; };
 		B148C8D1057F4B49A24A003C /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2353AE455F9A4EF3922C1E24 /* InfoPlist.strings */; };
+		F0ABC406A0304E499ABC1435 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BB2366AF515841C9A83F1B02 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		F11748442D0722820044C1D9 /* SmartFarmer-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SmartFarmer-Bridging-Header.h"; path = "SmartFarmer/SmartFarmer-Bridging-Header.h"; sourceTree = "<group>"; };
 		E6ACC02771B04270AD5C6A2F /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "sn.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
 		2353AE455F9A4EF3922C1E24 /* InfoPlist.strings */ = {isa = PBXFileReference; name = "InfoPlist.strings"; path = "nd.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; explicitFileType = undefined; includeInIndex = 0; };
+		BB2366AF515841C9A83F1B02 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; name = "PrivacyInfo.xcprivacy"; path = "SmartFarmer/PrivacyInfo.xcprivacy"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
+				BB2366AF515841C9A83F1B02 /* PrivacyInfo.xcprivacy */,
 			);
 			name = SmartFarmer;
 			sourceTree = "<group>";
@@ -183,6 +186,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
+				F0ABC406A0304E499ABC1435 /* PrivacyInfo.xcprivacy in Resources */,
 				F6C159959D794017AE538750 /* InfoPlist.strings in Resources */,
 				B148C8D1057F4B49A24A003C /* InfoPlist.strings in Resources */,
 			);

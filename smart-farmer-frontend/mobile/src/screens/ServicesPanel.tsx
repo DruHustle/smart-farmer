@@ -13,7 +13,7 @@ type Props = { work: Workspace; language: Language };
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
 const serviceFacts = ['provider_name', 'description', 'service_area', 'capability', 'rate', 'currency', 'rate_basis', 'minimum_charge', 'mobilisation_charge', 'operator_included', 'fuel_included', 'availability_note', 'terms', 'cancellation_terms'];
 
-export function ServicesPanel({ work, language }: Props) {
+export function ServicesPanel({ work, language, onAccounting }: Props & { onAccounting: (farmId: string, invoiceId: string) => Promise<void> }) {
   const [tab, setTab] = useState('services'); const [query, setQuery] = useState(''); const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Row | null>(null); const [edit, setEdit] = useState<Row | null>(null); const [bookingId, setBookingId] = useState('');
   const data = usePanel(work, `services:${search}`, async () => {
@@ -28,9 +28,9 @@ export function ServicesPanel({ work, language }: Props) {
     {tab === 'bookings' ? <Records items={data.value?.bookings || []} language={language} timezone={zone(work)} titleKey="name" fields={['status', 'starts_at', 'ends_at', 'requested_quantity', 'requested_unit', 'amount', 'currency', 'deposit_required', 'manually_recorded_paid']}>
       {item => <><Text style={styles.caption}>{c(language, item.is_provider ? 'provider' : 'customer')}</Text><Button secondary title={c(language, 'details')} onPress={() => setBookingId(string(item.id))} /></>}
     </Records> : null}
-    <Sheet title={string(selected?.name) || t.services} visible={Boolean(selected)} onClose={() => setSelected(null)} closeLabel={t.close}>{selected ? <ServiceDetails work={work} language={language} service={selected} own={Boolean(data.value?.own.some(item => item.id === selected.id))} onSaved={reload} /> : null}</Sheet>
-    <Sheet title={t.edit} visible={Boolean(edit)} onClose={() => setEdit(null)} closeLabel={t.close}>{edit ? <ServiceForm work={work} language={language} service={edit} onSaved={async () => { setEdit(null); await reload(); }} /> : null}</Sheet>
-    <Sheet title={c(language, 'bookings')} visible={Boolean(bookingId)} onClose={() => setBookingId('')} closeLabel={t.close}>{booking ? <BookingDetails work={work} language={language} booking={booking} onSaved={reload} /> : null}</Sheet>
+    <Sheet title={string(selected?.name) || t.services} visible={Boolean(selected)} onClose={() => setSelected(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{selected ? <ServiceDetails work={work} language={language} service={selected} own={Boolean(data.value?.own.some(item => item.id === selected.id))} onSaved={reload} /> : null}</Sheet>
+    <Sheet title={t.edit} visible={Boolean(edit)} onClose={() => setEdit(null)} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{edit ? <ServiceForm work={work} language={language} service={edit} onSaved={async () => { setEdit(null); await reload(); }} /> : null}</Sheet>
+    <Sheet title={c(language, 'bookings')} visible={Boolean(bookingId)} onClose={() => setBookingId('')} closeLabel={t.close} keyboardDismissLabel={t.hideKeyboard}>{booking ? <BookingDetails work={work} language={language} booking={booking} onSaved={reload} onAccounting={onAccounting} /> : null}</Sheet>
   </>;
 }
 
@@ -55,7 +55,7 @@ function ServiceDetails({ work, language, service, own, onSaved }: Props & { ser
   </>;
 }
 
-function BookingDetails({ work, language, booking, onSaved }: Props & { booking: Row; onSaved: () => Promise<void> }) {
+function BookingDetails({ work, language, booking, onSaved, onAccounting }: Props & { booking: Row; onSaved: () => Promise<void>; onAccounting: (farmId: string, invoiceId: string) => Promise<void> }) {
   const [tab, setTab] = useState('details'); const base = farmPath(work, `/bookings/${booking.id}`);
   const data = usePanel(work, `booking:${booking.id}:${booking.version}`, async () => { const [history, payments] = await Promise.all([work.api.request<Row>(`${base}/history`), work.api.request<Row>(`${base}/payments`)]); return { history, payments }; });
   const provider = booking.is_provider === true; const customer = booking.is_customer === true; const state = string(booking.status);
@@ -72,10 +72,11 @@ function BookingDetails({ work, language, booking, onSaved }: Props & { booking:
     {tab === 'actualWork' ? <><Records items={rows(data.value?.history.work)} language={language} timezone={zone(work)} fields={['observed_at', 'quantity', 'unit', 'note']} />{provider && state === 'confirmed' ? <Form work={work} language={language} fields={[dateField('observedAt'), numericField('quantity', true, { minimum: 0.000001 }), textField('unit', true, { maxLength: 40 }), textField('note', true, { multiline: true })]} initial={{ observedAt: farmNow(zone(work)), unit: booking.quoted_unit || booking.requested_unit }} submit={body => work.api.request(`${base}/work`, 'POST', body)} onSaved={reload} /> : null}</> : null}
     {tab === 'payments' ? <>
       <Notice text={c(language, 'servicePaymentHint')} /><Facts value={data.value?.payments || {}} fields={['manuallyRecordedPaid', 'outstanding', 'depositOutstanding', 'cancelledHeldPayment']} language={language} />
+      {data.value?.payments.accountingManaged ? <><Notice text={c(language, 'accountingSettlementLocation')} />{data.value.payments.accountingInvoiceId ? <Button secondary title={c(language, 'openAccountingInvoice')} busy={work.busy} onPress={() => { void onAccounting(work.farmId, string(data.value?.payments.accountingInvoiceId)).catch(work.setError); }} /> : null}</> : null}
       <Records items={rows(data.value?.payments.items)} language={language} timezone={zone(work)} fields={['kind', 'status', 'amount', 'currency', 'note', 'created_at', 'acknowledged_at']}>
-        {item => provider && item.status === 'declared' ? <Action work={work} language={language} title={c(language, 'acknowledgePayment')} detail={`${item.amount} ${item.currency} · ${item.note}`} action={() => work.api.request(`${base}/payments/${item.id}/acknowledge`, 'POST', {})} onSaved={reload} /> : null}
+        {item => provider && item.status === 'declared' && !data.value?.payments.accountingManaged ? <Action work={work} language={language} title={c(language, 'acknowledgePayment')} detail={`${item.amount} ${item.currency} · ${item.note}`} action={() => work.api.request(`${base}/payments/${item.id}/acknowledge`, 'POST', {})} onSaved={reload} /> : null}
       </Records>
-      {['confirmed', 'completed'].includes(state) || state === 'cancelled' && provider ? <Form work={work} language={language} title={c(language, provider ? 'recordPayment' : 'declarePayment')} fields={[selectField('kind', options(language, [...(state !== 'cancelled' ? ['deposit', 'balance'] : []), ...(provider ? ['refund'] : [])]), true), numericField('amount', true, { minimum: 0.01 }), currencyField, textField('note', true, { multiline: true })]} initial={{ currency: booking.currency, kind: state === 'cancelled' ? 'refund' : 'deposit' }} submit={body => work.api.request(`${base}/payments`, 'POST', body)} onSaved={reload} /> : null}
+      {!data.value?.payments.accountingManaged && (['confirmed', 'completed'].includes(state) || state === 'cancelled' && provider) ? <Form work={work} language={language} title={c(language, provider ? 'recordPayment' : 'declarePayment')} fields={[selectField('kind', options(language, [...(state !== 'cancelled' ? ['deposit', 'balance'] : []), ...(provider ? ['refund'] : [])]), true), numericField('amount', true, { minimum: 0.01 }), currencyField, textField('note', true, { multiline: true })]} initial={{ currency: booking.currency, kind: state === 'cancelled' ? 'refund' : 'deposit' }} submit={body => work.api.request(`${base}/payments`, 'POST', body)} onSaved={reload} /> : null}
     </> : null}
     {tab === 'amendments' ? <>
       <Records items={rows(data.value?.history.amendments)} language={language} timezone={zone(work)} fields={['status', 'amount', 'currency', 'work_description', 'reason', 'created_at', 'accepted_at']}>

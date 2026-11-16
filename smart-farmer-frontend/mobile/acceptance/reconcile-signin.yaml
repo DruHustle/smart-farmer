@@ -1,0 +1,27 @@
+appId: eu.onesa.smartfarmer
+---
+# This separate XCTest session follows a real locked restart. Give the existing
+# process focus without restarting it or changing the denied camera permission.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          stopApp: false
+          permissions: {}
+- assertVisible:
+    id: device-reauthenticate
+    enabled: true
+- tapOn:
+    id: device-reauthenticate
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: auth-username
+    # Keychain deletion precedes the authenticated-to-signed-out transition.
+    timeout: 45000
+- runFlow: credentials.yaml
+- extendedWaitUntil:
+    visible:
+      id: tab-record
+    timeout: 45000

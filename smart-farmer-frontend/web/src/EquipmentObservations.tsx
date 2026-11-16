@@ -45,7 +45,7 @@ export function EquipmentObservations({farmId,session,lang}:{
     empty:'Akula okubikiweyo yimishini.',
     caution:'Okubikiweyo akukaqinisekiswa ngokuhlolwa kwemishini.'
   };
-  return <section className="card" aria-label="Farm equipment observations">
+  return <section className="card" aria-label={text.title}>
     <h2>{text.title}</h2>
     <p className="muted">{text.caution}</p>
     {current.status==='loading' && <p role="status">{text.loading}</p>}

@@ -12,28 +12,48 @@ export function useResource<T>(path: string | null, initial: T) {
   const [savedAt, setSavedAt] = useState(cached?.savedAt ?? '');
   const [loading, setLoading] = useState(false); const [failed, setFailed] = useState(false);
   const identity = `${farm.id}:${farm.role}:${path}`; const [valueIdentity, setValueIdentity] = useState(identity); const current = useRef(identity); current.current = identity;
+  // An initial read can finish after a post-save reload for the same identity.
+  const readSequence = useRef(0);
   const reload = useCallback(async () => {
     if (!path || !online) return;
     const identityAtRead = `${farm.id}:${farm.role}:${path}`;
+    if (current.current !== identityAtRead) return;
+    const sequence = ++readSequence.current;
+    const isCurrent = () => current.current === identityAtRead && readSequence.current === sequence;
     setLoading(true);
     try {
       const response = await call<T>(path);
       const at = new Date().toISOString();
-      if (current.current !== identityAtRead) return;
+      if (!isCurrent()) return;
       setValue(response); setValueIdentity(identityAtRead); setSavedAt(at); setFailed(false);
       await vault.mutate(next => {
+        // Writes are queued: another read can start before this callback runs.
+        if (!isCurrent()) return;
         const membership = next.farms.find(f => f.id === farm.id);
         const target = next.data[farm.id];
         if (!target || membership?.role !== farm.role) return;
         target.resources ??= {}; target.resources[path] = {value: response, savedAt: at, role: farm.role};
       });
-    } catch (error) {if (current.current === identityAtRead) {setFailed(true); const status = Number((error as {status?: number}).status); if (status === 403 || status === 404) {setValue(initial); setSavedAt(''); await vault.mutate(next => {if (next.data[farm.id]?.resources) delete next.data[farm.id].resources![path];});}} throw error;}
-    finally {if (current.current === identityAtRead) setLoading(false);}
+    } catch (error) {
+      if (!isCurrent()) return;
+      setFailed(true);
+      const status = Number((error as {status?: number}).status);
+      if (status === 403 || status === 404) {
+        setValue(initial); setSavedAt('');
+        await vault.mutate(next => {
+          if (!isCurrent() || next.farms.find(f => f.id === farm.id)?.role !== farm.role) return;
+          if (next.data[farm.id]?.resources) delete next.data[farm.id].resources![path];
+        });
+      }
+      if (isCurrent()) throw error;
+    }
+    finally {if (isCurrent()) setLoading(false);}
   }, [path, online, farm.id, farm.role, call, vault]);
   useEffect(() => {
     const stored = path ? vault.snapshot().data[farm.id]?.resources?.[path] : undefined;
     setValue(stored?.role === farm.role ? stored.value as T : initial); setValueIdentity(identity); setSavedAt(stored?.savedAt ?? '');
-    setFailed(false); if (online && path) void run(reload);
+    setFailed(false); setLoading(false); if (online && path) void run(reload);
+    return () => {readSequence.current++;};
   }, [identity, online, queuedRevision]);
   return {value: valueIdentity === identity ? value : cached?.role === farm.role ? cached.value as T : initial, setValue, savedAt: valueIdentity === identity ? savedAt : '', loading, failed, reload};
 }

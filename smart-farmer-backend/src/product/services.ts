@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ApiError, audit, manageRoles, type Context } from "../context.js";
 import { uuid, when, money, currency, quantity, finance } from "../core.js";
 import { sha256 } from "../security.js";
+import { guardAccountingSource, managedSourceBalance } from "../accounting/bridge.js";
 import {
   auth,
   idempotent,
@@ -96,6 +97,9 @@ async function recordReceipt(
   service: any,
   actor: string,
 ) {
+  // Both farms may have adopted this obligation into reviewed accounting books.
+  for (const farmId of [service.farm_id, booking.farm_id].sort())
+    await guardAccountingSource(c, farmId, 'service_booking', booking.id, false);
   if (payment.currency !== booking.currency)
     throw new ApiError("currency_mismatch", 409);
   const paid = await paidTotal(c, booking.id);
@@ -384,8 +388,10 @@ export function registerServices(app: FastifyInstance, ctx: Context) {
         const service = row(
           (
             await c.query(
-              "SELECT * FROM service_listings WHERE id=$1 AND active",
-              [serviceId],
+              `SELECT *, CASE WHEN $2::numeric IS NOT NULL AND lower($3::text) = lower(rate_basis)
+                THEN round(greatest(minimum_charge, $2::numeric * rate) + mobilisation_charge, 2)
+                END AS indicative_charge FROM service_listings WHERE id=$1 AND active`,
+              [serviceId, b.requestedQuantity, b.requestedUnit],
             )
           ).rows[0],
         );
@@ -439,16 +445,7 @@ export function registerServices(app: FastifyInstance, ctx: Context) {
         return {
           ...booking,
           indicativeCharge:
-            b.requestedQuantity === null
-              ? null
-              : Math.round(
-                  (Math.max(
-                    Number(service.minimum_charge),
-                    b.requestedQuantity * Number(service.rate),
-                  ) +
-                    Number(service.mobilisation_charge)) *
-                    100,
-                ) / 100,
+            service.indicative_charge === null ? null : Number(service.indicative_charge),
           indicativeCurrency: service.currency,
           quoteRequired: true,
         };
@@ -805,12 +802,15 @@ export function registerServices(app: FastifyInstance, ctx: Context) {
           provenance: "manual",
           providerVerified: false,
         }));
-        const paid = await paidTotal(c, bookingId);
+        const managed = await managedSourceBalance(c, a.farmId, 'service_booking', bookingId);
+        const paid = managed ? Number(managed.paid) : await paidTotal(c, bookingId);
         return {
           items,
+          accountingInvoiceId: managed?.accountingInvoiceId ?? null,
+          accountingManaged: !!managed,
           manuallyRecordedPaid: paid,
           outstanding:
-            booking.amount === null
+            managed ? Number(managed.balance) : booking.amount === null
               ? null
               : Math.max(0, Number(booking.amount) - paid),
           depositOutstanding: Math.max(
