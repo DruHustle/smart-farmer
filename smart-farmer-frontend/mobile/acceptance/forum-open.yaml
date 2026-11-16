@@ -8,6 +8,15 @@ appId: eu.onesa.smartfarmer
         id: tab-forum
         selected: true
     commands:
+      # AutoFill can arrive when a new XCTest session takes over after login,
+      # covering every app tab. Decline only Apple's observed password sheet
+      # before read-only navigation; the offline publication still runs once.
+      - runFlow:
+          when:
+            platform: iOS
+            visible: '^Save Password[?]$'
+          commands:
+            - runFlow: dismiss-password-save.yaml
       - tapOn:
           id: tab-forum
           enabled: true
