@@ -65,10 +65,43 @@ export async function trackingJourneys({page,context,api,apiCall,farm,token,sn,n
   pass('Private demo tracker registration, stale/uncertain boundaries, confirmed return, pause denial and manual-only AirTag reference work with Shona/Ndebele labels');
 
   checkpoint('Saved marketplace search, favourites, follows and private account alerts');
-  await navigate('market');await page.getByRole('button',{name:sn.marketSavedAlerts,exact:true}).click();
   const discovery=page.getByRole('region',{name:sn.marketDiscovery});
   const query='Synthetic maize '+unique;
-  await discovery.getByLabel(sn.search,{exact:true}).fill(query);await discovery.getByRole('button',{name:sn.save,exact:true}).click();await visible(discovery.getByText(query,{exact:true}));
+  // Hold the real initial list response until the save and its newer reload
+  // have completed. A late read must not erase the new item or its vault cache.
+  const savedSearchesUrl=api+'/v1/market/saved-searches';
+  async function saveBeforeOlderRead(savedQuery,staleStatus){
+    const initial=Promise.withResolvers(),release=Promise.withResolvers();
+    let heldRequest,holding=false;
+    const delayInitial=async route=>{
+      if(route.request().method()!=='GET'||holding){await route.continue();return;}
+      holding=true;heldRequest=route.request();
+      try{
+        const response=await route.fetch({timeout:10000});initial.resolve();await release.promise;
+        // Also exercise an older authorization failure after the newer read
+        // has already confirmed the account's current access.
+        await route.fulfill(staleStatus?{response,status:staleStatus,json:{error:'forbidden'}}:{response});
+      }catch(error){initial.reject(error);throw error;}
+    };
+    await page.route(savedSearchesUrl,delayInitial);
+    try{
+      await navigate('market');
+      const requested=page.waitForRequest(request=>request.url()===savedSearchesUrl&&request.method()==='GET',{timeout:10000});
+      await page.getByRole('button',{name:sn.marketSavedAlerts,exact:true}).click();await requested;await initial.promise;
+      await discovery.getByLabel(sn.search,{exact:true}).fill(savedQuery);await discovery.getByRole('button',{name:sn.save,exact:true}).click();await visible(discovery.getByText(savedQuery,{exact:true}));
+      // The form resets only after the post-save reload has persisted its cache.
+      await page.waitForFunction(label=>Array.from(document.querySelectorAll('section')).find(section=>section.getAttribute('aria-label')===label)?.querySelector('input[name="query"]')?.value==='',sn.marketDiscovery);
+      const lateResponse=page.waitForResponse(response=>response.request()===heldRequest,{timeout:10000});release.resolve();await(await lateResponse).finished();
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await discovery.getByText(savedQuery,{exact:true}).isVisible(),true,'A late initial marketplace read cannot erase a newly saved search');
+      await context.setOffline(true);await navigate('today');await navigate('market');
+      await page.getByRole('button',{name:sn.marketSavedAlerts,exact:true}).click();
+      await visible(discovery.getByText(savedQuery,{exact:true}));
+    }finally{release.resolve();await page.unroute(savedSearchesUrl,delayInitial);await context.setOffline(false);}
+  }
+  await saveBeforeOlderRead(query);
+  await navigate('today');await saveBeforeOlderRead('Unrelated search '+unique,403);
+  pass('Saved marketplace searches and their offline cache retain the newer authorized result after an older response or rejection');
   const sellerName='tracking_seller_'+unique,password='Synthetic-browser-seller-only-2026';
   const seller=await apiCall('/v1/register',{username:sellerName,password,language:'sn',farmName:'Synthetic discovery seller'});
   const sellerSession=await apiCall('/v1/sessions',{username:sellerName,password});const sellerBase='/v1/farms/'+seller.farmId;
@@ -98,7 +131,10 @@ export async function trackingJourneys({page,context,api,apiCall,farm,token,sn,n
   const discoveryAccess=await new AxeBuilder({page}).include('.workspace').analyze();await writeFile(resolve(artifacts,'axe-market-discovery.json'),JSON.stringify(discoveryAccess,null,2));assert.deepEqual(discoveryAccess.violations.filter(v=>['critical','serious'].includes(v.impact)).map(v=>v.id),[]);
   await discovery.getByRole('button',{name:sn.marketRemoveSaved,exact:true}).click();await discovery.getByRole('button',{name:sn.marketRemoveSaved,exact:true}).waitFor({state:'hidden'});
   await discovery.getByRole('button',{name:sn.marketUnfollow,exact:true}).click();await discovery.getByRole('button',{name:sn.marketUnfollow,exact:true}).waitFor({state:'hidden'});
-  await discovery.getByRole('button',{name:sn.marketRemoveSearch,exact:true}).click();await discovery.getByRole('button',{name:sn.marketRemoveSearch,exact:true}).waitFor({state:'hidden'});
+  for(const savedQuery of [query,'Unrelated search '+unique]){
+    const savedCard=discovery.locator('section.panel').filter({has:page.getByRole('heading',{name:sn.marketSavedSearches,exact:true})}).locator('.record-card').filter({has:page.getByText(savedQuery,{exact:true})});
+    await savedCard.getByRole('button',{name:sn.marketRemoveSearch,exact:true}).click();await savedCard.waitFor({state:'hidden'});
+  }
   assert.equal((await apiCall('/v1/market/favorites',undefined,token)).items.length,0);assert.equal((await apiCall('/v1/market/follows',undefined,token)).items.length,0);assert.equal((await apiCall('/v1/market/saved-searches',undefined,token)).items.length,0);
   pass('Saved searches, matching account alerts, favourites, follows, read acknowledgement and removal work with Shona/Ndebele discovery labels');
 }
