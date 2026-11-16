@@ -150,8 +150,9 @@ def restored_invoice_login(trace):
 def checkpoint(report, commands, proxy=None):
     tests = ET.parse(report).findall(".//testcase")
     invoice = "smart-farmer-frontend/mobile/acceptance/accounting-intake-check-local.yaml"
+    tablet = "smart-farmer-frontend/mobile/acceptance/tablet.yaml"
     if len(tests) != 1 or tests[0].get("file") not in {
-        invoice,
+        invoice, tablet,
         "smart-farmer-frontend/mobile/acceptance/login.yaml",
         "smart-farmer-frontend/mobile/acceptance/reconcile-signin.yaml",
     }:
@@ -160,6 +161,21 @@ def checkpoint(report, commands, proxy=None):
     if len(failures) != 1 or not failures[0].text:
         return None
     failure = failures[0].text
+    if tests[0].get("file") == tablet:
+        if failure != "Element not found: Id matching regex: tab-farm, Enabled":
+            return None
+        with open(commands, encoding="utf-8") as stream:
+            trace = json.load(stream)
+        # This was the first navigation tap. A later failure must never replay
+        # the project, finance, language or forum interactions.
+        expected = [("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
+                    ("repeatCommand", "FAILED"), ("tapOnElement", "FAILED")]
+        if len(trace) == len(expected) and all(list(row["command"]) == [cmd] and
+                row["metadata"]["status"] == status for row, (cmd, status) in zip(trace, expected)):
+            target = {"idRegex": "tab-farm", "enabled": True, "optional": False}
+            if trace[-1]["command"]["tapOnElement"].get("selector") == target:
+                return "tablet-first-farm-tap"
+        return None
     if tests[0].get("file") == invoice:
         if failure.splitlines()[0] not in {DEVICE_LOSS, STATIC_LOSS}:
             return None

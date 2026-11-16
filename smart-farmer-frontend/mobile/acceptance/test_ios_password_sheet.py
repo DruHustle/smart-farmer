@@ -99,6 +99,18 @@ class SubmittedLogin(unittest.TestCase):
         for failure in sheet.RECORD_CHECKPOINTS:
             self.assertEqual(self.checkpoint(failure, []), "record-assertion")
 
+    def test_tablet_sheet_recovery_requires_the_first_failed_farm_tap(self):
+        events = [{"command": {cmd: {}}, "metadata": {"status": status}} for cmd, status in (
+            ("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
+            ("repeatCommand", "FAILED"), ("tapOnElement", "FAILED"))]
+        events[-1]["command"]["tapOnElement"]["selector"] = {"idRegex": "tab-farm", "enabled": True, "optional": False}
+        failure = "Element not found: Id matching regex: tab-farm, Enabled"
+        self.assertEqual(self.checkpoint(failure, events, "tablet"), "tablet-first-farm-tap")
+        self.assertIsNone(self.checkpoint(failure, events + events[-1:], "tablet"))
+        self.assertIsNone(self.checkpoint("Device became unreachable", events, "tablet"))
+        events[-1]["command"]["tapOnElement"]["selector"]["idRegex"] = "tab-more"
+        self.assertIsNone(self.checkpoint(failure, events, "tablet"))
+
 
     def test_invoice_requires_draft_restart_and_exact_driver_disconnect(self):
         def visible(key):
