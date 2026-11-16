@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import Vision
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
@@ -81,7 +82,7 @@ final class PortalColdTests: XCTestCase {
     // The iOS release flow needs one automation owner. Native test setup now
     // enters the prewarmed Expo app directly, without a Maestro XCTest session
     // that can outlive a browser handoff on the same disposable simulator.
-    @MainActor private func signedOutStart() throws -> XCUIElement {
+    @MainActor private func startOnesaSignIn() throws {
         let bundle = "http://127.0.0.1:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
         var link = URLComponents()
         link.scheme = "smartfarmer"
@@ -128,9 +129,29 @@ final class PortalColdTests: XCTestCase {
             checkpoint(.developerMenu)
             close.tap()
         }
-        let unlocked = waitFor({ ready(start, .signIn) && start.isEnabled }, seconds: 45)
-        if unlocked { checkpoint(.signInControl) }
-        return try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
+        // The launcher can briefly expose the underlying control during dismissal.
+        let unlocked = waitFor({
+            !(close.exists && close.isHittable) && !(intro.exists && intro.isHittable) && ready(start, .signIn) && start.isEnabled
+        }, seconds: 45)
+        let button = try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
+        checkpoint(.signInControl)
+        button.tap()
+
+        func stillOnIdleForm() -> Bool {
+            guard app.state == .runningForeground, start.exists, start.isEnabled, start.isHittable,
+                  nodes["auth-username"].firstMatch.exists, nodes["auth-password"].firstMatch.exists,
+                  !(intro.exists && intro.isHittable), !(close.exists && close.isHittable),
+                  !(chooser.exists && chooser.isHittable), !app.alerts.firstMatch.exists,
+                  !springboard.alerts.firstMatch.exists else { return false }
+            return !browserOwners.contains { $0.webViews.firstMatch.exists }
+        }
+        // The React press handler immediately disables this button. An enabled,
+        // unobscured local form after the observation window means the initial
+        // Expo overlay consumed the gesture. Do not re-launch or repeat a flow
+        // that has moved to a browser, a disabled control, or an error alert.
+        if !waitFor({ !stillOnIdleForm() }, seconds: 6), stillOnIdleForm() {
+            start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
@@ -348,6 +369,59 @@ final class PortalColdTests: XCTestCase {
         try XCTUnwrap(ready ? button : nil, "Portal Continue is enabled").tap()
     }
 
+    private enum BrowserAction {
+        case element(XCUIElement)
+        case point(XCUICoordinate)
+
+        @MainActor func tap() {
+            switch self {
+            case .element(let element): element.tap()
+            case .point(let point): point.tap()
+            }
+        }
+    }
+
+    // Embedded WebKit can render the issuer while exposing none of its DOM
+    // controls to XCTest. Locate only a known action on its visible loopback
+    // page. The image and OCR stay in memory, including after sign-in.
+    @MainActor private func renderedAction(labels: Set<String>, landmarks: Set<String>,
+                                          onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
+        guard let foreground = [app, authSheet, safari].first(where: { $0.state == .runningForeground }),
+              let image = XCUIScreen.main.screenshot().image.cgImage else { return nil }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        guard (try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])) != nil else { return nil }
+        let rows = (request.results ?? []).compactMap { observation -> (String, CGRect)? in
+            guard let best = observation.topCandidates(1).first, best.confidence >= 0.55 else { return nil }
+            let label = best.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "‑", with: "-").replacingOccurrences(of: "–", with: "-")
+            return (label, observation.boundingBox)
+        }
+        let frame = foreground.frame
+        let aspect = CGFloat(image.width) / CGFloat(image.height)
+        guard frame.minX == 0, frame.minY == 0, frame.height > 0,
+              abs(frame.width / frame.height - aspect) < 0.02 else { return nil }
+        func point(for rect: CGRect) -> XCUICoordinate {
+            foreground.coordinate(withNormalizedOffset: CGVector(dx: rect.midX, dy: 1 - rect.midY))
+        }
+        let words = Set(rows.map { $0.0 })
+        // Apple's sheet can cover the return link without exposing any AX
+        // controls. Decline only the uniquely identified password prompt.
+        if words.contains("Save Password?"), words.contains("Save") {
+            let declines = rows.filter { $0.0 == "Not Now" }
+            if declines.count == 1 { onPasswordSheet?(point(for: declines[0].1)) }
+            return nil
+        }
+        // Browser chrome identifies the issuer/callback origin. These are the
+        // hostnames in the disposable HTTPS device fixture.
+        guard rows.contains(where: { ["localhost", "127.0.0.1"].contains($0.0) && $0.1.midY > 0.82 }),
+              landmarks.isSubset(of: words) else { return nil }
+        let matches = rows.filter { labels.contains($0.0) && $0.1.midY < 0.88 }
+        guard matches.count == 1 else { return nil }
+        return .point(point(for: matches[0].1))
+    }
+
     @MainActor private func returnLink() -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
         for owner in browserOwners + [springboard] {
@@ -377,17 +451,25 @@ final class PortalColdTests: XCTestCase {
 
     @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil) throws {
         checkpoint(.returnLink)
-        var link: XCUIElement?
+        var action: BrowserAction?
+        var declinedPasswordSheet = false
         let found = waitFor({
-            link = self.returnLink()
-            if link == nil, let owner = issuerOwner {
+            if let link = self.returnLink() {
+                action = .element(link)
+            } else if let owner = issuerOwner {
                 let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
                 let links = owner.links.matching(names)
-                if links.count == 1, links.firstMatch.isHittable { link = links.firstMatch }
+                if links.count == 1, links.firstMatch.isHittable { action = .element(links.firstMatch) }
             }
-            return link != nil
+            if action == nil {
+                action = self.renderedAction(labels: ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"],
+                                             landmarks: ["Smart Farmer"]) { point in
+                    if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
+                }
+            }
+            return action != nil
         }, seconds: 40)
-        try XCTUnwrap(found ? link : nil, "Real browser return link").tap()
+        try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
     }
 
     @MainActor private func portalCancel() -> XCUIElement? {
@@ -411,11 +493,16 @@ final class PortalColdTests: XCTestCase {
         continueAfterFailure = false
         checkpoint(.fixture)
         checkpoint(.signedOut)
-        try signedOutStart().tap()
+        try startOnesaSignIn()
         checkpoint(.consent)
-        var cancel: XCUIElement?
+        var cancel: BrowserAction?
         let visible = awaitBrowser {
-            cancel = self.portalCancel()
+            if let button = self.portalCancel() {
+                cancel = .element(button)
+            } else {
+                cancel = self.renderedAction(labels: ["Cancel sign-in"],
+                                              landmarks: ["Sign in to Onesa", "Remember this browser"])
+            }
             return cancel != nil
         }
         try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
@@ -445,7 +532,7 @@ final class PortalColdTests: XCTestCase {
         // App setup is part of this one XCTest session, before the timed
         // authorization request. No second UI driver may remain attached.
         checkpoint(.signedOut)
-        try signedOutStart().tap()
+        try startOnesaSignIn()
         checkpoint(.consent)
         var surface: XCUIElement?
         let visible = awaitBrowser {
