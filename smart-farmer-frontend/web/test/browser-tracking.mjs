@@ -71,8 +71,11 @@ export async function trackingJourneys({page,context,api,apiCall,farm,token,sn,n
   // have completed. A late read must not erase the new item or its vault cache.
   const savedSearchesUrl=api+'/v1/market/saved-searches';
   async function saveBeforeOlderRead(savedQuery,staleStatus){
-    const initial=Promise.withResolvers(),release=Promise.withResolvers();
-    let heldRequest,holding=false;
+    const initial=Promise.withResolvers(),release=Promise.withResolvers(),handled=Promise.withResolvers();
+    // A route callback runs outside the journey's promise chain. Observe its
+    // failure here and await it below, so cleanup cannot mask the first failure.
+    initial.promise.catch(()=>{});handled.promise.catch(()=>{});
+    let heldRequest,holding=false,journeyError;
     const delayInitial=async route=>{
       if(route.request().method()!=='GET'||holding){await route.continue();return;}
       holding=true;heldRequest=route.request();
@@ -81,7 +84,12 @@ export async function trackingJourneys({page,context,api,apiCall,farm,token,sn,n
         // Also exercise an older authorization failure after the newer read
         // has already confirmed the account's current access.
         await route.fulfill(staleStatus?{response,status:staleStatus,json:{error:'forbidden'}}:{response});
-      }catch(error){initial.reject(error);throw error;}
+        handled.resolve();
+      }catch(error){
+        initial.reject(error);
+        await route.abort().catch(()=>{});
+        handled.reject(error);
+      }
     };
     await page.route(savedSearchesUrl,delayInitial);
     try{
@@ -91,13 +99,22 @@ export async function trackingJourneys({page,context,api,apiCall,farm,token,sn,n
       await discovery.getByLabel(sn.search,{exact:true}).fill(savedQuery);await discovery.getByRole('button',{name:sn.save,exact:true}).click();await visible(discovery.getByText(savedQuery,{exact:true}));
       // The form resets only after the post-save reload has persisted its cache.
       await page.waitForFunction(label=>Array.from(document.querySelectorAll('section')).find(section=>section.getAttribute('aria-label')===label)?.querySelector('input[name="query"]')?.value==='',sn.marketDiscovery);
-      const lateResponse=page.waitForResponse(response=>response.request()===heldRequest,{timeout:10000});release.resolve();await(await lateResponse).finished();
+      const lateResponse=page.waitForResponse(response=>response.request()===heldRequest,{timeout:10000});release.resolve();await Promise.all([lateResponse.then(response=>response.finished()),handled.promise]);
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       assert.equal(await discovery.getByText(savedQuery,{exact:true}).isVisible(),true,'A late initial marketplace read cannot erase a newly saved search');
       await context.setOffline(true);await navigate('today');await navigate('market');
       await page.getByRole('button',{name:sn.marketSavedAlerts,exact:true}).click();
       await visible(discovery.getByText(savedQuery,{exact:true}));
-    }finally{release.resolve();await page.unroute(savedSearchesUrl,delayInitial);await context.setOffline(false);}
+    }catch(error){journeyError=error;throw error;}
+    finally{
+      release.resolve();
+      let routeError;
+      // Removing a Playwright route continues its in-flight requests. Finish
+      // the held response first, including when an earlier UI assertion fails.
+      if(holding)await handled.promise.catch(error=>{routeError=error;});
+      await page.unroute(savedSearchesUrl,delayInitial);await context.setOffline(false);
+      if(routeError&&!journeyError)throw routeError;
+    }
   }
   await saveBeforeOlderRead(query);
   await navigate('today');await saveBeforeOlderRead('Unrelated search '+unique,403);
