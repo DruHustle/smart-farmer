@@ -19,6 +19,12 @@ PATTERNS = {
     "assertion-failure": r"XCTUnwrap failed|XCTAssert\w* failed|assertion failure",
     "runner-exit": r"early unexpected exit|test runner exited|test runner.{0,80}crashed",
 }
+CONTROL_FACT = re.compile(
+    r"^FARMER_XCUI_CONTROL (startup|cancel) (farmer|safari|authSheet) "
+    r"(signIn|introduction|developerMenu|localChooser|savedBundle|cancelButton|cancelLink) "
+    r"(absent|present|enabled|disabled|visible-frame|not-visible-frame|hittable-query|hittable|not-hittable)$",
+    re.MULTILINE,
+)
 
 
 def classify(log, role, checkpoint):
@@ -30,6 +36,8 @@ def classify(log, role, checkpoint):
         "checkpoint": checkpoint,
         "signals": [name for name, pattern in PATTERNS.items() if re.search(pattern, log, re.IGNORECASE)],
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
+        "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))
+                     for fact in list(dict.fromkeys(CONTROL_FACT.findall(log)))[:64]],
     }
 
 

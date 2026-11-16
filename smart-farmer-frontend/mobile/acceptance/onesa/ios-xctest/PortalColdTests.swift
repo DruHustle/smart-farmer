@@ -14,6 +14,46 @@ final class PortalColdTests: XCTestCase {
         print("FARMER_XCUI_CHECKPOINT " + value.rawValue)
     }
 
+    private enum ControlPhase: String { case startup, cancel }
+    private enum ControlOwner: String { case farmer, safari, authSheet }
+    private enum PreInputControl: String {
+        case signIn, introduction, developerMenu, localChooser, savedBundle, cancelButton, cancelLink
+    }
+    private enum ControlFact: String {
+        case absent, present, enabled, disabled, hittable
+        case visibleFrame = "visible-frame", hiddenFrame = "not-visible-frame"
+        case hitQuery = "hittable-query", notHittable = "not-hittable"
+    }
+    private var recordedControls = Set<String>()
+
+    @discardableResult private func controlFact(_ phase: ControlPhase, _ owner: ControlOwner,
+                                                _ control: PreInputControl, _ fact: ControlFact) -> Bool {
+        let value = [phase.rawValue, owner.rawValue, control.rawValue, fact.rawValue].joined(separator: " ")
+        guard recordedControls.count < 64, recordedControls.insert(value).inserted else { return false }
+        print("FARMER_XCUI_CONTROL " + value)
+        return true
+    }
+
+    @MainActor private func controlReady(_ element: XCUIElement, phase: ControlPhase,
+                                        owner: ControlOwner, control: PreInputControl) -> Bool {
+        guard element.exists else {
+            controlFact(phase, owner, control, .absent)
+            return false
+        }
+        // Record the exact known control before AX can abort while computing a
+        // hit point. No element label, value, coordinate or user input is logged.
+        if controlFact(phase, owner, control, .present) {
+            controlFact(phase, owner, control, element.isEnabled ? .enabled : .disabled)
+            let frame = element.frame
+            let visible = !frame.isEmpty && !frame.isInfinite && app.frame.contains(frame)
+            controlFact(phase, owner, control, visible ? .visibleFrame : .hiddenFrame)
+        }
+        controlFact(phase, owner, control, .hitQuery)
+        let hittable = element.isHittable
+        controlFact(phase, owner, control, hittable ? .hittable : .notHittable)
+        return hittable
+    }
+
     @MainActor private lazy var app = XCUIApplication(bundleIdentifier: "eu.onesa.smartfarmer")
     @MainActor private lazy var safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
     @MainActor private lazy var authSheet = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")
@@ -60,33 +100,35 @@ final class PortalColdTests: XCTestCase {
         let intro = nodes.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
         let close = nodes.matching(NSPredicate(format: "label == %@", "Close")).firstMatch
         let chooser = nodes.matching(NSPredicate(format: "label == %@", "Enter URL manually")).firstMatch
-        func ready(_ element: XCUIElement) -> Bool { element.exists && element.isHittable }
-        _ = waitFor({ ready(start) || ready(intro) || ready(close) || ready(chooser) }, seconds: 100)
-        if !ready(start) && ready(chooser) {
+        func ready(_ element: XCUIElement, _ control: PreInputControl) -> Bool {
+            controlReady(element, phase: .startup, owner: .farmer, control: control)
+        }
+        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) || ready(chooser, .localChooser) }, seconds: 100)
+        if !ready(start, .signIn) && ready(chooser, .localChooser) {
             checkpoint(.localLauncher)
             let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
-            if ready(savedBundle) { savedBundle.tap() }
-            if !waitFor({ ready(start) || ready(intro) || ready(close) }, seconds: 12), ready(chooser) {
+            if ready(savedBundle, .savedBundle) { savedBundle.tap() }
+            if !waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 12), ready(chooser, .localChooser) {
                 // Repeat only before any authentication request and only while
                 // the known local-development chooser remains on screen.
                 app.terminate()
                 app.launch()
             }
         }
-        _ = waitFor({ ready(start) || ready(intro) || ready(close) }, seconds: 30)
+        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 30)
         // Expo's sheet can leave the sign-in button visible and hittable above
         // it. Dismiss onboarding before using that underlying control; its
         // first tap can otherwise dismiss the sheet without starting sign-in.
-        if ready(intro) {
+        if ready(intro, .introduction) {
             checkpoint(.introduction)
             intro.tap()
-            _ = waitFor({ ready(start) || ready(close) }, seconds: 45)
+            _ = waitFor({ ready(start, .signIn) || ready(close, .developerMenu) }, seconds: 45)
         }
-        if ready(close) {
+        if ready(close, .developerMenu) {
             checkpoint(.developerMenu)
             close.tap()
         }
-        let unlocked = waitFor({ ready(start) && start.isEnabled }, seconds: 45)
+        let unlocked = waitFor({ ready(start, .signIn) && start.isEnabled }, seconds: 45)
         if unlocked { checkpoint(.signInControl) }
         return try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
     }
@@ -155,7 +197,10 @@ final class PortalColdTests: XCTestCase {
             // same local sign-in alert, without repeating the app's request.
             stillPresented.tap()
         }
-        return waitFor(ready)
+        // A slow remote AX snapshot can cross the deadline before WebKit's
+        // current controls are returned. Refresh the same predicate once; this
+        // neither repeats sign-in nor changes the required native gesture.
+        return waitFor(ready) || ready()
     }
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
@@ -348,11 +393,16 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func portalCancel() -> XCUIElement? {
         // The localized issuer is real WebKit UI, not a synthetic callback.
         // XCUITest may expose it under SafariViewService or the foreground app.
-        for owner in browserOwners {
+        // The embedded issuer's Cancel button is exposed by foreground Farmer.
+        // Query it before a background Safari service whose snapshot can lag.
+        let runningOwners = browserOwners
+        let owners = runningOwners.filter { $0 === app } + runningOwners.filter { $0 !== app }
+        for owner in owners {
+            let ownerName: ControlOwner = owner === app ? .farmer : owner === safari ? .safari : .authSheet
             let button = owner.buttons["Cancel sign-in"].firstMatch
-            if button.exists && button.isHittable { return button }
+            if controlReady(button, phase: .cancel, owner: ownerName, control: .cancelButton) { return button }
             let link = owner.links["Cancel sign-in"].firstMatch
-            if link.exists && link.isHittable { return link }
+            if controlReady(link, phase: .cancel, owner: ownerName, control: .cancelLink) { return link }
         }
         return nil
     }

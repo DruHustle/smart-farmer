@@ -26,6 +26,38 @@ class FailureEvidence(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence.classify("", "cancel", "synthetic-secret")
 
+    def test_pre_input_hit_query_facts_identify_the_exact_control_without_private_text(self):
+        secret = "synthetic-private-element-value"
+        log = "\n".join([
+            "FARMER_XCUI_CONTROL startup farmer signIn present",
+            "FARMER_XCUI_CONTROL startup farmer signIn visible-frame",
+            "FARMER_XCUI_CONTROL startup farmer signIn hittable-query",
+            f"Failed to compute hit point for {secret}: Activation point invalid",
+            f"FARMER_XCUI_CONTROL startup farmer {secret} present",
+            f"FARMER_XCUI_CONTROL cancel farmer cancelButton {secret}",
+            f"FARMER_XCUI_CONTROL cancel {secret} cancelButton present",
+            f"FARMER_XCUI_CONTROL {secret} farmer cancelButton present",
+            f"FARMER_XCUI_CONTROL cancel farmer cancelButton present {secret}",
+        ])
+        receipt = evidence.classify(log, "admin", "signedOut")
+        self.assertEqual(receipt["signals"], ["hit-point-failure"])
+        self.assertEqual([fact["fact"] for fact in receipt["controls"]],
+                         ["present", "visible-frame", "hittable-query"])
+        self.assertTrue(all(fact["control"] == "signIn" for fact in receipt["controls"]))
+        self.assertNotIn(secret, json.dumps(receipt))
+
+    def test_control_facts_are_deduplicated_and_bounded(self):
+        log = "FARMER_XCUI_CONTROL cancel farmer cancelButton absent\n" * 1000
+        log += "FARMER_XCUI_CONTROL cancel farmer cancelButton present\n"
+        receipt = evidence.classify(log, "cancel", "consent")
+        self.assertEqual([fact["fact"] for fact in receipt["controls"]], ["absent", "present"])
+        combinations = (f"FARMER_XCUI_CONTROL {phase} {owner} {control} {fact}\n"
+                        for phase in ["startup", "cancel"]
+                        for owner in ["farmer", "safari", "authSheet"]
+                        for control in ["signIn", "introduction", "developerMenu", "localChooser", "savedBundle", "cancelButton", "cancelLink"]
+                        for fact in ["absent", "present", "enabled", "disabled", "visible-frame", "hittable-query"])
+        self.assertEqual(len(evidence.classify("".join(combinations), "cancel", "consent")["controls"]), 64)
+
     def test_remote_alert_hit_point_failure_does_not_export_the_element_payload(self):
         secret = "synthetic-private-element"
         log = f"Failed to compute hit point for {secret}: Activation point invalid\nFailed to no matches found for {secret}\n"
