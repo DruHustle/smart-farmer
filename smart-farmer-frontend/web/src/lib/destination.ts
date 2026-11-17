@@ -20,7 +20,7 @@ export function pagePath(page: Page) {
 }
 
 const registrationKey = 'smart-farmer:registration';
-export const registrationUrl = 'https://auth.onesa.eu/register?audience=user&product=farmer&platform=web';
+export const registrationUrl = (audience:'user'|'admin') => 'https://auth.onesa.eu/register?audience='+audience+'&product=farmer&platform=web';
 export const registrationReturn = '/auth/registration/complete';
 
 export function rememberRegistration(storage: Storage, current: URL) {

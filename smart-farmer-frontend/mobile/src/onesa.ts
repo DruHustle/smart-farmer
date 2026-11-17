@@ -54,11 +54,11 @@ export async function redeemOnesa(incoming:string,origin:string):Promise<Session
 const registrationKey = 'smart-farmer.onesa-registration.v1';
 export const registrationReturn = 'smartfarmer://onesa/registered';
 
-export async function registerOnesa(origin: string) {
+export async function registerOnesa(origin: string,audience:"user"|"admin") {
   const platform = Platform.OS;
   if (platform !== 'ios' && platform !== 'android') throw new Error('onesa_unavailable');
   await SecureStore.setItemAsync(registrationKey, origin, options);
-  const url = 'https://auth.onesa.eu/register?audience=user&product=farmer&platform=' + platform;
+  const url = 'https://auth.onesa.eu/register?audience='+audience+'&product=farmer&platform=' + platform;
   const result = await openAuthSessionAsync(url,registrationReturn);
   if (result.type === 'success' && result.url === registrationReturn) return true;
   await SecureStore.deleteItemAsync(registrationKey, options);
