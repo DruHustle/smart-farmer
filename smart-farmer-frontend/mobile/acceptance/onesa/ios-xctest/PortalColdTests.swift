@@ -1,10 +1,9 @@
 import XCTest
 import UIKit
-import Vision
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, localLauncher, introduction, developerMenu, signInControl
+        case fixture, signedOut, signInControl
         case consent, email, password, remember, firstSubmit
         case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm
         case farmWorkspace, forumTab, forumScreen, forumFeed, completed
@@ -18,7 +17,7 @@ final class PortalColdTests: XCTestCase {
     private enum ControlPhase: String { case startup, cancel }
     private enum ControlOwner: String { case farmer, safari, authSheet }
     private enum PreInputControl: String {
-        case signIn, introduction, developerMenu, localChooser, savedBundle, cancelButton, cancelLink
+        case signIn, cancelButton, cancelLink
     }
     private enum ControlFact: String {
         case absent, present, enabled, disabled, hittable
@@ -79,76 +78,16 @@ final class PortalColdTests: XCTestCase {
         return owners
     }
 
-    // The iOS release flow needs one automation owner. Native test setup now
-    // enters the prewarmed Expo app directly, without a Maestro XCTest session
-    // that can outlive a browser handoff on the same disposable simulator.
     @MainActor private func startOnesaSignIn() throws {
-        let bundle = "http://127.0.0.1:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
-        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        let encodedBundle = try XCTUnwrap(bundle.addingPercentEncoding(withAllowedCharacters: unreserved))
-        let localURL = try XCTUnwrap(URL(string: "smartfarmer://expo-development-client/?url=\(encodedBundle)&__expo_disable_fab=1&disableFab=1"))
-        // The launch argument is consumed on process startup. Give the test
-        // runner ownership from startup so activating the app cannot replace it.
-        app.launchArguments = ["--initialUrl", localURL.absoluteString]
         app.launch()
-        let nodes = app.descendants(matching: .any)
-        let start = nodes["auth-onesa"].firstMatch
-        let intro = nodes.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-        let close = nodes.matching(NSPredicate(format: "label == %@", "Close")).firstMatch
-        let chooser = nodes.matching(NSPredicate(format: "label == %@", "Enter URL manually")).firstMatch
-        func ready(_ element: XCUIElement, _ control: PreInputControl) -> Bool {
-            controlReady(element, phase: .startup, owner: .farmer, control: control)
-        }
-        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) || ready(chooser, .localChooser) }, seconds: 100)
-        if !ready(start, .signIn) && ready(chooser, .localChooser) {
-            checkpoint(.localLauncher)
-            let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
-            if ready(savedBundle, .savedBundle) {
-                savedBundle.tap()
-            }
-            // Expo reads --initialUrl at process start. Match the verified farm
-            // journey's one fresh launch if the chooser outlasts the first load.
-            if !waitFor({ !chooser.exists || !chooser.isHittable }, seconds: 4),
-               !start.exists, ready(chooser, .localChooser) {
-                app.terminate()
-                app.launch()
-            }
-        }
-        // Expo presents its introduction and menu asynchronously above the
-        // loaded application. Observe each overlay throughout startup, including
-        // when it appears after the native sign-in button first becomes visible.
-        var dismissedIntro = false
-        var closedMenu = false
-        let unlocked = waitFor({
-            if ready(intro, .introduction) {
-                if !dismissedIntro { self.checkpoint(.introduction); intro.tap(); dismissedIntro = true }
-                return false
-            }
-            if ready(close, .developerMenu) {
-                if !closedMenu { self.checkpoint(.developerMenu); close.tap(); closedMenu = true }
-                return false
-            }
-            return ready(start, .signIn) && start.isEnabled
-        }, seconds: 45)
-        let button = try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
+        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        let ready = waitFor({
+            self.app.state == .runningForeground && self.controlReady(start, phase: .startup,
+                owner: .farmer, control: .signIn) && start.isEnabled
+        }, seconds: 60)
+        let button = try XCTUnwrap(ready ? start : nil, "Installed release Farmer offers Onesa sign-in")
         checkpoint(.signInControl)
         button.tap()
-
-        func stillOnIdleForm() -> Bool {
-            guard app.state == .runningForeground, start.exists, start.isEnabled, start.isHittable,
-                  nodes["auth-username"].firstMatch.exists, nodes["auth-password"].firstMatch.exists,
-                  !(intro.exists && intro.isHittable), !(close.exists && close.isHittable),
-                  !(chooser.exists && chooser.isHittable), !app.alerts.firstMatch.exists,
-                  !springboard.alerts.firstMatch.exists else { return false }
-            return !browserOwners.contains { $0.webViews.firstMatch.exists }
-        }
-        // The React press handler immediately disables this button. An enabled,
-        // unobscured local form after the observation window means the initial
-        // Expo overlay consumed the gesture. Do not re-launch or repeat a flow
-        // that has moved to a browser, a disabled control, or an error alert.
-        if !waitFor({ !stillOnIdleForm() }, seconds: 6), stillOnIdleForm() {
-            start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
@@ -392,7 +331,7 @@ final class PortalColdTests: XCTestCase {
             return matches.count == 1 ? matches[0].box : nil
         }
 
-        // Vision coordinates use the entire captured display and grow upward.
+        // These normalized boxes span the entire captured display and grow upward.
         // XCTest coordinates use points within the owner, which may be an inset
         // authentication sheet. Convert through display space before selecting it.
         @MainActor func point(at normalized: CGPoint) -> XCUICoordinate? {
@@ -415,73 +354,57 @@ final class PortalColdTests: XCTestCase {
         if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
     }
 
-    @MainActor private func renderedScreen() -> RenderedScreen? {
-        let screenshot = XCUIScreen.main.screenshot().image
-        // Vision and the XCTest coordinate must both use the displayed orientation.
-        // A CGImage alone does not carry UIKit's orientation metadata.
-        let upright = screenshot.imageOrientation == .up ? screenshot :
-            UIGraphicsImageRenderer(size: screenshot.size, format: screenshot.imageRendererFormat).image { _ in
-                screenshot.draw(in: CGRect(origin: .zero, size: screenshot.size))
+    private struct ControlResponse: Decodable {
+        struct Screen: Decodable {
+            struct Row: Decodable {
+                let text: String
+                let box: [CGFloat]
             }
-        guard let image = upright.cgImage else {
-            renderObserved(.screenshotUnavailable); return nil
+            let width: Int
+            let height: Int
+            let chrome: Bool
+            let rows: [Row]
         }
+        let id: String
+        let screen: Screen?
+    }
+
+    @MainActor private func renderedScreen() -> RenderedScreen? {
+        guard let session = ProcessInfo.processInfo.environment["FARMER_OCR_SESSION"],
+              let uuid = UUID(uuidString: session) else { return nil }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("farmer-ocr-" + uuid.uuidString, isDirectory: true)
+        let request = UUID().uuidString
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
+        } catch { renderObserved(.recognitionUnavailable); return nil }
+        var screen: ControlResponse.Screen?
+        let received = waitFor({
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent("response.json")),
+                  let response = try? JSONDecoder().decode(ControlResponse.self, from: data),
+                  response.id == request else { return false }
+            screen = response.screen
+            return true
+        }, seconds: 16)
+        guard received, let screen else { renderObserved(.recognitionUnavailable); return nil }
         let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
         guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
-        // UIScreen.main belongs to the XCTest runner, whose viewport can differ
-        // from the phone. Match the compositor capture to a full-screen XCTest
-        // owner in device points before mapping any recognized text to a tap.
-        let pixels = CGSize(width: image.width, height: image.height)
+        let pixels = CGSize(width: screen.width, height: screen.height)
         guard let display = owners.map({ $0.frame }).first(where: { frame in
             guard frame.origin == .zero, !frame.isEmpty, !frame.isInfinite else { return false }
             let scale = (pixels.width / frame.width).rounded()
             return scale >= 1 && abs(pixels.width - scale * frame.width) <= 1 &&
                 abs(pixels.height - scale * frame.height) <= 1
         }) else { renderObserved(.displayMismatch); return nil }
-        func recognize(in region: CGRect) -> [VNRecognizedTextObservation]? {
-            // Hosted simulators do not always expose an accelerated Vision device.
-            // Try CPU execution only if the first request could not run.
-            for cpuOnly in [false, true] {
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                // The retained 2622px iPhone display has 30–39px form labels
-                // and browser title. Vision's 1/32 default excludes that scale.
-                request.minimumTextHeight = 0.006
-                request.usesLanguageCorrection = false
-                request.usesCPUOnly = cpuOnly
-                request.regionOfInterest = region
-                do {
-                    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-                    return request.results ?? []
-                } catch { continue }
-            }
-            return nil
+        let rows = screen.rows.compactMap { row -> (String, CGRect)? in
+            let box = row.box
+            guard box.count == 4, box.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 1 }),
+                  box[2] > 0, box[3] > 0, box[0] + box[2] <= 1.000001,
+                  box[1] + box[3] <= 1.000001 else { return nil }
+            return (row.text, CGRect(x: box[0], y: box[1], width: box[2], height: box[3]))
         }
-        guard let observations = recognize(in: CGRect(x: 0, y: 0, width: 1, height: 1)) else {
-            renderObserved(.recognitionUnavailable); return nil
-        }
-        let rows = observations.compactMap { observation -> (String, CGRect)? in
-            guard let best = observation.topCandidates(1).first, best.confidence >= 0.55 else { return nil }
-            let text = best.string.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-                .replacingOccurrences(of: "‑", with: "-").replacingOccurrences(of: "–", with: "-")
-            return (text, observation.boundingBox)
-        }
-        let loopback = ["localhost", "127.0.0.1"]
-        var chrome = rows.contains {
-            loopback.contains($0.0) && $0.1.midY > 0.82 && (0.25...0.75).contains($0.1.midX)
-        }
-        if !chrome {
-            // OCR may join the Safari close icon to the address on the same
-            // horizontal line. Read just the title area; the host still must
-            // match exactly and no page content can satisfy this check.
-            if let title = recognize(in: CGRect(x: 0.25, y: 0.82, width: 0.50, height: 0.13)) {
-                chrome = title.contains { observation in
-                    guard let value = observation.topCandidates(1).first, value.confidence >= 0.55 else { return false }
-                    return loopback.contains(value.string.trimmingCharacters(in: .whitespacesAndNewlines))
-                }
-            }
-        }
-        return RenderedScreen(rows: rows, display: display, owners: owners, hasLoopbackChrome: chrome)
+        return RenderedScreen(rows: rows, display: display, owners: owners, hasLoopbackChrome: screen.chrome)
     }
 
     // Embedded WebKit can render the issuer without publishing its DOM nodes
@@ -500,6 +423,9 @@ final class PortalColdTests: XCTestCase {
         guard landmarks.isSubset(of: screen.words) else { renderObserved(.landmarksMissing); return nil }
         let targets = screen.rows.filter { labels.contains($0.text) && $0.box.midY < 0.88 }
         guard targets.count == 1, let box = targets.first?.box else { renderObserved(.ambiguousAction); return nil }
+        if landmarks == ["Smart Farmer"], !screen.rows.contains(where: {
+            $0.text == "Smart Farmer" && $0.box.minY > box.maxY
+        }) { renderObserved(.landmarksMissing); return nil }
         guard let point = screen.point(at: CGPoint(x: box.midX, y: box.midY)) else { renderObserved(.outsideOwner); return nil }
         renderObserved(.actionReady)
         return .point(point)
@@ -544,7 +470,7 @@ final class PortalColdTests: XCTestCase {
                       let email = screen.unique("Email address"), let password = screen.unique("Password")
                 else { return false }
                 return screen.rows.contains { row in
-                    row.text == value && row.box.midY < email.minY && row.box.midY > password.maxY
+                    row.text == "fixtureEmail" && row.box.midY < email.minY && row.box.midY > password.maxY
                 }
             }, seconds: 8)
             try XCTUnwrap(correct ? true : nil, "Issuer email input received the synthetic account")

@@ -33,7 +33,7 @@ class DriverStartup(unittest.TestCase):
         self.trace.rename(self.root / "ipad-large-font")
         self.assertTrue(startup.failed_before_test(self.root, "ipad-large-font", self.device))
 
-    def test_first_launch_permission_transport_failure_restarts_only_before_input(self):
+    def test_active_startup_flow_transport_failure_restarts_only_before_input(self):
         label = "ipad-large-font"
         suite = ET.Element("testsuite", device="iPad - iOS 26.4 - " + self.device)
         report = ET.Element("testsuites")
@@ -41,25 +41,35 @@ class DriverStartup(unittest.TestCase):
         case = ET.SubElement(suite, "testcase", file="smart-farmer-frontend/mobile/acceptance/login.yaml")
         failure = ET.SubElement(case, "failure")
         failure.text = ("maestro.DeviceUnreachableException: Device became unreachable during setPermissions\n"
+                        "Caused by: java.net.ConnectException: Failed to connect to /127.0.0.1:50560\n"
                         "Caused by: java.net.ConnectException: Connection refused")
         ET.ElementTree(report).write(self.root / (label + ".xml"))
         events = [
-            ("defineVariablesCommand", "COMPLETED", {}), ("applyConfigurationCommand", "COMPLETED", {}),
-            ("runFlowCommand", "RUNNING", {"condition": {"platform": "IOS"}}),
-            ("runFlowCommand", "RUNNING", {"sourceDescription": "ios-launch-bundle.yaml"}),
-            ("applyConfigurationCommand", "COMPLETED", {}),
-            ("launchAppCommand", "RUNNING", {"appId": "eu.onesa.smartfarmer"}),
+            (0, "defineVariablesCommand", "COMPLETED", {}),
+            (0, "applyConfigurationCommand", "COMPLETED", {}),
+            (0, "runFlowCommand", "RUNNING", {"sourceDescription": "open-fixture-app.yaml"}),
+            (1, "tapOnElement", "RUNNING", {"selector": {"textRegex": "Continue"}}),
         ]
-        trace = [{"command": {kind: data}, "metadata": {"status": status}} for kind, status, data in events]
+        trace = [{"command": {kind: data}, "metadata": {"depth": depth, "status": status}}
+                 for depth, kind, status, data in events]
         path = self.root / label / "login" / "commands.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(trace))
         self.assertTrue(startup.failed_before_test(self.root, label, self.device))
         self.assertFalse(startup.failed_before_test(self.root, label, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
-        path.write_text(json.dumps(trace + [{"command": {"tapOnElement": {}}, "metadata": {"status": "RUNNING"}}]))
-        self.assertFalse(startup.failed_before_test(self.root, label, self.device))
+        ready = "Native acceptance network proxy ready.\n"
+        for method, route, allowed in [("GET", "other", True), ("POST", "/v1/sessions", False),
+                                       ("GET", "/v1/farms", False), ("POST", "other", False)]:
+            event = json.dumps({"method": method, "route": route})
+            (self.root / "proxy.log").write_text(ready + "[native-proxy] " + event + "\n")
+            self.assertEqual(startup.failed_before_test(self.root, label, self.device), allowed)
+        (self.root / "proxy.log").write_text(ready)
+        trace[2]["metadata"]["status"] = "COMPLETED"
         path.write_text(json.dumps(trace))
-        (self.root / "proxy.log").write_text("Native acceptance network proxy ready.\n[native-proxy] request\n")
+        self.assertFalse(startup.failed_before_test(self.root, label, self.device))
+        trace[2]["metadata"]["status"] = "RUNNING"
+        path.write_text(json.dumps(trace + [{"command": {"runFlowCommand": {"sourceDescription": "credentials.yaml"}},
+                                             "metadata": {"depth": 0, "status": "RUNNING"}}]))
         self.assertFalse(startup.failed_before_test(self.root, label, self.device))
 
     def test_commands_reports_or_screenshots_forbid_replay(self):

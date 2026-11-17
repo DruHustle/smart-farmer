@@ -61,16 +61,17 @@ run_native_login() {
   fi
   if [[ "$flow" == login ]] &&
      python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label" "$device"; then
-    # XCTest failed before it could launch the form. Keep the failed install
-    # trace, then give the same simulator one clean driver installation.
+    # Before credentials, retry the complete startup once with its original evidence.
     mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
     if [[ -f "$report" ]]; then mv "$report" "$EVIDENCE/$label-driver-startup.xml"; fi
     if [[ "$label" == ipad-large-font || "$label" == ios-login ]]; then
       # Re-register the same installed simulator with CoreSimulator and Xcode.
-      # The detector already verified that no Farmer UI command was issued.
+      # Reinstall to reset partially dismissed Expo first-launch prompts.
       xcrun simctl shutdown "$device" || return 1
       xcrun simctl boot "$device" || return 1
       xcrun simctl bootstatus "$device" -b || return 1
+      xcrun simctl uninstall "$device" eu.onesa.smartfarmer || return 1
+      xcrun simctl install "$device" "$NATIVE_APP" || return 1
       if [[ "$label" == ipad-large-font ]]; then
         xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
       fi

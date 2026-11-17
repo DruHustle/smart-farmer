@@ -181,12 +181,14 @@ jobs:
         # Remove [ios-onesa-only] and requalify all suites before merging.
         suite: ${{ fromJSON((contains(github.event.pull_request.body, '[ios-onesa-only]') || (github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics)) && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: ${{ matrix.suite == 'onesa' && 105 || 75 }}
     concurrency:
       group: native-ios-${{ matrix.suite }}-${{ github.ref }}
       cancel-in-progress: false
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
+      IOS_CONFIGURATION: ${{ matrix.suite == 'onesa' && 'Release' || 'Debug' }}
+      EXPO_PUBLIC_API_URL: ${{ matrix.suite == 'onesa' && 'https://127.0.0.1:46502' || 'http://127.0.0.1:3001' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -207,12 +209,27 @@ jobs:
       - run: npm ci --prefix smart-farmer-backend
       - name: Install supplier invoice extraction tools
         run: brew install tesseract poppler
+      - name: Identify the bundled iPhone identity fixture
+        if: matrix.suite == 'onesa'
+        id: ios-release
+        working-directory: smart-farmer-frontend/mobile
+        run: |
+          set -euo pipefail
+          # Release includes app JS, assets and the API origin in its executable bundle.
+          digest=$({
+            git ls-files --stage -- . ':!acceptance' ':!android' ':!test'
+            node --version
+            xcodebuild -version
+            xcrun --sdk iphonesimulator --show-sdk-version
+            printf '%s\n' "$IOS_CONFIGURATION" "$EXPO_PUBLIC_API_URL"
+          } | shasum -a 256 | cut -d ' ' -f 1)
+          echo "prefix=identity-release-$digest-" >> "$GITHUB_OUTPUT"
       - name: Restore matching native iOS simulator binary
         id: ios-binary
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/SmartFarmer-simulator.zip
-          key: native-ios-simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
+          key: native-ios-${{ steps.ios-release.outputs.prefix }}simulator-adhoc-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('smart-farmer-frontend/mobile/package-lock.json', 'smart-farmer-frontend/mobile/app.json', 'smart-farmer-frontend/mobile/plugins/**', 'smart-farmer-frontend/mobile/android/**', 'smart-farmer-frontend/mobile/ios/**') }}
       - name: Compile native SQLCipher iOS simulator application
         if: steps.ios-binary.outputs.cache-hit != 'true'
         working-directory: smart-farmer-frontend/mobile
@@ -222,8 +239,11 @@ jobs:
           npx expo prebuild --no-install --platform ios
           cd ios
           pod install 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-pods.log"
-          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
-          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
+          if [[ "$IOS_CONFIGURATION" == Release ]]; then
+            export NODE_ENV=production EXPO_NO_DOTENV=1
+          fi
+          xcodebuild -workspace SmartFarmer.xcworkspace -scheme SmartFarmer -configuration "$IOS_CONFIGURATION" -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/native-ios" EXPO_PUBLIC_API_URL="$EXPO_PUBLIC_API_URL" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES build 2>&1 | tee "$RUNNER_TEMP/native-evidence/ios-build.log"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/native-ios/Build/Products/$IOS_CONFIGURATION-iphonesimulator/SmartFarmer.app" "$RUNNER_TEMP/SmartFarmer-simulator.zip"
       - name: Save successful iOS compilation before UI journeys
         if: steps.ios-binary.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -232,9 +252,16 @@ jobs:
           key: ${{ steps.ios-binary.outputs.cache-primary-key }}
       - name: Restore simulator app and inspect native signing
         run: |
-          mkdir -p "$RUNNER_TEMP/native-evidence" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
-          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator"
-          codesign -d --entitlements :- "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
+          products="$RUNNER_TEMP/native-ios/Build/Products/$IOS_CONFIGURATION-iphonesimulator"
+          app="$products/SmartFarmer.app"
+          mkdir -p "$RUNNER_TEMP/native-evidence" "$products"
+          ditto -x -k "$RUNNER_TEMP/SmartFarmer-simulator.zip" "$products"
+          if [[ "$IOS_CONFIGURATION" == Release ]]; then
+            test -s "$app/main.jsbundle"
+            LC_ALL=C grep -aFq -- "$EXPO_PUBLIC_API_URL" "$app/main.jsbundle"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = eu.onesa.smartfarmer
+          fi
+          codesign -d --entitlements :- "$app" > "$RUNNER_TEMP/native-evidence/ios-entitlements.plist" 2> "$RUNNER_TEMP/native-evidence/ios-signing.txt"
       - name: Check out the tested Portal issuer
         if: matrix.suite == 'onesa'
         uses: actions/checkout@v4
@@ -249,9 +276,9 @@ jobs:
           npm ci --prefix qualification-portal/onesa-company-portal-backend
           npm ci --prefix qualification-portal/onesa-company-portal-frontend
           npm ci --prefix smart-farmer-frontend/web
-      - name: Start real Portal, Farmer, native callback and Metro
+      - name: Start the local HTTPS issuer, Farmer API and callback
         if: matrix.suite == 'onesa'
-        run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh ios
+        run: bash smart-farmer-frontend/mobile/acceptance/onesa/start.sh ios standalone
       - name: Start isolated API and Metro
         if: matrix.suite != 'onesa'
         run: bash smart-farmer-frontend/mobile/acceptance/start-services.sh ios

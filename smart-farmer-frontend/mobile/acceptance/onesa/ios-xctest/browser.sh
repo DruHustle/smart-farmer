@@ -37,12 +37,16 @@ case "$mode" in
     esac
     run=$(mktemp -d "$work/$role.XXXXXX")
     capture_pid=
+    observer_pid=
     stop_capture() {
-      if [[ -n "$capture_pid" ]]; then
-        if jobs -pr | grep -qx "$capture_pid"; then kill "$capture_pid" 2>/dev/null || true; fi
-        wait "$capture_pid" 2>/dev/null || true
-        capture_pid=
-      fi
+      local pid
+      for pid in "$capture_pid" "$observer_pid"; do
+        [[ -n "$pid" ]] || continue
+        if jobs -pr | grep -qx "$pid"; then kill "$pid" 2>/dev/null || true; fi
+        wait "$pid" 2>/dev/null || true
+      done
+      capture_pid=
+      observer_pid=
     }
     trap 'stop_capture; rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
@@ -67,10 +71,19 @@ case "$mode" in
     fi
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
+    runners=("$work"/build/Build/Products/*-iphonesimulator/*-Runner.app)
+    [[ ${#runners[@]} == 1 && -f "${runners[0]}/Info.plist" ]] || report_failure test-runner-bundle
+    runner_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${runners[0]}/Info.plist")
     fixture_log="$RUNNER_TEMP/onesa-device/fixture.log"
     for attempt in 1 2; do
       result="$run/identity-$attempt.xcresult"
       log="$run/xcode-$attempt.log"
+      TEST_RUNNER_FARMER_OCR_SESSION=$(uuidgen | tr '[:lower:]' '[:upper:]')
+      export TEST_RUNNER_FARMER_OCR_SESSION
+      # A read-only compositor observer answers requests in the XCTest runner's
+      # own disposable tmp directory. XCTest is the sole gesture/keyboard driver.
+      python3 "$dir/render-controls.py" "$device" "$runner_id" "$TEST_RUNNER_FARMER_OCR_SESSION" "$run" > "$run/observer-$attempt.log" 2>&1 &
+      observer_pid=$!
       if [[ "$role" == cancel ]]; then
         initial_lines=$(wc -l < "$fixture_log")
         python3 "$dir/failure-evidence.py" watch-cancel "$log" "$device" "$evidence" &

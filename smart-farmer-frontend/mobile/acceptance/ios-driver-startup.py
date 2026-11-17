@@ -12,8 +12,7 @@ def failed_before_test(evidence, label, device=None):
     folder = evidence / label
     report = evidence / (label + ".xml")
     if report.exists():
-        return initial_launch_disconnected(report, folder, device) and (
-            evidence / "proxy.log").read_text().strip() == "Native acceptance network proxy ready."
+        return initial_launch_disconnected(report, folder, device) and only_startup_reads(evidence / "proxy.log")
     excluded = ("commands.json", "manifest.json")
     if any(path.name in excluded or path.suffix == ".png" for path in folder.rglob("*")):
         return False
@@ -56,8 +55,8 @@ def failed_before_test(evidence, label, device=None):
 
 
 def initial_launch_disconnected(report, folder, device):
-    # Maestro applies permissions before launching the bundle. Only retry a
-    # refused driver connection at that first launch, before any form input.
+    # The startup subflow ends at the signed-out screen. Once Maestro returns
+    # from it, resetting the app could replay credential or product actions.
     if not device or not re.fullmatch(r"[0-9a-fA-F-]{36}", device):
         return False
     commands = folder / "login" / "commands.json"
@@ -71,19 +70,32 @@ def initial_launch_disconnected(report, folder, device):
     if len(cases) != 1 or cases[0].get("file") != "smart-farmer-frontend/mobile/acceptance/login.yaml":
         return False
     failure = cases[0].findtext("failure") or ""
-    if (not failure.startswith("maestro.DeviceUnreachableException: Device became unreachable during setPermissions\n")
+    if (not failure.startswith("maestro.DeviceUnreachableException: Device became unreachable during ")
+            or "Failed to connect to /127.0.0.1:" not in failure
             or "Caused by: java.net.ConnectException: Connection refused" not in failure):
         return False
     trace = json.loads(commands.read_text())
-    setup = [("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
-             ("runFlowCommand", "RUNNING"), ("runFlowCommand", "RUNNING"),
-             ("applyConfigurationCommand", "COMPLETED"), ("launchAppCommand", "RUNNING")]
-    return (len(trace) == len(setup)
-            and all(list(row["command"]) == [kind] and row["metadata"]["status"] == status
-                    for row, (kind, status) in zip(trace, setup))
-            and trace[2]["command"]["runFlowCommand"].get("condition") == {"platform": "IOS"}
-            and trace[3]["command"]["runFlowCommand"].get("sourceDescription") == "ios-launch-bundle.yaml"
-            and trace[-1]["command"]["launchAppCommand"].get("appId") == "eu.onesa.smartfarmer")
+    # Commands inside a nested flow have depth >= 1. A later top-level step
+    # (including credentials.yaml) excludes recovery, even on driver loss.
+    top = [row for row in trace if row["metadata"]["depth"] == 0]
+    return (len(top) == 3
+            and "defineVariablesCommand" in top[0]["command"]
+            and "applyConfigurationCommand" in top[1]["command"]
+            and top[2]["command"].get("runFlowCommand", {}).get("sourceDescription") == "open-fixture-app.yaml"
+            and top[2]["metadata"]["status"] in ("RUNNING", "FAILED"))
+
+
+def only_startup_reads(proxy):
+    ready, *requests = proxy.read_text().splitlines()
+    if ready != "Native acceptance network proxy ready.":
+        return False
+    for line in requests:
+        if not line.startswith("[native-proxy] "):
+            return False
+        event = json.loads(line.removeprefix("[native-proxy] "))
+        if event.get("method") not in ("GET", "HEAD") or event.get("route") != "other":
+            return False
+    return True
 
 
 if __name__ == "__main__":

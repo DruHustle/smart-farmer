@@ -2,6 +2,15 @@
 set -euo pipefail
 platform="${1:?ios or android}"
 case "$platform" in ios|android) ;; *) exit 2;; esac
+mode=${2:-metro}
+case "$mode" in
+  standalone)
+    [[ "$platform" == ios && "$EXPO_PUBLIC_API_URL" == https://127.0.0.1:46502 ]] || exit 2
+    export FARMER_TEST_ORIGIN="$EXPO_PUBLIC_API_URL"
+    ;;
+  metro) ;;
+  *) exit 2 ;;
+esac
 work="$RUNNER_TEMP/onesa-device"
 mkdir -p -m 700 "$work"
 umask 077
@@ -48,6 +57,10 @@ for attempt in {1..120}; do
   sleep 1
 done
 test -s "$FIXTURE_READY_FILE"
+if [[ "$mode" == standalone ]]; then
+  curl -fsS --noproxy '*' --cacert "$work/ca.crt" "$FARMER_TEST_ORIGIN/v1/onesa/config" -o /dev/null
+  exit 0
+fi
 export EXPO_PUBLIC_API_URL=http://127.0.0.1:46504
 cd smart-farmer-frontend/mobile
 native_bundle_path="/index.bundle?platform=$platform&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
