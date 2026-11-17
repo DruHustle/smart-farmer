@@ -600,7 +600,7 @@ final class PortalColdTests: XCTestCase {
         return renderedAction(labels: ["rememberedAccount"], landmarks: ["Sign in to Onesa"])
     }
 
-    @MainActor private func portalCancel() -> XCUIElement? {
+    @MainActor private func portalCancel() -> BrowserAction? {
         // The localized issuer is real WebKit UI, not a synthetic callback.
         // XCUITest may expose it under SafariViewService or the foreground app.
         // The embedded issuer's Cancel button is exposed by foreground Farmer.
@@ -609,10 +609,27 @@ final class PortalColdTests: XCTestCase {
         let owners = runningOwners.filter { $0 === app } + runningOwners.filter { $0 !== app }
         for owner in owners {
             let ownerName: ControlOwner = owner === app ? .farmer : owner === safari ? .safari : .authSheet
-            let button = owner.buttons["Cancel sign-in"].firstMatch
-            if controlReady(button, phase: .cancel, owner: ownerName, control: .cancelButton) { return button }
-            let link = owner.links["Cancel sign-in"].firstMatch
-            if controlReady(link, phase: .cancel, owner: ownerName, control: .cancelLink) { return link }
+            let name = "Cancel sign-in"
+            let label = NSPredicate(format: "label == %@ OR identifier == %@", name, name)
+            let candidates: [(XCUIElementQuery, PreInputControl)] = [
+                (owner.buttons.matching(label), .cancelButton), (owner.links.matching(label), .cancelLink)
+            ]
+            for (query, kind) in candidates {
+                let element = query.firstMatch
+                guard controlReady(element, phase: .cancel, owner: ownerName, control: kind),
+                      query.count == 1, element.isEnabled else { continue }
+                // The remote WebKit button can be hittable while element.tap()
+                // fails resolving its activation point. Tap its verified live
+                // bounds through the foreground window, as for WebKit fields.
+                let display = app.state == .runningForeground ? app : owner
+                let frame = element.frame
+                let bounds = display.frame
+                guard display.state == .runningForeground, !frame.isEmpty,
+                      !frame.isInfinite, bounds.contains(frame) else { continue }
+                let offset = CGVector(dx: frame.midX - bounds.minX, dy: frame.midY - bounds.minY)
+                renderObserved(.actionReady)
+                return .point(display.coordinate(withNormalizedOffset: .zero).withOffset(offset))
+            }
         }
         return nil
     }
@@ -625,12 +642,8 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.consent)
         var cancel: BrowserAction?
         let visible = awaitBrowser {
-            if let button = self.portalCancel() {
-                cancel = .element(button)
-            } else {
-                cancel = self.renderedAction(labels: ["Cancel sign-in"],
-                                              landmarks: ["Sign in to Onesa", "Remember this browser"])
-            }
+            cancel = self.portalCancel() ?? self.renderedAction(labels: ["Cancel sign-in"],
+                                                                 landmarks: ["Sign in to Onesa", "Remember this browser"])
             return cancel != nil
         }
         try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
