@@ -1,4 +1,5 @@
 import * as Crypto from 'expo-crypto';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {openAuthSessionAsync} from 'expo-web-browser';
 import {createApi} from './api';
@@ -48,4 +49,25 @@ export async function redeemOnesa(incoming:string,origin:string):Promise<Session
     {code,verifier:pending.verifier,nonce:pending.nonce,native:pending.nonce ? true : undefined,language:pending.language});
   // Native storage supplies its own account-bound database key.
   return {origin,portalAccountUrl:new URL('/account',pending.issuer).href,token:reply.token,userId:reply.userId,username:reply.username,language:reply.language,expiresAt:reply.expiresAt};
+}
+
+const registrationKey = 'smart-farmer.onesa-registration.v1';
+export const registrationReturn = 'smartfarmer://onesa/registered';
+
+export async function registerOnesa(origin: string) {
+  const platform = Platform.OS;
+  if (platform !== 'ios' && platform !== 'android') throw new Error('onesa_unavailable');
+  await SecureStore.setItemAsync(registrationKey, origin, options);
+  const url = 'https://auth.onesa.eu/register?audience=user&product=farmer&platform=' + platform;
+  const result = await openAuthSessionAsync(url,registrationReturn);
+  if (result.type === 'success' && result.url === registrationReturn) return true;
+  await SecureStore.deleteItemAsync(registrationKey, options);
+  if (result.type === 'cancel' || result.type === 'dismiss') return false;
+  throw new Error('invalid_response');
+}
+
+export async function resumeRegistration(origin: string) {
+  if (await SecureStore.getItemAsync(registrationKey, options) !== origin) return false;
+  await SecureStore.deleteItemAsync(registrationKey, options);
+  return true;
 }

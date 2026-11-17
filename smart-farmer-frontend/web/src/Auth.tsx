@@ -6,7 +6,7 @@ import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
 import {nativeReturnLink} from './lib/native-return';
 import {beginOnesa, finishOnesa, type OnesaConfig} from './lib/onesa';
-import {destination} from './lib/destination';
+import {destination, registrationReturn, registrationUrl, rememberRegistration, takeRegistration} from './lib/destination';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
@@ -50,6 +50,18 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     }).catch(() => {if (active) {setOnesa(null); setLocalCredentials(false); setConfigFailure(true);}});
     return () => {active = false; window.removeEventListener('online', reload);};
   }, [configAttempt]);
+
+  useEffect(() => {
+    if (!onesa || location.pathname !== registrationReturn) return;
+    const path = takeRegistration(sessionStorage);
+    history.replaceState(null, '', path || '/');
+    if (!path) return;
+    setBusy(true);
+    void beginOnesa(onesa, language).catch(error => {
+      setBusy(false);
+      setMessage(errorLabel(words.current, error));
+    });
+  }, [onesa, language]);
 
   async function signIn(username: string, password: string) {
     const identity = await request<SessionIdentity>('/v1/sessions', '', jsonBody({username, password}));
@@ -105,8 +117,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
         {mode !== 'offlineUnlock' && configFailure && <p role="status">{t.onesa_unavailable} <a href="https://portal.onesa.eu/account">{t.onesaAccountEntry}</a> <button className="text-button" onClick={() => setConfigAttempt(n => n + 1)}>{t.retry}</button></p>}{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
         {mode !== 'offlineUnlock' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
           setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
-        }}>{t.onesaAccountEntry}</button>}
-        {!localCredentials && mode !== 'offlineUnlock' && <a href="https://auth.onesa.eu/register?audience=user">{t.createOnesaAccount}</a>}
+        }}>{t.onesaSignIn}</button>}
+        {!localCredentials && mode !== 'offlineUnlock' && <a href={registrationUrl} onClick={() => rememberRegistration(sessionStorage, new URL(location.href))}>{t.createOnesaAccount}</a>}
         {!localCredentials && mode !== 'offlineUnlock' && message && <p className="notice error" role="alert">{message}</p>}
         {(localCredentials || mode === 'offlineUnlock') && <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}

@@ -13,6 +13,7 @@ import {forumJourneys} from './browser-forum.mjs';
 import {trackingJourneys} from './browser-tracking.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
+import { registrationJourney } from './browser-registration.mjs';
 import {appStoreListings} from '../src/components/app-store-listings.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -97,6 +98,7 @@ try {
   await Promise.all([waitUrl(`${api}/ready`), waitUrl(ui)]);
   checkpoint('Launch Chromium');
   browser = await chromium.launch({headless: true, timeout: 15000, ...((process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) ? {executablePath: process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : existsSync(chromium.executablePath()) ? {} : existsSync('/usr/bin/chromium') ? {executablePath: '/usr/bin/chromium'} : {}), args: ['--no-sandbox']});
+  await registrationJourney(browser, ui, api, sn.createOnesaAccount);
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, ScrollView, Text, View } from 'react-native';
 import * as ScreenCapture from 'expo-screen-capture';
-import { openOnesa, redeemOnesa, type OnesaConfig } from '../onesa';
+import { openOnesa, redeemOnesa, registerOnesa, registrationReturn, resumeRegistration, type OnesaConfig } from '../onesa';
 import { PolicyLink } from '../PolicyLink';
 import { createApi, isLocalApiHost } from '../api';
 import { errorText, textFor } from '../i18n';
@@ -38,6 +38,16 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       if (local) setLocalOrigin(origin);
       if ('issuer' in config && typeof config.issuer === 'string' && config.clientId && config.callback) {
         setPortal({origin, config});
+        void Linking.getInitialURL().then(async url => {
+          if (!mounted || submitting.current || url !== registrationReturn) return;
+          submitting.current = true;
+          setBusy(true);
+          try {
+            if (!await resumeRegistration(origin)) return;
+            const session = await openOnesa(origin,config,language);
+            if (mounted && session) await onSessionRef.current(session);
+          } finally { submitting.current = false; if (mounted) setBusy(false); }
+        }).catch(err => { if (mounted) setError(err); });
       } else if (!local) setConfigFailed(true);
     }).catch(() => { if (mounted) setConfigFailed(true); });
     const handle = async (url: string | null | undefined) => {
@@ -107,8 +117,15 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       submitting.current=true; setBusy(true); setError(null);
       void openOnesa(origin,onesa,language).then(async session => { if (session) await onSessionRef.current(session); }).catch(setError).finally(() => {submitting.current=false;setBusy(false);});
     }}/>}
-    {!allowLocal && <Button secondary title={t.createOnesaAccount} onPress={() => {
-      void Linking.openURL('https://auth.onesa.eu/register?audience=user').catch(setError);
+    {!allowLocal && <Button secondary title={t.createOnesaAccount} disabled={busy} onPress={async () => {
+      if (submitting.current) return;
+      submitting.current = true; setBusy(true); setError(null);
+      try {
+        if (!await registerOnesa(origin) || !onesa || !await resumeRegistration(origin)) return;
+        const session = await openOnesa(origin,onesa,language);
+        if (session) await onSessionRef.current(session);
+      } catch (err) { setError(err); }
+      finally { submitting.current = false; setBusy(false); }
     }}/>}
     {error ? <Notice text={errorText(language, error)} error /> : null}
     {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
