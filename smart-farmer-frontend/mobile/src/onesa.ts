@@ -58,7 +58,7 @@ export async function registerOnesa(origin: string,audience:"user"|"admin") {
   const platform = Platform.OS;
   if (platform !== 'ios' && platform !== 'android') throw new Error('onesa_unavailable');
   await SecureStore.setItemAsync(registrationKey, origin, options);
-  const url = 'https://auth.onesa.eu/register?audience='+audience+'&product=farmer&platform=' + platform;
+  const url = 'https://account.onesa.eu/register?audience='+audience+'&product=farmer&platform=' + platform;
   const result = await openAuthSessionAsync(url,registrationReturn);
   if (result.type === 'success' && result.url === registrationReturn) return true;
   await SecureStore.deleteItemAsync(registrationKey, options);
