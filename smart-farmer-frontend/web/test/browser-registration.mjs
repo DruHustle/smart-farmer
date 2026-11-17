@@ -15,7 +15,7 @@ export async function registrationJourney(browser, ui, api, label, audience) {
     await page.route(api + '/v1/onesa/config', route => route.fulfill({headers,json:{
       issuer,clientId:'synthetic-farmer',audience:'https://farmer-api.example.test',callback,
     }}));
-    const registration = 'https://auth.onesa.eu/register?audience='+audience+'&product=farmer&platform=web';
+    const registration = 'https://account.onesa.eu/register?audience='+audience+'&product=farmer&platform=web';
     await page.route(registration, route => route.fulfill({contentType:'text/html',body:
       '<a href="'+ui+'/auth/registration/complete">Return to Farmer</a>'}));
     await page.route(issuer + 'authorize?**', route => {
