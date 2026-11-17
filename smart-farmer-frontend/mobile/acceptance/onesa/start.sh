@@ -50,9 +50,20 @@ done
 test -s "$FIXTURE_READY_FILE"
 export EXPO_PUBLIC_API_URL=http://127.0.0.1:46504
 cd smart-farmer-frontend/mobile
+native_bundle_path="/index.bundle?platform=$platform&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+if [[ "$platform" == ios ]]; then
+  # Use the farm suite's real GET result for Expo's short HEAD MIME probe.
+  export ONESA_IOS_ACCEPTANCE_BUNDLE_PATH="$native_bundle_path"
+  export EXPO_OVERRIDE_METRO_CONFIG="$PWD/acceptance/ios-bundle-metro.cjs"
+fi
 npx --no-install expo start --dev-client --localhost > "$work/metro.log" 2>&1 &
 for attempt in {1..90}; do
   if curl -fsS http://127.0.0.1:8081/status > /dev/null 2>&1; then break; fi
   sleep 1
 done
-curl -fsS -o /dev/null --max-time 240 "http://127.0.0.1:8081/index.bundle?platform=$platform&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+native_bundle_url="http://127.0.0.1:8081$native_bundle_path"
+curl -fsS -o /dev/null --max-time 240 "$native_bundle_url"
+if [[ "$platform" == ios ]]; then
+  curl -fsSI --max-time 10 "$native_bundle_url" |
+    grep -Ei '^content-type: *(application|text)/javascript([;[:space:]]|$)' >/dev/null
+fi

@@ -84,14 +84,9 @@ final class PortalColdTests: XCTestCase {
     // that can outlive a browser handoff on the same disposable simulator.
     @MainActor private func startOnesaSignIn() throws {
         let bundle = "http://127.0.0.1:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
-        var link = URLComponents()
-        link.scheme = "smartfarmer"
-        link.host = "expo-development-client"
-        link.path = "/"
-        link.queryItems = [URLQueryItem(name: "url", value: bundle),
-                           URLQueryItem(name: "__expo_disable_fab", value: "1"),
-                           URLQueryItem(name: "disableFab", value: "1")]
-        let localURL = try XCTUnwrap(link.url)
+        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let encodedBundle = try XCTUnwrap(bundle.addingPercentEncoding(withAllowedCharacters: unreserved))
+        let localURL = try XCTUnwrap(URL(string: "smartfarmer://expo-development-client/?url=\(encodedBundle)&__expo_disable_fab=1&disableFab=1"))
         // The launch argument is consumed on process startup. Give the test
         // runner ownership from startup so activating the app cannot replace it.
         app.launchArguments = ["--initialUrl", localURL.absoluteString]
@@ -110,10 +105,13 @@ final class PortalColdTests: XCTestCase {
             let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
             if ready(savedBundle, .savedBundle) {
                 savedBundle.tap()
-            } else {
-                // The fresh launcher has no recent bundle yet. Deliver its fixed
-                // local development URL through the OS before starting any login.
-                XCUIDevice.shared.system.open(localURL)
+            }
+            // Expo reads --initialUrl at process start. Match the verified farm
+            // journey's one fresh launch if the chooser outlasts the first load.
+            if !waitFor({ !chooser.exists || !chooser.isHittable }, seconds: 4),
+               !start.exists, ready(chooser, .localChooser) {
+                app.terminate()
+                app.launch()
             }
         }
         // Expo presents its introduction and menu asynchronously above the
@@ -446,6 +444,9 @@ final class PortalColdTests: XCTestCase {
             for cpuOnly in [false, true] {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
+                // The retained 2622px iPhone display has 30–39px form labels
+                // and browser title. Vision's 1/32 default excludes that scale.
+                request.minimumTextHeight = 0.006
                 request.usesLanguageCorrection = false
                 request.usesCPUOnly = cpuOnly
                 request.regionOfInterest = region
