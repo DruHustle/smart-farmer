@@ -30,6 +30,37 @@ def screen(lines, email=""):
 
 
 class SimulatorControls(unittest.TestCase):
+    def test_finds_actual_runner_cache_even_when_xctest_output_is_buffered(self):
+        with tempfile.TemporaryDirectory() as private:
+            root = Path(private).resolve()
+            log = root / "private.log"
+            name = "farmer-ocr-session"
+            folder = root / "Containers/Data/Application/runner/Library/Caches" / name
+            folder.mkdir(parents=True)
+            self.assertEqual(controls.request_directory(root, "session", log), folder)
+            alternate = root / "Library/Caches" / name
+            alternate.mkdir(parents=True)
+            self.assertIsNone(controls.request_directory(root, "session", log))
+
+    def test_private_runner_location_must_resolve_inside_this_device_and_match_the_session(self):
+        with tempfile.TemporaryDirectory() as private:
+            parent = Path(private).resolve()
+            root = parent / "device-data"
+            root.mkdir()
+            log = parent / "private.log"
+            outside = parent / "outside/Library/Caches/farmer-ocr-session"
+            outside.mkdir(parents=True)
+            linked = root / "Library/Caches/farmer-ocr-session"
+            linked.parent.mkdir(parents=True)
+            linked.symlink_to(outside)
+            actual = root / "alternate-runner/Library/Caches/farmer-ocr-session"
+            actual.mkdir(parents=True)
+            log.write_text("FARMER_PRIVATE_OCR_DIRECTORY " + str(outside) + "\n")
+            self.assertIsNone(controls.request_directory(root, "session", log))
+            log.write_text("FARMER_PRIVATE_OCR_DIRECTORY " + str(actual) + "\n")
+            self.assertEqual(controls.request_directory(root, "session", log), actual)
+            self.assertIsNone(controls.request_directory(root, "another-session", log))
+
     def test_simctl_writes_named_private_file_and_frame_is_removed_before_ocr(self):
         header = b"\x89PNG\r\n\x1a\n" + bytes(8) + struct.pack(">II", 400, 850)
         frame = None

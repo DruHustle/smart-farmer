@@ -30,9 +30,12 @@ case "$mode" in
     ;;
   test)
     role=${3:?cancel, member or admin}
-    case "$role" in
-      cancel) context="cancel cancel"; test_name=testCancelPortal ;;
-      member|admin) context="$role cold"; test_name=testColdPortal ;;
+    phase=${4:?cancel, cold or active}
+    context="$role $phase"
+    case "$role-$phase" in
+      cancel-cancel) test_name=testCancelPortal ;;
+      member-cold|admin-cold) test_name=testColdPortal ;;
+      member-active|admin-active) test_name=testActivePortal ;;
       *) exit 2 ;;
     esac
     run=$(mktemp -d "$work/$role.XXXXXX")
@@ -55,25 +58,31 @@ case "$mode" in
     export TEST_RUNNER_FARMER_ROLE="$role"
     # Cancellation does not require or load credentials from the fixture.
     if [[ "$role" != cancel ]]; then
-      if [[ "$role" == admin ]]; then
-        TEST_RUNNER_FARMER_EMAIL=$(read_fixture ADMIN_EMAIL)
-        TEST_RUNNER_FARMER_MFA=$(read_fixture ADMIN_MFA)
-        export TEST_RUNNER_FARMER_MFA
-      else
-        TEST_RUNNER_FARMER_EMAIL=$(read_fixture MEMBER_EMAIL)
-      fi
-      TEST_RUNNER_FARMER_INVITE=$(read_fixture "$(echo "$role" | tr '[:lower:]' '[:upper:]')_INVITE")
+      prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
+      TEST_RUNNER_FARMER_EMAIL=$(read_fixture "${prefix}_EMAIL")
       TEST_RUNNER_FARMER_FARM=$(read_fixture FARM_NAME)
       TEST_RUNNER_FARMER_DISCUSSION=$(read_fixture FORUM_TITLE)
-      export TEST_RUNNER_FARMER_INVITE TEST_RUNNER_FARMER_FARM TEST_RUNNER_FARMER_DISCUSSION
-      TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
-      export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_PASSWORD
+      export TEST_RUNNER_FARMER_EMAIL TEST_RUNNER_FARMER_FARM TEST_RUNNER_FARMER_DISCUSSION
+      if [[ "$phase" == cold ]]; then
+        TEST_RUNNER_FARMER_INVITE=$(read_fixture "${prefix}_INVITE")
+        TEST_RUNNER_FARMER_PASSWORD=$(read_fixture PASSWORD)
+        export TEST_RUNNER_FARMER_INVITE TEST_RUNNER_FARMER_PASSWORD
+        if [[ "$role" == admin ]]; then
+          TEST_RUNNER_FARMER_MFA=$(read_fixture ADMIN_MFA)
+          export TEST_RUNNER_FARMER_MFA
+        fi
+      fi
     fi
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
-    runners=("$work"/build/Build/Products/*-iphonesimulator/*-Runner.app)
-    [[ ${#runners[@]} == 1 && -f "${runners[0]}/Info.plist" ]] || report_failure test-runner-bundle
-    runner_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${runners[0]}/Info.plist")
+    # simctl reports the actual data root for this UDID, including custom sets.
+    device_data=$(xcrun simctl list devices --json | python3 -c '
+import json, sys
+from pathlib import Path
+devices = (d for group in json.load(sys.stdin)["devices"].values() for d in group)
+root = Path(next(d["dataPath"] for d in devices if d["udid"] == sys.argv[1])).resolve(strict=True)
+if not root.is_dir(): sys.exit(1)
+print(root)' "$device") || report_failure simulator-data
     fixture_log="$RUNNER_TEMP/onesa-device/fixture.log"
     for attempt in 1 2; do
       result="$run/identity-$attempt.xcresult"
@@ -81,8 +90,8 @@ case "$mode" in
       TEST_RUNNER_FARMER_OCR_SESSION=$(uuidgen | tr '[:lower:]' '[:upper:]')
       export TEST_RUNNER_FARMER_OCR_SESSION
       # A read-only compositor observer answers requests in the XCTest runner's
-      # own disposable tmp directory. XCTest is the sole gesture/keyboard driver.
-      python3 "$dir/render-controls.py" "$device" "$runner_id" "$TEST_RUNNER_FARMER_OCR_SESSION" "$run" > "$run/observer-$attempt.log" 2>&1 &
+      # own disposable cache directory. XCTest is the sole gesture/keyboard driver.
+      python3 "$dir/render-controls.py" "$device" "$device_data" "$TEST_RUNNER_FARMER_OCR_SESSION" "$run" "$log" > "$run/observer-$attempt.log" 2>&1 &
       observer_pid=$!
       if [[ "$role" == cancel ]]; then
         initial_lines=$(wc -l < "$fixture_log")
@@ -97,7 +106,10 @@ case "$mode" in
         break
       fi
       stop_capture
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
+      # Only these fixed stage names may leave the private observer log.
+      awk '/^FARMER_OCR_STAGE (observer-started|runner-directory|received-request|recognized-frame|answered-request|compositor-timeout|recognizer-timeout|frame-unavailable)$/ && !seen[$0]++ {print}' \
+        "$run/observer-$attempt.log" | tee -a "$evidence/ios-results.txt"
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|reauthenticate|rememberedSession|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
       # XCTest can abort during a snapshot before the Swift capture hook runs.
       # Capture from the host only before credentials, and emit fixed categories
       # plus source line numbers instead of copying private XCTest output.

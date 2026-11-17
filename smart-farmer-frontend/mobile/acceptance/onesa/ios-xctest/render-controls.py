@@ -29,6 +29,8 @@ def recognize_controls(tsv, width, height, email):
     # denotes a whole allowlisted control. Its first word supplies a tap point
     # inside the label even if the link wraps across two lines.
     labels = {normalize(label): label for label in LABELS}
+    if email:
+        labels[normalize("Continue as " + email)] = "rememberedAccount"
     boxes = []
     chrome = False
     paragraphs = defaultdict(list)
@@ -65,7 +67,7 @@ def capture(device, email, private):
     with tempfile.TemporaryDirectory(prefix="frame-", dir=private) as frame_dir:
         frame = Path(frame_dir) / "screen.png"
         subprocess.run(["xcrun", "simctl", "io", device, "screenshot", "--type=png", str(frame)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=15)
         image = frame.read_bytes()
     if image[:8] != b"\x89PNG\r\n\x1a\n" or len(image) < 24:
         raise ValueError("Invalid compositor frame")
@@ -73,7 +75,7 @@ def capture(device, email, private):
     def read(mode):
         result = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", mode, "tsv"],
                                 input=image, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                check=True, timeout=5)
+                                check=True, timeout=8)
         return recognize_controls(result.stdout.decode("utf-8"), width, height, email)
 
     screen = read("3")
@@ -93,25 +95,53 @@ def capture(device, email, private):
     return screen
 
 
-def observe(device, runner_id, session, private):
+def request_directory(data_root, session, private_log):
+    name = "farmer-ocr-" + session
+    # XCTest output can be buffered until the test ends. Discover its random
+    # session in an app or device cache without depending on live log delivery.
+    folders = [data_root / "Library" / "Caches" / name]
+    folders.extend((data_root / "Containers" / "Data" / "Application").glob("*/Library/Caches/" + name))
+    try:
+        with private_log.open("rb") as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - 64*1024))
+            lines = stream.read().decode(errors="replace").splitlines()
+        prefix = "FARMER_PRIVATE_OCR_DIRECTORY "
+        folders.extend(Path(line[len(prefix):]) for line in lines if line.startswith(prefix))
+    except FileNotFoundError:
+        pass
+    valid = set()
+    for folder in folders:
+        if not folder.is_absolute():
+            continue
+        path = folder.resolve()
+        if path.is_relative_to(data_root) and path.parts[-3:] == ("Library", "Caches", name) and path.is_dir():
+            valid.add(path)
+    return valid.pop() if len(valid) == 1 else None
+
+
+def observe(device, data_path, session, private, log_name):
     if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", session):
         raise ValueError("Invalid observation session")
+    root = Path(data_path).resolve(strict=True)
     directory = None
     last = None
+    reported = set()
+
+    def stage(name):
+        if name not in reported:
+            print("FARMER_OCR_STAGE " + name, flush=True)
+            reported.add(name)
+
+    stage("observer-started")
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
         if directory is None or not directory.is_dir():
-            try:
-                container = subprocess.run(["xcrun", "simctl", "get_app_container", device, runner_id, "data"],
-                                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                           text=True, check=True, timeout=4).stdout.strip()
-                candidate = Path(container) / "tmp" / ("farmer-ocr-" + session)
-                if candidate.is_dir():
-                    directory = candidate
-            except (OSError, subprocess.SubprocessError):
-                pass
-            time.sleep(.3)
-            continue
+            directory = request_directory(root, session, Path(log_name))
+            if directory is None:
+                time.sleep(.3)
+                continue
+            stage("runner-directory")
         try:
             request = (directory / "request").read_text()
         except FileNotFoundError:
@@ -119,13 +149,20 @@ def observe(device, runner_id, session, private):
             continue
         if request != last and re.fullmatch(r"[A-Fa-f0-9-]{36}", request):
             last = request
+            stage("received-request")
             try:
                 screen = capture(device, os.environ.get("TEST_RUNNER_FARMER_EMAIL", ""), private)
+                stage("recognized-frame")
+            except subprocess.TimeoutExpired as error:
+                stage("compositor-timeout" if error.cmd[0] == "xcrun" else "recognizer-timeout")
+                screen = None
             except (OSError, ValueError, subprocess.SubprocessError):
+                stage("frame-unavailable")
                 screen = None
             temp = directory / "response.tmp"
             temp.write_text(json.dumps({"id": request, "screen": screen}))
             temp.replace(directory / "response.json")
+            stage("answered-request")
         time.sleep(.1)
 
 

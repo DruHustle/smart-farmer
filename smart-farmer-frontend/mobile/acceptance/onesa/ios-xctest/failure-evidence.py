@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 
-CHECKPOINTS = set("fixture signedOut localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
+CHECKPOINTS = set("fixture reauthenticate rememberedSession signedOut localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
 PATTERNS = {
     "execution-timeout": r"exceeded (?:its |the )?execution time allowance|test (?:case )?.{0,180}timed out|test execution time allowance",
     "snapshot-failure": r"failed to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)|unable to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)",
@@ -36,7 +36,7 @@ def classify(log, role, checkpoint):
         "checkpoint": checkpoint,
         "signals": [name for name, pattern in PATTERNS.items() if re.search(pattern, log, re.IGNORECASE)],
         "renderObservations": sorted(set(re.findall(
-            r"^FARMER_RENDER (screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
+            r"^FARMER_RENDER (requestWriteFailed|responseTimedOut|screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
             log, re.MULTILINE))),
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
         "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))

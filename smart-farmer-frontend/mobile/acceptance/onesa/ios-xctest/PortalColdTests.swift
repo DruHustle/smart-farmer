@@ -3,7 +3,7 @@ import UIKit
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, signInControl
+        case fixture, signedOut, reauthenticate, rememberedSession, signInControl
         case consent, email, password, remember, firstSubmit
         case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm
         case farmWorkspace, forumTab, forumScreen, forumFeed, completed
@@ -78,8 +78,14 @@ final class PortalColdTests: XCTestCase {
         return owners
     }
 
-    @MainActor private func startOnesaSignIn() throws {
+    @MainActor private func startOnesaSignIn(reauthenticate: Bool = false) throws {
         app.launch()
+        if reauthenticate {
+            checkpoint(.reauthenticate)
+            let lock = app.descendants(matching: .any)["device-reauthenticate"].firstMatch
+            let ready = waitFor({ lock.exists && lock.isEnabled && lock.isHittable }, seconds: 60)
+            try XCTUnwrap(ready ? lock : nil, "Restarted Farmer offers device reauthentication").tap()
+        }
         let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
         let ready = waitFor({
             self.app.state == .runningForeground && self.controlReady(start, phase: .startup,
@@ -132,7 +138,7 @@ final class PortalColdTests: XCTestCase {
         try? data.write(to: destination, options: .atomic)
     }
 
-    @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
+    @MainActor private func awaitBrowser(captureFailure: Bool = true, _ ready: @escaping () -> Bool) -> Bool {
         var consent: XCUIElement?
         let presented = {
             consent = self.browserConsent()
@@ -144,7 +150,7 @@ final class PortalColdTests: XCTestCase {
         guard waitFor(presented) || presented() else {
             // This checkpoint occurs before any fixture credentials are entered;
             // retain the simulator's actual blocking prompt for diagnosis.
-            captureConsentFailure()
+            if captureFailure { captureConsentFailure() }
             return false
         }
         guard let consent else { return true }
@@ -348,7 +354,7 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
-    private enum RenderObservation: String { case screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
+    private enum RenderObservation: String { case requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
     private var renderObservations = Set<RenderObservation>()
     private func renderObserved(_ value: RenderObservation) {
         if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
@@ -372,13 +378,18 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func renderedScreen() -> RenderedScreen? {
         guard let session = ProcessInfo.processInfo.environment["FARMER_OCR_SESSION"],
               let uuid = UUID(uuidString: session) else { return nil }
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("farmer-ocr-" + uuid.uuidString, isDirectory: true)
+        guard let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            renderObserved(.requestWriteFailed); return nil
+        }
+        let directory = cache.appendingPathComponent("farmer-ocr-" + uuid.uuidString, isDirectory: true)
         let request = UUID().uuidString
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
-        } catch { renderObserved(.recognitionUnavailable); return nil }
+            // xcodebuild output stays private on the Mac. The observer validates
+            // this directory inside the booted device; published receipts exclude it.
+            print("FARMER_PRIVATE_OCR_DIRECTORY " + directory.path)
+        } catch { renderObserved(.requestWriteFailed); return nil }
         var screen: ControlResponse.Screen?
         let received = waitFor({
             guard let data = try? Data(contentsOf: directory.appendingPathComponent("response.json")),
@@ -386,8 +397,9 @@ final class PortalColdTests: XCTestCase {
                   response.id == request else { return false }
             screen = response.screen
             return true
-        }, seconds: 16)
-        guard received, let screen else { renderObserved(.recognitionUnavailable); return nil }
+        }, seconds: 45)
+        guard received else { renderObserved(.responseTimedOut); return nil }
+        guard let screen else { renderObserved(.recognitionUnavailable); return nil }
         let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
         guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
         let pixels = CGSize(width: screen.width, height: screen.height)
@@ -522,27 +534,38 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
+    @MainActor private func callbackAction(issuerOwner: XCUIApplication? = nil,
+                                           onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
+        if let link = returnLink() { return .element(link) }
+        if let owner = issuerOwner {
+            let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
+            let links = owner.links.matching(names)
+            if links.count == 1, links.firstMatch.isHittable { return .element(links.firstMatch) }
+        }
+        return renderedAction(labels: ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"],
+                              landmarks: ["Smart Farmer"], onPasswordSheet: onPasswordSheet)
+    }
+
     @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil) throws {
         checkpoint(.returnLink)
         var action: BrowserAction?
         var declinedPasswordSheet = false
         let found = waitFor({
-            if let link = self.returnLink() {
-                action = .element(link)
-            } else if let owner = issuerOwner {
-                let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
-                let links = owner.links.matching(names)
-                if links.count == 1, links.firstMatch.isHittable { action = .element(links.firstMatch) }
-            }
-            if action == nil {
-                action = self.renderedAction(labels: ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"],
-                                             landmarks: ["Smart Farmer"]) { point in
-                    if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
-                }
+            action = self.callbackAction(issuerOwner: issuerOwner) { point in
+                if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
             }
             return action != nil
         }, seconds: 40)
         try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
+    }
+
+    @MainActor private func rememberedAccount(_ email: String) -> BrowserAction? {
+        for owner in browserOwners {
+            let button = owner.buttons["Continue as " + email].firstMatch
+            if button.exists && button.isEnabled && button.isHittable { return .element(button) }
+        }
+        // The observer only emits this label for the full expected account button.
+        return renderedAction(labels: ["rememberedAccount"], landmarks: ["Sign in to Onesa"])
     }
 
     @MainActor private func portalCancel() -> XCUIElement? {
@@ -689,8 +712,13 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.forumScreen)
         let newDiscussion = app.descendants(matching: .any)["forum-new"].firstMatch
         XCTAssertTrue(newDiscussion.waitForExistence(timeout: 30), "Forum opened")
+        try assertSeededDiscussion()
+        checkpoint(.completed)
+    }
+
+    @MainActor private func assertSeededDiscussion() throws {
         checkpoint(.forumFeed)
-        let title = try XCTUnwrap(env["FARMER_DISCUSSION"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["FARMER_DISCUSSION"])
         let discussion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "forum-open-", title)).firstMatch
         let scroll = app.scrollViews.firstMatch
         for _ in 0..<8 {
@@ -698,6 +726,42 @@ final class PortalColdTests: XCTestCase {
             scroll.swipeUp()
         }
         XCTAssertTrue(discussion.exists && discussion.isHittable, "Seeded discussion is visible")
+    }
+
+    @MainActor func testActivePortal() throws {
+        continueAfterFailure = false
+        checkpoint(.fixture)
+        let env = ProcessInfo.processInfo.environment
+        let email = try XCTUnwrap(env["FARMER_EMAIL"])
+        let farmName = try XCTUnwrap(env["FARMER_FARM"])
+        try startOnesaSignIn(reauthenticate: true)
+        checkpoint(.rememberedSession)
+        var callback: BrowserAction?
+        var account: BrowserAction?
+        // A remembered browser may return immediately or ask which account to
+        // continue as. Neither path enters credentials or joins a farm again.
+        let ready = awaitBrowser(captureFailure: false) {
+            callback = self.callbackAction()
+            if callback == nil { account = self.rememberedAccount(email) }
+            return callback != nil || account != nil
+        }
+        try XCTUnwrap(ready ? true : nil, "Issuer restored the existing browser session")
+        if let callback {
+            checkpoint(.returnLink)
+            callback.tap()
+        } else {
+            try XCTUnwrap(account, "Issuer offers the same remembered account").tap()
+            try returnToFarmer()
+        }
+        checkpoint(.forumScreen)
+        let forum = app.descendants(matching: .any)["tab-forum"].firstMatch
+        let composer = app.descendants(matching: .any)["forum-new"].firstMatch
+        let farm = app.staticTexts[farmName].firstMatch
+        XCTAssertTrue(waitFor({
+            self.app.state == .runningForeground && forum.exists && forum.isSelected &&
+                composer.exists && farm.exists
+        }), "Same farm and previously selected Forum restored after reauthentication")
+        try assertSeededDiscussion()
         checkpoint(.completed)
     }
 }
