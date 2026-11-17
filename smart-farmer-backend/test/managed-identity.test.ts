@@ -12,10 +12,11 @@ test('managed browser and native sessions retain legacy records and survive an i
   const now=()=>Math.floor(Date.now()/1000);
   const {privateKey,publicKey}=await generateKeyPair('RS256',{extractable:true});
   const jwk={...await exportJWK(publicKey),kid:'fixture-current',alg:'RS256',use:'sig'};
-  const stableId=randomUUID(), farmerId=randomUUID(), farmId=randomUUID();
+  let stableId=randomUUID(),providerSubject="oidc|synthetic-fixture";
+  const farmerId=randomUUID(), farmId=randomUUID();
   const nonce='n'.repeat(43), verifier='v'.repeat(43), secret='synthetic-farmer-confidential-client-secret';
   const clientId='web-pilot', nativeId='native-pilot', audience='https://api.farmer.onesa.eu';
-  const origin='http://127.0.0.1:5173', providerSubject='oidc|synthetic-fixture';
+  const origin='http://127.0.0.1:5173';
   const codes=new Set<string>();
   let online=true, remaining=180, products=['farmer'], targetAudience=audience, idNonce=nonce;
   let issuer='', role='user', mfaTime:number | undefined;
@@ -119,4 +120,19 @@ test('managed browser and native sessions retain legacy records and survive an i
   online=true;remaining=180;
   assert.equal((await records(restarted)).json().items[0].role,'worker');
   assert.equal((await signin(restarted)).json().userId,farmerId);
+  Object.assign(process.env,env);
+  const fresh=start();
+  for(const tier of ['user','admin']){
+    role=tier; mfaTime=now(); stableId=randomUUID(); providerSubject='oidc|'+stableId;
+    const [firstWeb,firstNative]=await Promise.all([signin(fresh),signin(fresh,true)]);
+    assert.equal(firstWeb.statusCode,200,firstWeb.body);
+    assert.equal(firstNative.statusCode,200,firstNative.body);
+    assert.equal(firstNative.json().userId,firstWeb.json().userId);
+    assert.notEqual(firstWeb.json().userId,farmerId);
+    assert.notEqual(firstWeb.json().vaultKey,'persistent-local-key');
+    const farms=await fresh.inject({url:'/v1/farms',headers:{authorization:'Bearer '+firstNative.json().token}});
+    assert.equal(farms.statusCode,200);assert.deepEqual(farms.json().items,[]);
+    assert.equal((await change(fresh,firstNative.json().token)).statusCode,404);
+  }
+
 });
