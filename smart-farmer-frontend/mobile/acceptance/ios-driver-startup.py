@@ -25,7 +25,7 @@ def failed_before_test(evidence, label, device=None):
     # A refused transport is distinct from an Accessibility initialization
     # error, but both precede UI work. Require every status probe to be either
     # a start or this exact refusal, bound to the selected simulator.
-    if label == "ios-login" and device and re.fullmatch(r"[0-9a-fA-F-]{36}", device):
+    if device and re.fullmatch(r"[0-9a-fA-F-]{36}", device):
         probes = [line for line in driver if "xcTestDriverStatusCheck:" in line]
         failure = f"[Failed] Perform XCUITest driver status check on {device}, exception: java.net.ConnectException: Failed to connect to /127.0.0.1:"
         transport_only = f"id:{device}," in runner and bool(probes) and failure in probes[-1] and all(

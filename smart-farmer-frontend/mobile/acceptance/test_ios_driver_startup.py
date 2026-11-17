@@ -30,6 +30,8 @@ class DriverStartup(unittest.TestCase):
 
     def test_connection_refused_before_any_ui_is_eligible(self):
         self.assertTrue(self.eligible())
+        self.trace.rename(self.root / "ipad-large-font")
+        self.assertTrue(startup.failed_before_test(self.root, "ipad-large-font", self.device))
 
     def test_first_launch_permission_transport_failure_restarts_only_before_input(self):
         label = "ipad-large-font"
