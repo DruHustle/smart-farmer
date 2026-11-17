@@ -9,8 +9,12 @@ final class PortalColdTests: XCTestCase {
         case farmWorkspace, forumTab, forumScreen, forumFeed, completed
     }
 
+    private var currentCheckpoint: Checkpoint = .fixture
+    private var retainedCancelFrame = false
+
     // Only these fixed names leave the runner. Never print a field, URL or assertion payload.
     private func checkpoint(_ value: Checkpoint) {
+        currentCheckpoint = value
         print("FARMER_XCUI_CHECKPOINT " + value.rawValue)
     }
 
@@ -358,7 +362,7 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
-    private enum RenderObservation: String { case systemConsent, consentTapped, browserVisible, requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
+    private enum RenderObservation: String { case systemConsent, consentTapped, browserVisible, frameRequested, frameWritten, requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
     private var renderObservations = Set<RenderObservation>()
     private func renderObserved(_ value: RenderObservation) {
         if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
@@ -387,8 +391,18 @@ final class PortalColdTests: XCTestCase {
         }
         let directory = cache.appendingPathComponent("farmer-ocr-" + uuid.uuidString, isDirectory: true)
         let request = UUID().uuidString
+        let frame = directory.appendingPathComponent(request + ".png")
+        defer { try? FileManager.default.removeItem(at: frame) }
+        // Capture through the XCTest session that owns the foreground browser.
+        // The host recognizes this exact image and never starts a second display reader.
+        renderObserved(.frameRequested)
+        let png = XCUIScreen.main.screenshot().pngRepresentation
+        guard !png.isEmpty else { renderObserved(.screenshotUnavailable); return nil }
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                     attributes: [.posixPermissions: 0o700])
+            try png.write(to: frame, options: .atomic)
+            renderObserved(.frameWritten)
             try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
             // xcodebuild output stays private on the Mac. The observer validates
             // this directory inside the booted device; published receipts exclude it.
@@ -404,6 +418,17 @@ final class PortalColdTests: XCTestCase {
         }, seconds: 45)
         guard received else { renderObserved(.responseTimedOut); return nil }
         guard let screen else { renderObserved(.recognitionUnavailable); return nil }
+        // Cancellation does not receive credentials. Retain one verified
+        // pre-input screen using the same pixels that produced its landmarks.
+        let labels = Set(screen.rows.map { $0.text })
+        if currentCheckpoint == .consent, !retainedCancelFrame,
+           ProcessInfo.processInfo.environment["FARMER_ROLE"] == "cancel",
+           labels.contains("systemConsentTitle") ||
+            (screen.titleBottom != nil && labels.contains("Sign in to Onesa") && labels.contains("Cancel sign-in")),
+           let base = ProcessInfo.processInfo.environment["FARMER_XCUI_EVIDENCE_DIR"] {
+            let destination = URL(fileURLWithPath: base).appendingPathComponent("ios-cancel-live-consent.png")
+            if (try? png.write(to: destination, options: .atomic)) != nil { retainedCancelFrame = true }
+        }
         let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
         guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
         let pixels = CGSize(width: screen.width, height: screen.height)

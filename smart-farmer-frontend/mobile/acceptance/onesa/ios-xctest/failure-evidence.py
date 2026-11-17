@@ -1,10 +1,8 @@
 """Retain bounded, secret-free XCTest failure metadata and pre-input screenshots."""
 import json
 import re
-import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 
@@ -36,7 +34,7 @@ def classify(log, role, checkpoint):
         "checkpoint": checkpoint,
         "signals": [name for name, pattern in PATTERNS.items() if re.search(pattern, log, re.IGNORECASE)],
         "renderObservations": sorted(set(re.findall(
-            r"^FARMER_RENDER (systemConsent|consentTapped|browserVisible|requestWriteFailed|responseTimedOut|screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
+            r"^FARMER_RENDER (systemConsent|consentTapped|browserVisible|frameRequested|frameWritten|requestWriteFailed|responseTimedOut|screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
             log, re.MULTILINE))),
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
         "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))
@@ -70,11 +68,6 @@ def read_tail(log_path):
         return stream.read().decode("utf-8", errors="replace")
 
 
-def last_checkpoint(log):
-    checkpoints = re.findall(r"^FARMER_XCUI_CHECKPOINT ([A-Za-z]+)$", log, re.MULTILINE)
-    return checkpoints[-1] if checkpoints and checkpoints[-1] in CHECKPOINTS else None
-
-
 def launch_retry_reason(log, summary, fixture_lines, initial_lines):
     # Never repeat a journey which started, sent an issuer request, or has a
     # test outcome. Use the entire private log here, not its diagnostics tail.
@@ -94,26 +87,6 @@ def launch_retry_reason(log, summary, fixture_lines, initial_lines):
     return None
 
 
-def watch_cancel(log_path, device, directory):
-    # This watcher runs only for the cancellation test, which never loads or
-    # enters credentials. simctl reads the frame without starting a UI driver.
-    # Take the live blocking screen before XCTest's timeout can tear it down.
-    deadline = time.monotonic() + 450
-    while time.monotonic() < deadline:
-        try:
-            checkpoint = last_checkpoint(read_tail(log_path))
-        except FileNotFoundError:
-            checkpoint = None
-        if checkpoint == "consent":
-            time.sleep(3)
-            if last_checkpoint(read_tail(log_path)) == "consent":
-                capture(device, Path(directory), "cancel-live", "consent")
-            return
-        if checkpoint in {"returnLink", "completed"}:
-            return
-        time.sleep(1)
-
-
 def main(args):
     if len(args) != 5:
         raise ValueError("Invalid diagnostic arguments")
@@ -127,14 +100,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # subprocess.run kills its child when interrupted by SystemExit, so the
-    # owning shell can stop this bounded watcher without leaving simctl behind.
-    def stop(_signal, _frame):
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, stop)
-    if len(sys.argv) == 5 and sys.argv[1] == "watch-cancel":
-        watch_cancel(*sys.argv[2:])
-    elif len(sys.argv) == 6 and sys.argv[1] == "launch-retry":
+    if len(sys.argv) == 6 and sys.argv[1] == "launch-retry":
         log_file, summary_file, fixture_file, initial = sys.argv[2:]
         try:
             summary = json.loads(Path(summary_file).read_text())

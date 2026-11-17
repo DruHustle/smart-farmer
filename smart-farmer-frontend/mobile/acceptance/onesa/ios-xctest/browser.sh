@@ -39,19 +39,15 @@ case "$mode" in
       *) exit 2 ;;
     esac
     run=$(mktemp -d "$work/$role.XXXXXX")
-    capture_pid=
     observer_pid=
-    stop_capture() {
-      local pid
-      for pid in "$capture_pid" "$observer_pid"; do
-        [[ -n "$pid" ]] || continue
-        if jobs -pr | grep -qx "$pid"; then kill "$pid" 2>/dev/null || true; fi
-        wait "$pid" 2>/dev/null || true
-      done
-      capture_pid=
-      observer_pid=
+    stop_observer() {
+      if [[ -n "$observer_pid" ]]; then
+        if jobs -pr | grep -qx "$observer_pid"; then kill "$observer_pid" 2>/dev/null || true; fi
+        wait "$observer_pid" 2>/dev/null || true
+        observer_pid=
+      fi
     }
-    trap 'stop_capture; rm -rf "$run"' EXIT
+    trap 'stop_observer; rm -rf "$run"' EXIT
     fixture="$RUNNER_TEMP/onesa-device/ready.json"
     export TEST_RUNNER_FARMER_XCUI_EVIDENCE_DIR="$evidence"
     read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
@@ -89,25 +85,23 @@ print(root)' "$device") || report_failure simulator-data
       log="$run/xcode-$attempt.log"
       TEST_RUNNER_FARMER_OCR_SESSION=$(uuidgen | tr '[:lower:]' '[:upper:]')
       export TEST_RUNNER_FARMER_OCR_SESSION
-      # A read-only compositor observer answers requests in the XCTest runner's
-      # own disposable cache directory. XCTest is the sole gesture/keyboard driver.
-      python3 "$dir/render-controls.py" "$device" "$device_data" "$TEST_RUNNER_FARMER_OCR_SESSION" "$run" "$log" > "$run/observer-$attempt.log" 2>&1 &
+      # XCTest owns the display and gestures. The host only recognizes its
+      # private on-demand frames and returns allowlisted controls.
+      python3 "$dir/render-controls.py" "$device_data" "$TEST_RUNNER_FARMER_OCR_SESSION" "$log" > "$run/observer-$attempt.log" 2>&1 &
       observer_pid=$!
       if [[ "$role" == cancel ]]; then
         initial_lines=$(wc -l < "$fixture_log")
-        python3 "$dir/failure-evidence.py" watch-cancel "$log" "$device" "$evidence" &
-        capture_pid=$!
       fi
       if xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
         -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
         -resultBundlePath "$result" \
         -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$log" 2>&1; then
-        stop_capture
+        stop_observer
         break
       fi
-      stop_capture
+      stop_observer
       # Only these fixed stage names may leave the private observer log.
-      awk '/^FARMER_OCR_STAGE (observer-started|runner-directory|received-request|recognized-frame|answered-request|compositor-timeout|recognizer-timeout|frame-unavailable)$/ && !seen[$0]++ {print}' \
+      awk '/^FARMER_OCR_STAGE (observer-started|runner-directory|received-request|recognized-frame|answered-request|recognizer-timeout|frame-unavailable)$/ && !seen[$0]++ {print}' \
         "$run/observer-$attempt.log" | tee -a "$evidence/ios-results.txt"
       last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|reauthenticate|rememberedSession|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
       # XCTest can abort during a snapshot before the Swift capture hook runs.

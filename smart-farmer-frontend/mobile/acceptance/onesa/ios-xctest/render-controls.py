@@ -4,10 +4,11 @@ import io
 import json
 import os
 import re
+import signal
+import stat
 import struct
 import subprocess
 import sys
-import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -68,15 +69,19 @@ def recognize_controls(tsv, width, height, email):
     return {"width": width, "height": height, "chrome": title_bottom is not None, "titleBottom": title_bottom, "rows": boxes}
 
 
-def capture(device, email, private):
-    # Some simctl versions treat "-" as a literal filename. Use an explicit
-    # private path outside Actions artifacts. Remove the frame before OCR and
-    # on exceptions. browser.sh also removes the enclosing run on termination.
-    with tempfile.TemporaryDirectory(prefix="frame-", dir=private) as frame_dir:
-        frame = Path(frame_dir) / "screen.png"
-        subprocess.run(["xcrun", "simctl", "io", device, "screenshot", "--type=png", str(frame)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=15)
-        image = frame.read_bytes()
+def recognize_frame(frame, email):
+    # XCTest atomically writes the PNG before publishing its request ID. Unlink
+    # it before starting OCR. Neither full frames nor arbitrary OCR text leave
+    # the disposable device and Mac.
+    try:
+        fd = os.open(frame, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or not 24 <= info.st_size <= 32*1024*1024:
+                raise ValueError("Invalid XCTest frame")
+            image = source.read(info.st_size)
+    finally:
+        frame.unlink(missing_ok=True)
     if image[:8] != b"\x89PNG\r\n\x1a\n" or len(image) < 24:
         raise ValueError("Invalid compositor frame")
     width, height = struct.unpack(">II", image[16:24])
@@ -132,7 +137,7 @@ def request_directory(data_root, session, private_log):
     return valid.pop() if len(valid) == 1 else None
 
 
-def observe(device, data_path, session, private, log_name):
+def observe(data_path, session, log_name):
     if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", session):
         raise ValueError("Invalid observation session")
     root = Path(data_path).resolve(strict=True)
@@ -163,10 +168,10 @@ def observe(device, data_path, session, private, log_name):
             last = request
             stage("received-request")
             try:
-                screen = capture(device, os.environ.get("TEST_RUNNER_FARMER_EMAIL", ""), private)
+                screen = recognize_frame(directory / (request + ".png"), os.environ.get("TEST_RUNNER_FARMER_EMAIL", ""))
                 stage("recognized-frame")
-            except subprocess.TimeoutExpired as error:
-                stage("compositor-timeout" if error.cmd[0] == "xcrun" else "recognizer-timeout")
+            except subprocess.TimeoutExpired:
+                stage("recognizer-timeout")
                 screen = None
             except (OSError, ValueError, subprocess.SubprocessError):
                 stage("frame-unavailable")
@@ -178,5 +183,20 @@ def observe(device, data_path, session, private, log_name):
         time.sleep(.1)
 
 
+def remove_private_frames(root, session, private_log):
+    directory = request_directory(root, session, private_log)
+    if directory:
+        for frame in directory.glob("*.png"):
+            if re.fullmatch(r"[A-Fa-f0-9-]{36}\.png", frame.name):
+                frame.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
-    observe(*sys.argv[1:])
+    data_path, session, log_name = sys.argv[1:]
+    def stop(_signal, _frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        observe(data_path, session, log_name)
+    finally:
+        remove_private_frames(Path(data_path).resolve(), session, Path(log_name))

@@ -61,37 +61,48 @@ class SimulatorControls(unittest.TestCase):
             self.assertEqual(controls.request_directory(root, "session", log), actual)
             self.assertIsNone(controls.request_directory(root, "another-session", log))
 
-    def test_simctl_writes_named_private_file_and_frame_is_removed_before_ocr(self):
+    def test_xctest_frame_is_consumed_before_ocr_without_another_capture(self):
         header = b"\x89PNG\r\n\x1a\n" + bytes(8) + struct.pack(">II", 400, 850)
-        frame = None
         with tempfile.TemporaryDirectory() as private:
+            frame = Path(private) / "current.png"
+            frame.write_bytes(header)
             def tool(args, **kwargs):
-                nonlocal frame
-                if args[0] == "xcrun":
-                    frame = Path(args[-1])
-                    self.assertEqual(frame.parent.parent, Path(private))
-                    self.assertEqual(frame.parent.stat().st_mode & 0o777, 0o700)
-                    self.assertEqual(kwargs["stdout"], subprocess.DEVNULL)
-                    frame.write_bytes(header)
-                    return subprocess.CompletedProcess(args, 0)
                 self.assertEqual(args[0], "tesseract")
                 self.assertEqual(kwargs["input"], header)
                 self.assertFalse(frame.exists())
                 return subprocess.CompletedProcess(args, 0, stdout=tsv([]).encode())
-
             with patch.object(controls.subprocess, "run", side_effect=tool):
-                self.assertEqual(controls.capture("simulator", "", private)["rows"], [])
+                self.assertEqual(controls.recognize_frame(frame, "")["rows"], [])
             self.assertEqual(list(Path(private).iterdir()), [])
 
-    def test_partial_frame_is_removed_when_simctl_fails(self):
+    def test_rejects_partial_and_symlink_frames_without_reading_the_target(self):
         with tempfile.TemporaryDirectory() as private:
-            def fail(args, **kwargs):
-                Path(args[-1]).write_bytes(b"partial")
-                raise subprocess.TimeoutExpired("simctl", 5)
-            with patch.object(controls.subprocess, "run", side_effect=fail):
-                with self.assertRaises(subprocess.TimeoutExpired):
-                    controls.capture("simulator", "", private)
-            self.assertEqual(list(Path(private).iterdir()), [])
+            directory = Path(private)
+            source = directory / "outside"
+            source.write_bytes(b"private")
+            frame = directory / "frame.png"
+            frame.symlink_to(source)
+            with self.assertRaises(OSError):
+                controls.recognize_frame(frame, "")
+            self.assertFalse(frame.is_symlink())
+            self.assertEqual(source.read_bytes(), b"private")
+            frame.write_bytes(b"partial")
+            with self.assertRaises(ValueError):
+                controls.recognize_frame(frame, "")
+            self.assertFalse(frame.exists())
+
+    def test_observer_teardown_removes_only_private_frames_in_its_session(self):
+        with tempfile.TemporaryDirectory() as private:
+            root = Path(private).resolve()
+            folder = root / "Library/Caches/farmer-ocr-session"
+            folder.mkdir(parents=True)
+            frame = folder / "11111111-2222-3333-4444-555555555555.png"
+            unrelated = folder / "unrelated.png"
+            frame.touch()
+            unrelated.touch()
+            controls.remove_private_frames(root, "session", root / "xcode.log")
+            self.assertFalse(frame.exists())
+            self.assertTrue(unrelated.exists())
 
     def test_browser_title_and_complete_controls_have_normalized_in_control_positions(self):
         result = screen([(1, 1, 80, 160, "X localhost"), (2, 1, 150, 35, "Sign in to Onesa"),
