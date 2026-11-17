@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 LABELS = ("Sign in to Onesa", "Email address", "Password", "Remember this browser",
-          "Authenticator or recovery code", "Continue", "Cancel sign-in",
+          "Authenticator or recovery code", "Continue", "Cancel", "Cancel sign-in",
           "Smart Farmer", "Dzokera muSmart Farmer", "Buyela ku-Smart Farmer",
           "Save Password?", "Save", "Not Now")
 LOCAL_BROWSER_TITLES = {"localhost", "localhost:46501", "127.0.0.1", "127.0.0.1:46502"}
@@ -29,10 +29,15 @@ def recognize_controls(tsv, width, height, email):
     # denotes a whole allowlisted control. Its first word supplies a tap point
     # inside the label even if the link wraps across two lines.
     labels = {normalize(label): label for label in LABELS}
+    for host in ("localhost", "127.0.0.1"):
+        for quotes in (("“", "”"), ('"', '"')):
+            opening, closing = quotes
+            title = f"{opening}SmartFarmer{closing} Wants to Use {opening}{host}{closing} to Sign In"
+            labels[normalize(title)] = "systemConsentTitle"
     if email:
         labels[normalize("Continue as " + email)] = "rememberedAccount"
     boxes = []
-    chrome = False
+    title_bottom = None
     paragraphs = defaultdict(list)
     for row in csv.DictReader(io.StringIO(tsv), delimiter="\t", quoting=csv.QUOTE_NONE):
         if row["level"] != "5" or float(row["conf"]) < 45:
@@ -45,19 +50,22 @@ def recognize_controls(tsv, width, height, email):
         if email and row["text"] == email:
             boxes.append({"text": "fixtureEmail", "box": bounds})
         if token in LOCAL_BROWSER_TITLES and .25 < (x + w/2)/width < .75 and (y + h/2)/height < .18:
-            chrome = True
+            title_bottom = bounds[1] if title_bottom is None else min(title_bottom, bounds[1])
         paragraphs[(row["block_num"], row["par_num"])].append((token, int(row["line_num"]), bounds))
     for words in paragraphs.values():
         for i, (_, first_line, bounds) in enumerate(words):
             phrase = ""
-            for word, line, _ in words[i:i+7]:
+            for word, line, _ in words[i:i+10]:
                 if line > first_line + 1:
                     break
                 phrase += word
                 label = labels.get(phrase)
                 if label:
                     boxes.append({"text": label, "box": bounds})
-    return {"width": width, "height": height, "chrome": chrome, "rows": boxes}
+    # Plain Cancel belongs to Apple's prompt. The issuer has its own Cancel sign-in control.
+    if not any(box["text"] == "systemConsentTitle" for box in boxes):
+        boxes = [box for box in boxes if box["text"] != "Cancel"]
+    return {"width": width, "height": height, "chrome": title_bottom is not None, "titleBottom": title_bottom, "rows": boxes}
 
 
 def capture(device, email, private):
@@ -82,12 +90,16 @@ def capture(device, email, private):
     labels = {row["text"] for row in screen["rows"]}
     callback = {"Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"} & labels
     form = {"Email address", "Password", "Cancel sign-in", "Remember this browser"} <= labels
-    if screen["chrome"] and (callback or (form and (not email or "fixtureEmail" in labels))):
+    if "systemConsentTitle" in labels and {"Cancel", "Continue"} <= labels:
+        return screen
+    if screen["chrome"] and ((callback and "Smart Farmer" in labels) or (form and (not email or "fixtureEmail" in labels))):
         return screen
     # Sparse segmentation also finds the earlier, narrow inline link. Use
     # the same frame for both passes and keep duplicate controls ambiguous.
     sparse = read("11")
-    screen["chrome"] |= sparse["chrome"]
+    edges = [edge for edge in (screen["titleBottom"], sparse["titleBottom"]) if edge is not None]
+    screen["titleBottom"] = min(edges) if edges else None
+    screen["chrome"] = bool(edges)
     for label in {row["text"] for row in sparse["rows"]}:
         matches = [row for row in sparse["rows"] if row["text"] == label]
         if len(matches) > sum(row["text"] == label for row in screen["rows"]):

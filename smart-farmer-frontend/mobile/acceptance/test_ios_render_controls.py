@@ -109,6 +109,24 @@ class SimulatorControls(unittest.TestCase):
         self.assertTrue(screen([(1, 1, 80, 162, "127.0.0.1")])["chrome"])
         self.assertTrue(screen([(1, 1, 80, 145, "127.0.0.1:46502")])["chrome"])
 
+    def test_system_consent_requires_the_farmer_loopback_title(self):
+        buttons = [(2, 1, 450, 95, "Cancel"), (2, 1, 450, 235, "Continue")]
+        title = '“SmartFarmer” Wants to Use “localhost” to Sign In'
+        def names(heading):
+            result = screen([(1, 1, 350, 30, heading), *buttons])
+            return {row["text"] for row in result["rows"]}
+
+        self.assertEqual(names(title), {"systemConsentTitle", "Cancel", "Continue"})
+        self.assertNotIn("Cancel", names(title.replace("localhost", "example.com")))
+
+    def test_callback_below_compact_browser_title_can_occupy_top_twelfth(self):
+        result = screen([(1, 1, 12, 160, "127.0.0.1"), (2, 1, 36, 35, "Smart Farmer"),
+                         (3, 1, 65, 100, "Dzokera muSmart Farmer")])
+        heading, link = (row["box"] for row in result["rows"])
+        self.assertGreater(link[1] + link[3]/2, .88)
+        self.assertLess(link[1] + link[3], heading[1])
+        self.assertLess(heading[1] + heading[3], result["titleBottom"])
+
     def test_both_languages_and_wrapped_return_link_stay_distinct_from_heading(self):
         for first, last, label in (("Dzokera", "muSmart Farmer", "Dzokera muSmart Farmer"),
                                    ("Buyela", "ku-Smart Farmer", "Buyela ku-Smart Farmer")):

@@ -85,6 +85,7 @@ final class PortalColdTests: XCTestCase {
             let lock = app.descendants(matching: .any)["device-reauthenticate"].firstMatch
             let ready = waitFor({ lock.exists && lock.isEnabled && lock.isHittable }, seconds: 60)
             try XCTUnwrap(ready ? lock : nil, "Restarted Farmer offers device reauthentication").tap()
+            XCTAssertTrue(lock.waitForNonExistence(timeout: 30), "Device lock sheet dismissed before sign-in")
         }
         let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
         let ready = waitFor({
@@ -97,36 +98,16 @@ final class PortalColdTests: XCTestCase {
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
-        // ASWebAuthenticationSession's confirmation can be exposed as more
-        // than one alert node. Inspect every alert and combine its accessible
-        // text instead of requiring host and purpose to share one label.
-        // Before consent, SafariViewService and Safari may not have launched.
-        // Querying a stopped application's alerts aborts XCTest before the
-        // SpringBoard fallback can inspect the visible OS confirmation.
-        for owner in [springboard] + browserOwners {
-            for alert in owner.alerts.allElementsBoundByIndex {
-                let labels = [alert.label, (alert.value as? String) ?? ""] +
-                    alert.staticTexts.allElementsBoundByIndex.map { $0.label }
-                let text = labels.joined(separator: " ").lowercased()
-                guard (text.contains("localhost") || text.contains("127.0.0.1")),
-                      text.contains("sign in") else { continue }
-                let button = alert.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-                if button.exists && button.isHittable { return button }
-            }
-        }
-        // Some iOS simulator releases surface the same host confirmation in
-        // SpringBoard's accessibility tree rather than its alerts collection.
-        // Keep this fallback confined to SpringBoard and require both the
-        // loopback host and sign-in purpose before tapping its Continue button.
-        let host = springboard.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "localhost", "127.0.0.1")
-        ).firstMatch
-        let purpose = springboard.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@", "sign in")
-        ).firstMatch
-        let continueButton = springboard.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-        if host.exists && purpose.exists && continueButton.exists && continueButton.isHittable {
-            return continueButton
+        // Only query the exact system prompt. Enumerating every alert on a stale
+        // background SafariViewService can abort XCTest before authorization.
+        let prompt = NSPredicate(format: "label MATCHES[c] %@",
+            #"^[“"]Smart\s?Farmer[”"]\s+Wants\s+to\s+Use\s+[“"](localhost|127[.]0[.]0[.]1)[”"]\s+to\s+Sign\s+In$"#)
+        for owner in [springboard, app] {
+            let title = owner.staticTexts.matching(prompt).firstMatch
+            guard title.exists else { continue }
+            let cancel = owner.buttons["Cancel"].firstMatch
+            let accept = owner.buttons["Continue"].firstMatch
+            if cancel.exists && accept.exists && accept.isEnabled && accept.isHittable { return accept }
         }
         return nil
     }
@@ -139,30 +120,42 @@ final class PortalColdTests: XCTestCase {
     }
 
     @MainActor private func awaitBrowser(captureFailure: Bool = true, _ ready: @escaping () -> Bool) -> Bool {
-        var consent: XCUIElement?
-        let presented = {
-            consent = self.browserConsent()
-            return consent != nil || ready()
-        }
-        // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
-        // live alert once before failing. Rendering Portal gets its own wait
-        // after the OS prompt has actually been accepted.
-        guard waitFor(presented) || presented() else {
-            // This checkpoint occurs before any fixture credentials are entered;
-            // retain the simulator's actual blocking prompt for diagnosis.
+        var lastConsentTap: Date?
+        var retriedConsent = false
+        let visible = waitFor({
+            // The compositor sees the iOS prompt even while the foreground
+            // Farmer screen is disabled and WebKit has no accessibility tree.
+            let screen = self.renderedScreen()
+            var consent: BrowserAction?
+            if let point = screen?.systemConsentPoint() {
+                consent = .point(point)
+            } else if screen?.hasLoopbackChrome == true {
+                self.renderObserved(.browserVisible)
+                return true
+            } else if let button = self.browserConsent() {
+                consent = .element(button)
+            }
+            if let consent {
+                self.renderObserved(.systemConsent)
+                if let previous = lastConsentTap, retriedConsent || Date().timeIntervalSince(previous) < 5 {
+                    return false
+                }
+                retriedConsent = lastConsentTap != nil
+                lastConsentTap = Date()
+                consent.tap()
+                self.renderObserved(.consentTapped)
+                return false
+            }
+            // Fall back to a visible live browser surface if OCR is unavailable.
+            // The caller still has to identify the real issuer or return control.
+            return [self.app, self.safari, self.authSheet].contains { owner in
+                owner.state == .runningForeground && owner.webViews.firstMatch.exists
+            }
+        }, seconds: 90)
+        guard visible else {
             if captureFailure { captureConsentFailure() }
             return false
         }
-        guard let consent else { return true }
-        consent.tap()
-        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
-            // The first tap can coincide with presentation. Retry only the
-            // same local sign-in alert, without repeating the app's request.
-            stillPresented.tap()
-        }
-        // A slow remote AX snapshot can cross the deadline before WebKit's
-        // current controls are returned. Refresh the same predicate once; this
-        // neither repeats sign-in nor changes the required native gesture.
         return waitFor(ready) || ready()
     }
 
@@ -330,11 +323,22 @@ final class PortalColdTests: XCTestCase {
         let owners: [XCUIApplication]
 
         var words: Set<String> { Set(rows.map { $0.text }) }
-        let hasLoopbackChrome: Bool
+        let titleBottom: CGFloat?
+        var hasLoopbackChrome: Bool { titleBottom != nil }
 
         func unique(_ text: String) -> CGRect? {
             let matches = rows.filter { $0.text == text }
             return matches.count == 1 ? matches[0].box : nil
+        }
+
+        @MainActor func systemConsentPoint() -> XCUICoordinate? {
+            guard let title = unique("systemConsentTitle"),
+                  let cancel = unique("Cancel"), let accept = unique("Continue"),
+                  title.minY > max(cancel.maxY, accept.maxY),
+                  cancel.maxX < accept.minX,
+                  abs(cancel.midY - accept.midY) < max(cancel.height, accept.height)
+            else { return nil }
+            return point(at: CGPoint(x: accept.midX, y: accept.midY))
         }
 
         // These normalized boxes span the entire captured display and grow upward.
@@ -354,7 +358,7 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
-    private enum RenderObservation: String { case requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
+    private enum RenderObservation: String { case systemConsent, consentTapped, browserVisible, requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
     private var renderObservations = Set<RenderObservation>()
     private func renderObserved(_ value: RenderObservation) {
         if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
@@ -368,7 +372,7 @@ final class PortalColdTests: XCTestCase {
             }
             let width: Int
             let height: Int
-            let chrome: Bool
+            let titleBottom: CGFloat?
             let rows: [Row]
         }
         let id: String
@@ -416,7 +420,7 @@ final class PortalColdTests: XCTestCase {
                   box[1] + box[3] <= 1.000001 else { return nil }
             return (row.text, CGRect(x: box[0], y: box[1], width: box[2], height: box[3]))
         }
-        return RenderedScreen(rows: rows, display: display, owners: owners, hasLoopbackChrome: screen.chrome)
+        return RenderedScreen(rows: rows, display: display, owners: owners, titleBottom: screen.titleBottom)
     }
 
     // Embedded WebKit can render the issuer without publishing its DOM nodes
@@ -431,9 +435,10 @@ final class PortalColdTests: XCTestCase {
             }
             return nil
         }
-        guard screen.hasLoopbackChrome else { renderObserved(.chromeMissing); return nil }
+        guard let titleBottom = screen.titleBottom, titleBottom.isFinite,
+              (0...1).contains(titleBottom) else { renderObserved(.chromeMissing); return nil }
         guard landmarks.isSubset(of: screen.words) else { renderObserved(.landmarksMissing); return nil }
-        let targets = screen.rows.filter { labels.contains($0.text) && $0.box.midY < 0.88 }
+        let targets = screen.rows.filter { labels.contains($0.text) && $0.box.maxY < titleBottom }
         guard targets.count == 1, let box = targets.first?.box else { renderObserved(.ambiguousAction); return nil }
         if landmarks == ["Smart Farmer"], !screen.rows.contains(where: {
             $0.text == "Smart Farmer" && $0.box.minY > box.maxY
@@ -507,12 +512,12 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
-    @MainActor private func returnLink() -> XCUIElement? {
+    @MainActor private func returnLink(checkPasswordSheet: Bool = true) -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
         for owner in browserOwners + [springboard] {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
-            if app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
+            if checkPasswordSheet && app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
                 let frame = notNow.frame
                 // Apple's remote AutoFill alert can report a hittable button
                 // with an invalid activation point. Use the exact identified
@@ -534,28 +539,30 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
-    @MainActor private func callbackAction(issuerOwner: XCUIApplication? = nil,
+    @MainActor private func callbackAction(issuerOwner: XCUIApplication? = nil, checkPasswordSheet: Bool = true,
                                            onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
-        if let link = returnLink() { return .element(link) }
+        if let link = returnLink(checkPasswordSheet: checkPasswordSheet) { return .element(link) }
         if let owner = issuerOwner {
             let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
             let links = owner.links.matching(names)
             if links.count == 1, links.firstMatch.isHittable { return .element(links.firstMatch) }
         }
         return renderedAction(labels: ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"],
-                              landmarks: ["Smart Farmer"], onPasswordSheet: onPasswordSheet)
+                              landmarks: ["Smart Farmer"], onPasswordSheet: checkPasswordSheet ? onPasswordSheet : nil)
     }
 
-    @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil) throws {
+    @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil, afterCancellation: Bool = false) throws {
         checkpoint(.returnLink)
         var action: BrowserAction?
         var declinedPasswordSheet = false
+        // On a cold browser the first compositor read can time out while the
+        // denied callback page loads. Leave room for a second observed frame.
         let found = waitFor({
-            action = self.callbackAction(issuerOwner: issuerOwner) { point in
+            action = self.callbackAction(issuerOwner: issuerOwner, checkPasswordSheet: !afterCancellation) { point in
                 if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
             }
             return action != nil
-        }, seconds: 40)
+        }, seconds: afterCancellation ? 100 : 40)
         try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
     }
 
@@ -604,7 +611,7 @@ final class PortalColdTests: XCTestCase {
         try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
         // A real denied issuer callback must return through the operating-system
         // browser link. Merely observing an HTTP 200 is not sufficient.
-        try returnToFarmer()
+        try returnToFarmer(afterCancellation: true)
         let denied = NSPredicate(format: "label IN %@", [
             "Onesa haina kupa mvumo yekupinda muSmart Farmer.",
             "I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer."

@@ -57,11 +57,12 @@ async function run(){
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     if(role==='admin'){
       stage = 'mfa-entry';
-      await page.getByLabel('Authenticator or recovery code',{exact:true}).fill(fixture.ADMIN_MFA);
-      stage = 'mfa-keyboard';
-      await dismissObservedKeyboard();
+      const factor = page.getByLabel('Authenticator or recovery code', {exact: true});
+      await factor.fill(fixture.ADMIN_MFA);
       stage = 'mfa-submit';
-      await page.getByRole('button',{name:'Continue',exact:true}).click();
+      // Submit the real Portal form from its focused MFA field. Android's
+      // system keyboard can still be transitioning immediately after fill.
+      await factor.press('Enter');
     }
   }else{
     stage = 'warm-account';
