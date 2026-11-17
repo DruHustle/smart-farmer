@@ -18,7 +18,7 @@ test('managed browser and native sessions retain legacy records and survive an i
   const origin='http://127.0.0.1:5173', providerSubject='oidc|synthetic-fixture';
   const codes=new Set<string>();
   let online=true, remaining=180, products=['farmer'], targetAudience=audience, idNonce=nonce;
-  let issuer='', mfaTime:number | undefined;
+  let issuer='', role='user', mfaTime:number | undefined;
   const server=createServer(async(req,res)=>{
     const send=(status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
     if (!online) return send(503,{});
@@ -36,7 +36,7 @@ test('managed browser and native sessions retain legacy records and survive an i
       .setAudience(aud).setIssuedAt().setExpirationTime(now()+expiry).sign(privateKey);
     const access=await issue({
       'https://onesa.eu/claims/user_id':stableId,'https://onesa.eu/claims/products':products,
-      'https://onesa.eu/claims/roles':['user'],'https://onesa.eu/claims/mfa_time':mfaTime,azp:client,
+      'https://onesa.eu/claims/roles':[role],'https://onesa.eu/claims/mfa_time':mfaTime,azp:client,
     },targetAudience,remaining);
     const id=await issue({nonce:idNonce},client,300);
     return send(200,{token_type:'Bearer',access_token:access,id_token:id});
@@ -95,7 +95,14 @@ test('managed browser and native sessions retain legacy records and survive an i
   mfaTime=now();const recent=await signin();
   // Fresh MFA permits the check to reach local Farmer ownership, which still rejects an adviser.
   assert.equal((await change(app,recent.json().token)).statusCode,404);
-  remaining=2;
+  role='admin';mfaTime=undefined;
+  assert.equal((await signin()).statusCode,401);
+  mfaTime=now()-301;
+  assert.equal((await signin()).statusCode,401);
+  mfaTime=now();
+  const admin=await signin();assert.equal(admin.statusCode,200,admin.body);
+  assert.equal((await change(app,admin.json().token)).statusCode,404);
+  role='user';remaining=2;
   const short=await signin();assert.equal(short.statusCode,200,short.body);
   online=false;
   const restarted=start();assert.equal((await records(restarted)).statusCode,200);

@@ -107,6 +107,9 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       submitting.current=true; setBusy(true); setError(null);
       void openOnesa(origin,onesa,language).then(async session => { if (session) await onSessionRef.current(session); }).catch(setError).finally(() => {submitting.current=false;setBusy(false);});
     }}/>}
+    {!allowLocal && <Button secondary title={t.createOnesaAccount} onPress={() => {
+      void Linking.openURL('https://auth.onesa.eu/register?audience=user').catch(setError);
+    }}/>}
     {error ? <Notice text={errorText(language, error)} error /> : null}
     {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
       <Choice label={t.choose} value={mode} onChange={value => { setMode(value); setError(null); setCode(''); setRecoveringUsername(''); }} closeLabel={t.close} options={(['signIn', 'register', 'join', 'recover'] as const).map(value => ({ value, label: t[value] }))} />
