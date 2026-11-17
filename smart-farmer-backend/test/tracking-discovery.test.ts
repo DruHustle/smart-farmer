@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import pg from 'pg';
+import type {InjectOptions} from 'fastify';
 import {buildApp} from '../src/app.js';
 
 const url=process.env.TEST_DATABASE_URL;
@@ -25,7 +26,7 @@ async function fixture(){
     return {farmId:created.json().farmId,headers:{authorization:'Bearer '+logged.json().token}};
   }
   const owner=await register('seller'),buyer=await register('buyer');
-  const request=(method:any,path:string,payload?:unknown,headers:Record<string,string>=owner.headers)=>app.inject({
+  const request=(method:InjectOptions['method'],path:string,payload?:InjectOptions['payload'],headers:Record<string,string>=owner.headers)=>app.inject({
     method,url:path,headers,...(payload===undefined?{}:{payload})
   });
   return {db,app,owner,buyer,request,async close(){

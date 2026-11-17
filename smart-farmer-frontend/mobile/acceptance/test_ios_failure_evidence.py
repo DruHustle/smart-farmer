@@ -13,6 +13,21 @@ spec.loader.exec_module(evidence)
 
 
 class FailureEvidence(unittest.TestCase):
+    def test_cancel_launch_retry_requires_positive_evidence_and_no_interaction(self):
+        counts = dict(totalTestCount=0, passedTests=0, failedTests=0, skippedTests=0)
+        reason = evidence.launch_retry_reason
+        receipts = ["ONESA_DEVICE_HTTP authorize 303 123"]
+        self.assertEqual(reason("", counts, receipts, 1), "zero-tests")
+        self.assertEqual(reason("Failed to install or launch the test runner", {}, [], 0), "runner-launch")
+        self.assertIsNone(reason("unclassified failure", {}, [], 0))
+        self.assertIsNone(reason("", counts, [], 1))
+        self.assertIsNone(reason("", counts, receipts, 0))
+        self.assertIsNone(reason("", counts, ["ONESA_DEVICE_PORTAL cancel 200"], 0))
+        self.assertIsNone(reason("Failed to launch the test runner", dict(counts, failedTests=1), [], 0))
+        for started in ("FARMER_XCUI_CHECKPOINT fixture", "FARMER_RENDER actionReady",
+                        "Test Case '-[PortalColdTests testCancelPortal]' started."):
+            self.assertIsNone(reason(started, counts, [], 0))
+
     def test_only_fixed_categories_and_source_lines_leave_private_log(self):
         secret = "synthetic-secret-must-not-leave-the-runner"
         log = f"/private/{secret}/PortalColdTests.swift:143: error: XCTUnwrap failed: {secret}\nApplication {secret} is not running\nTest exceeded its execution time allowance of 330 seconds\n"

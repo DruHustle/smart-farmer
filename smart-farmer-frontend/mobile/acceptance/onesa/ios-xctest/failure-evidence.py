@@ -75,6 +75,25 @@ def last_checkpoint(log):
     return checkpoints[-1] if checkpoints and checkpoints[-1] in CHECKPOINTS else None
 
 
+def launch_retry_reason(log, summary, fixture_lines, initial_lines):
+    # Never repeat a journey which started, sent an issuer request, or has a
+    # test outcome. Use the entire private log here, not its diagnostics tail.
+    if initial_lines < 0 or len(fixture_lines) < initial_lines or any(
+        line.startswith(("ONESA_DEVICE_HTTP ", "ONESA_DEVICE_PORTAL ")) for line in fixture_lines[initial_lines:]
+    ):
+        return None
+    if re.search(r"FARMER_XCUI_|FARMER_RENDER |Test Case[^\n]*testCancelPortal[^\n]*started", log, re.I):
+        return None
+    counts = [summary.get(key) for key in ("passedTests", "failedTests", "skippedTests", "totalTestCount")]
+    if any(value is not None and (type(value) is not int or value != 0) for value in counts):
+        return None
+    if all(value == 0 for value in counts):
+        return "zero-tests"
+    if re.search(r"failed to (?:install or launch|install|launch) (?:the )?test runner|test runner never began", log, re.I):
+        return "runner-launch"
+    return None
+
+
 def watch_cancel(log_path, device, directory):
     # This watcher runs only for the cancellation test, which never loads or
     # enters credentials. simctl reads the frame without starting a UI driver.
@@ -115,5 +134,16 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, stop)
     if len(sys.argv) == 5 and sys.argv[1] == "watch-cancel":
         watch_cancel(*sys.argv[2:])
+    elif len(sys.argv) == 6 and sys.argv[1] == "launch-retry":
+        log_file, summary_file, fixture_file, initial = sys.argv[2:]
+        try:
+            summary = json.loads(Path(summary_file).read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            summary = {}
+        reason = launch_retry_reason(Path(log_file).read_text(errors="replace"), summary,
+                                     Path(fixture_file).read_text(errors="replace").splitlines(), int(initial))
+        if reason is None:
+            sys.exit(1)
+        print(reason)
     else:
         main(sys.argv[1:])

@@ -67,26 +67,39 @@ case "$mode" in
     fi
     runs=("$work"/build/Build/Products/*.xctestrun)
     [[ ${#runs[@]} == 1 && -f "${runs[0]}" ]] || report_failure test-bundle
-    if [[ "$role" == cancel ]]; then
-      python3 "$dir/failure-evidence.py" watch-cancel "$run/xcode.log" "$device" "$evidence" &
-      capture_pid=$!
-    fi
-    # Xcode logs and .xcresult may contain synthetic inputs. Keep them private on the runner.
-    if ! xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
-      -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
-      -resultBundlePath "$run/identity.xcresult" \
-      -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$run/xcode.log" 2>&1; then
+    fixture_log="$RUNNER_TEMP/onesa-device/fixture.log"
+    for attempt in 1 2; do
+      result="$run/identity-$attempt.xcresult"
+      log="$run/xcode-$attempt.log"
+      if [[ "$role" == cancel ]]; then
+        initial_lines=$(wc -l < "$fixture_log")
+        python3 "$dir/failure-evidence.py" watch-cancel "$log" "$device" "$evidence" &
+        capture_pid=$!
+      fi
+      if xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
+        -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
+        -resultBundlePath "$result" \
+        -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$log" 2>&1; then
+        stop_capture
+        break
+      fi
       stop_capture
-      # One enum token on a whole line, at most one token in the report.
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$run/xcode.log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
       # XCTest can abort during a snapshot before the Swift capture hook runs.
       # Capture from the host only before credentials, and emit fixed categories
       # plus source line numbers instead of copying private XCTest output.
-      python3 "$dir/failure-evidence.py" "$run/xcode.log" "$role" "${last:-test-launch}" "$device" "$evidence"
-      report_failure "${last:-test-launch}"
-    fi
-    stop_capture
-    xcrun xcresulttool get test-results summary --path "$run/identity.xcresult" > "$run/summary.json" || report_failure result-summary
+      python3 "$dir/failure-evidence.py" "$log" "$role" "${last:-test-launch}" "$device" "$evidence"
+      [[ "$role" == cancel && "$attempt" == 1 && -z "$last" ]] || report_failure "${last:-test-launch}"
+      xcrun xcresulttool get test-results summary --path "$result" > "$run/summary.json" 2> "$run/result-error.log" || true
+      reason=$(python3 "$dir/failure-evidence.py" launch-retry "$log" "$run/summary.json" "$fixture_log" "$initial_lines") || report_failure test-launch
+      mv "$evidence/ios-cancel-failure.json" "$evidence/ios-cancel-first-launch.json"
+      printf 'First cancellation runner failed before the test (%s). Restarting simulator once.\n' "$reason" | tee -a "$evidence/ios-results.txt"
+      # Reboot the existing device with its installed Farmer, trusted CA and
+      # original issuer. The next attempt must execute the full denial journey.
+      xcrun simctl shutdown "$device" > "$run/shutdown.log" 2>&1 || report_failure simulator-shutdown
+      xcrun simctl bootstatus "$device" -b > "$run/boot.log" 2>&1 || report_failure simulator-boot
+    done
+    xcrun xcresulttool get test-results summary --path "$result" > "$run/summary.json" || report_failure result-summary
     node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1])); if(s.passedTests!==1||s.failedTests!==0||s.skippedTests!==0)process.exit(1)' "$run/summary.json" || report_failure test-count
     ;;
   *) exit 2 ;;

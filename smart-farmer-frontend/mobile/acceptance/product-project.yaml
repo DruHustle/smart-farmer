@@ -45,14 +45,19 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "project-workspace-option-planning"
+# Keep an already visible approval control in place. The modal header stays
+# fixed while the project contents scroll underneath it.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: "plan-approve-${PLAN_ID}"
+      below:
+        id: sheet-close
     direction: DOWN
     timeout: 30000
 - tapOn:
     id: "plan-approve-${PLAN_ID}"
+    below:
+      id: sheet-close
 - tapOn:
     id: "action-confirm"
 - extendedWaitUntil:
