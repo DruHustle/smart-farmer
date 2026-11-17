@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 // Exercise the deployed web component with two synthetic boundaries: Account and its issuer.
-export async function registrationJourney(browser, ui, api, label) {
+export async function registrationJourney(browser, ui, api, label, audience) {
   const context = await browser.newContext({serviceWorkers:'block'});
   try {
     const page = await context.newPage();
@@ -15,7 +15,7 @@ export async function registrationJourney(browser, ui, api, label) {
     await page.route(api + '/v1/onesa/config', route => route.fulfill({headers,json:{
       issuer,clientId:'synthetic-farmer',audience:'https://farmer-api.example.test',callback,
     }}));
-    const registration = 'https://auth.onesa.eu/register?audience=user&product=farmer&platform=web';
+    const registration = 'https://auth.onesa.eu/register?audience='+audience+'&product=farmer&platform=web';
     await page.route(registration, route => route.fulfill({contentType:'text/html',body:
       '<a href="'+ui+'/auth/registration/complete">Return to Farmer</a>'}));
     await page.route(issuer + 'authorize?**', route => {
@@ -25,7 +25,7 @@ export async function registrationJourney(browser, ui, api, label) {
       challenge=params.get('code_challenge'); nonce=params.get('nonce');
       const url = new URL(callback);
       url.search = new URLSearchParams({code:'synthetic-signup',state:params.get('state'),iss:issuer});
-      return route.fulfill({status:303,headers:{Location:url.href}});
+      return route.fulfill({contentType:'text/html',body:'<script>location.replace('+JSON.stringify(url.href)+')</script>'});
     });
     await page.route(api + '/v1/onesa/sessions', route => {
       if (route.request().method() === 'OPTIONS') return route.fulfill({status:204, headers});
