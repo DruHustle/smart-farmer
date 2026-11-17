@@ -45,12 +45,13 @@ export function registerMarketDiscovery(app:FastifyInstance,ctx:Context) {
   app.post('/v1/market/saved-searches',async(req,reply)=>{
     const user=await actor(ctx,req,reply);if(!user)return;
     const b=searchInput.parse(req.body);
-    return ctx.transaction(async c=>{
+    const saved = await ctx.transaction(async c=>{
       const count=await c.query('SELECT count(*)::int AS count FROM market_saved_searches WHERE user_id=$1',[user]);
       if(Number(count.rows[0].count)>=30)throw new ApiError('saved_search_limit',409);
       const created=await c.query('INSERT INTO market_saved_searches(id,user_id,query,category,area,currency,min_price,max_price,condition_query,notify) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,query,category,area,currency,min_price,max_price,condition_query,notify',[b.id,user,b.query,b.category,b.area,b.currency,b.minPrice,b.maxPrice,b.condition,b.notify]);
-      return reply.code(201).send(created.rows[0]);
+      return created.rows[0];
     });
+    return reply.code(201).send(saved);
   });
   app.patch('/v1/market/saved-searches/:searchId',async(req,reply)=>{
     const user=await actor(ctx,req,reply);if(!user)return;

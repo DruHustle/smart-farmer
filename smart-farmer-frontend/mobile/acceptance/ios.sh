@@ -64,6 +64,7 @@ run_native_login() {
     # XCTest failed before it could launch the form. Keep the failed install
     # trace, then give the same simulator one clean driver installation.
     mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
+    if [[ -f "$report" ]]; then mv "$report" "$EVIDENCE/$label-driver-startup.xml"; fi
     if [[ "$label" == ipad-large-font || "$label" == ios-login ]]; then
       # Re-register the same installed simulator with CoreSimulator and Xcode.
       # The detector already verified that no Farmer UI command was issued.
@@ -98,6 +99,13 @@ run_native_login() {
   set -- "$report" "$EVIDENCE/$label/$flow/commands.json"
   if [[ "$label" == ipad-large-font && "$flow" == login ]]; then set -- "$@" "$EVIDENCE/proxy.log"; fi
   checkpoint=$(python3 "$check" checkpoint "$@") || return 1
+  if [[ "$checkpoint" == password-sheet-visible ]]; then
+    local sheet_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-^Save_Password_\$.png)
+    if [[ ${#sheet_frames[@]} != 1 || ! -f "${sheet_frames[0]}" ]] ||
+       ! python3 "$check" locate "${sheet_frames[0]}" "$layout" > /dev/null; then
+      return 1
+    fi
+  fi
   if [[ "$checkpoint" == record-tap ]]; then
     # The Record control was visible before its tap failed. Only Apple's exact
     # password sheet in that failed display permits the post-login recovery.
@@ -123,10 +131,11 @@ run_native_login() {
     xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
     xcrun simctl io "$device" screenshot "$prompt_image" || return 1
     if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
-      # The iPad's native screenshot can omit the AutoFill overlay. The
+      # A native screenshot can omit the AutoFill overlay. The
       # XCTest display capture includes it. Classify a fresh frame from this
       # same simulator, never a coordinate calculated from the failed step.
-      if [[ "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap || "$checkpoint" == submitted-session-confirmed ) ]]; then
+      if [[ "$checkpoint" == password-sheet-visible ||
+            ( "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap || "$checkpoint" == submitted-session-confirmed ) ) ]]; then
         local display="$EVIDENCE/$label-current-display"
         maestro --device "$device" test --no-reinstall-driver --flatten-debug-output \
           --test-output-dir "$display" --debug-output "$display" \

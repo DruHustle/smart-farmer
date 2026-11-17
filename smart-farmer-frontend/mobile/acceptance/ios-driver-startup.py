@@ -1,13 +1,19 @@
 """Identify an XCTest startup failure before the first login command."""
 from pathlib import Path
+import json
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 
 def failed_before_test(evidence, label, device=None):
-    if label not in ("ios-login", "ipad-large-font") or (evidence / (label + ".xml")).exists():
+    if label not in ("ios-login", "ipad-large-font"):
         return False
     folder = evidence / label
+    report = evidence / (label + ".xml")
+    if report.exists():
+        return initial_launch_disconnected(report, folder, device) and (
+            evidence / "proxy.log").read_text().strip() == "Native acceptance network proxy ready."
     excluded = ("commands.json", "manifest.json")
     if any(path.name in excluded or path.suffix == ".png" for path in folder.rglob("*")):
         return False
@@ -49,9 +55,40 @@ def failed_before_test(evidence, label, device=None):
     return (evidence / "proxy.log").read_text().strip() == "Native acceptance network proxy ready."
 
 
+def initial_launch_disconnected(report, folder, device):
+    # Maestro applies permissions before launching the bundle. Only retry a
+    # refused driver connection at that first launch, before any form input.
+    if not device or not re.fullmatch(r"[0-9a-fA-F-]{36}", device):
+        return False
+    commands = folder / "login" / "commands.json"
+    if not commands.is_file():
+        return False
+    root = ET.parse(report)
+    suites = root.findall(".//testsuite")
+    cases = root.findall(".//testcase")
+    if len(suites) != 1 or not suites[0].get("device", "").endswith(" - " + device):
+        return False
+    if len(cases) != 1 or cases[0].get("file") != "smart-farmer-frontend/mobile/acceptance/login.yaml":
+        return False
+    failure = cases[0].findtext("failure") or ""
+    if (not failure.startswith("maestro.DeviceUnreachableException: Device became unreachable during setPermissions\n")
+            or "Caused by: java.net.ConnectException: Connection refused" not in failure):
+        return False
+    trace = json.loads(commands.read_text())
+    setup = [("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
+             ("runFlowCommand", "RUNNING"), ("runFlowCommand", "RUNNING"),
+             ("applyConfigurationCommand", "COMPLETED"), ("launchAppCommand", "RUNNING")]
+    return (len(trace) == len(setup)
+            and all(list(row["command"]) == [kind] and row["metadata"]["status"] == status
+                    for row, (kind, status) in zip(trace, setup))
+            and trace[2]["command"]["runFlowCommand"].get("condition") == {"platform": "IOS"}
+            and trace[3]["command"]["runFlowCommand"].get("sourceDescription") == "ios-launch-bundle.yaml"
+            and trace[-1]["command"]["launchAppCommand"].get("appId") == "eu.onesa.smartfarmer")
+
+
 if __name__ == "__main__":
     try:
         eligible = len(sys.argv) in (3, 4) and failed_before_test(Path(sys.argv[1]), *sys.argv[2:])
-    except (OSError, UnicodeError):
+    except (OSError, ValueError, TypeError, KeyError, ET.ParseError):
         eligible = False
     sys.exit(0 if eligible else 1)

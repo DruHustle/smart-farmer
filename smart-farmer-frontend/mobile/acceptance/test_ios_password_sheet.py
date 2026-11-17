@@ -83,6 +83,19 @@ class SubmittedLogin(unittest.TestCase):
             alternate[index]["command"][kind][field] = value
             self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, alternate))
 
+    def test_late_visible_password_sheet_after_decline_lookup(self):
+        failure = r'Assertion is false: "^Save Password\?$" is not visible'
+        events = trace()[-3:]
+        events[0]["metadata"]["status"] = "FAILED"
+        events[-1]["metadata"]["status"] = "WARNED"
+        events.append({"command": {"assertConditionCommand": {"condition": {
+            "notVisible": {"textRegex": r"^Save Password\?$", "optional": False}}}},
+                       "metadata": {"status": "FAILED"}})
+        self.assertEqual(self.checkpoint(failure, events), "password-sheet-visible")
+        self.assertIsNone(self.checkpoint(failure, events[:-1]))
+        events[-2]["command"]["tapOnElement"]["selector"]["textRegex"] = "^Save$"
+        self.assertIsNone(self.checkpoint(failure, events))
+
     def test_record_tap_requires_prior_visibility_and_the_exact_failed_control(self):
         failure = "Element not found: Id matching regex: tab-record, Enabled"
         visible = {"metadata": {"status": "COMPLETED"}, "command": {

@@ -181,6 +181,19 @@ def checkpoint(report, commands, proxy=None):
             return None
         with open(commands, encoding="utf-8") as stream:
             return "invoice-restored-postlogin" if restored_invoice_login(json.load(stream)) else None
+    if failure == r'Assertion is false: "^Save Password\?$" is not visible':
+        with open(commands, encoding="utf-8") as stream:
+            trace = json.load(stream)
+        # A late AutoFill sheet can appear between two dismiss checks, after
+        # Maestro has already warned that the first decline lookup missed.
+        target = {"textRegex": r"^Save Password\?$", "optional": False}
+        if (len(trace) >= 4
+                and trace[-4]["command"].get("runFlowCommand", {}).get("sourceDescription") == "dismiss-password-save.yaml"
+                and trace[-2]["metadata"]["status"] == "WARNED"
+                and trace[-2]["command"].get("tapOnElement", {}).get("selector", {}).get("textRegex") == "^Not Now$"
+                and trace[-1]["metadata"]["status"] == "FAILED"
+                and trace[-1]["command"].get("assertConditionCommand", {}).get("condition") == {"notVisible": target}):
+            return "password-sheet-visible"
     if failure == "Element not found: Id matching regex: tab-record, Enabled":
         with open(commands, encoding="utf-8") as stream:
             trace = json.load(stream)

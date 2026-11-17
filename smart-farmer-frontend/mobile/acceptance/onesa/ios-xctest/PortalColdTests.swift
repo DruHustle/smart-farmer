@@ -382,7 +382,6 @@ final class PortalColdTests: XCTestCase {
     }
 
     private struct RenderedScreen {
-        let image: CGImage
         let rows: [(text: String, box: CGRect)]
         let display: CGRect
         let owners: [XCUIApplication]
@@ -419,16 +418,28 @@ final class PortalColdTests: XCTestCase {
     }
 
     @MainActor private func renderedScreen() -> RenderedScreen? {
-        guard let image = XCUIScreen.main.screenshot().image.cgImage else {
+        let screenshot = XCUIScreen.main.screenshot().image
+        // Vision and the XCTest coordinate must both use the displayed orientation.
+        // A CGImage alone does not carry UIKit's orientation metadata.
+        let upright = screenshot.imageOrientation == .up ? screenshot :
+            UIGraphicsImageRenderer(size: screenshot.size, format: screenshot.imageRendererFormat).image { _ in
+                screenshot.draw(in: CGRect(origin: .zero, size: screenshot.size))
+            }
+        guard let image = upright.cgImage else {
             renderObserved(.screenshotUnavailable); return nil
-        }
-        let display = UIScreen.main.bounds
-        guard !display.isEmpty,
-              abs(display.width / display.height - CGFloat(image.width) / CGFloat(image.height)) < 0.02 else {
-            renderObserved(.displayMismatch); return nil
         }
         let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
         guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
+        // UIScreen.main belongs to the XCTest runner, whose viewport can differ
+        // from the phone. Match the compositor capture to a full-screen XCTest
+        // owner in device points before mapping any recognized text to a tap.
+        let pixels = CGSize(width: image.width, height: image.height)
+        guard let display = owners.map({ $0.frame }).first(where: { frame in
+            guard frame.origin == .zero, !frame.isEmpty, !frame.isInfinite else { return false }
+            let scale = (pixels.width / frame.width).rounded()
+            return scale >= 1 && abs(pixels.width - scale * frame.width) <= 1 &&
+                abs(pixels.height - scale * frame.height) <= 1
+        }) else { renderObserved(.displayMismatch); return nil }
         func recognize(in region: CGRect) -> [VNRecognizedTextObservation]? {
             // Hosted simulators do not always expose an accelerated Vision device.
             // Try CPU execution only if the first request could not run.
@@ -469,7 +480,7 @@ final class PortalColdTests: XCTestCase {
                 }
             }
         }
-        return RenderedScreen(image: image, rows: rows, display: display, owners: owners, hasLoopbackChrome: chrome)
+        return RenderedScreen(rows: rows, display: display, owners: owners, hasLoopbackChrome: chrome)
     }
 
     // Embedded WebKit can render the issuer without publishing its DOM nodes
