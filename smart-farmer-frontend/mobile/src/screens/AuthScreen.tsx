@@ -6,7 +6,7 @@ import { PolicyLink } from '../PolicyLink';
 import { createApi, isLocalApiHost } from '../api';
 import { errorText, textFor } from '../i18n';
 import type { Language, Session } from '../types';
-import { Button, Card, Choice, Field, Notice, styles } from '../ui';
+import { Button, Card, Choice, Field, KeyboardDismissButton, Notice, styles } from '../ui';
 
 export function AuthScreen({ origin, language, onLanguage, onSession }: { origin: string; language: Language; onLanguage: (language: Language) => void; onSession: (session: Session) => Promise<void> }) {
   const t = textFor(language);
@@ -136,5 +136,5 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       {mode === 'join' || mode === 'recover' ? <Field label={mode === 'join' ? t.invitationCode : t.recoveryCode} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} secureTextEntry /> : null}
       <Button testID="auth-submit" title={t.submit} busy={busy} onPress={() => { void submit(); }} />
     </Card>)}<Text style={styles.caption}>{t.translations}</Text><PolicyLink language={language}/>
-  </ScrollView></KeyboardAvoidingView>;
+  </ScrollView>{allowLocal && <KeyboardDismissButton label={t.hideKeyboard} />}</KeyboardAvoidingView>;
 }
