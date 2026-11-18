@@ -37,3 +37,11 @@ test('registration returns the same tab to its Farmer listing before a fresh sig
   values.set('smart-farmer:registration','https://unrelated.example/');
   assert.equal(takeRegistration(storage),'/');
 });
+
+// A failed issuer discovery must offer the Onesa Account service, never Portal administration.
+test('web issuer outage account fallback goes to managed Onesa Account', async () => {
+  const {readFileSync} = await import('node:fs');
+  const source = readFileSync(new URL('../src/Auth.tsx', import.meta.url), 'utf8');
+  assert.match(source, /href="https:\/\/account\.onesa\.eu\/account"/);
+  assert.doesNotMatch(source, /href="https:\/\/portal\.onesa\.eu\/account"/);
+});
