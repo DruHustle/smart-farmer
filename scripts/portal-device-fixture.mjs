@@ -224,7 +224,8 @@ async function listen(origin, isPortal) {
     // state, codes, cookies, and form inputs stay off this evidence channel.
     if (request.method === "GET") {
       const stage = isPortal && path === "/api/v1/identity/auth" ? "authorize" :
-        !isPortal && path === "/auth/onesa/callback" ? "callback-page" : null;
+        !isPortal && path === "/auth/onesa/callback" ? "callback-page" :
+        !isPortal && path === "/v1/onesa/config" ? "config" : null;
       if (stage) response.once("finish", () => {
         console.log(`ONESA_DEVICE_HTTP ${stage} ${response.statusCode} ${Date.now()}`);
       });

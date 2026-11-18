@@ -58,6 +58,22 @@ esac
 # Each role starts with a freshly cleared browser and Farmer data. Keep every
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
+ios_services_ready() {
+  local endpoint family
+  local families
+  # A clean boot or runner handoff can temporarily starve either local API.
+  # Probe both real TLS routes before starting an authorization transaction.
+  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
+                  "${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}/v1/onesa/config"; do
+    families=(--ipv4)
+    if [[ "$endpoint" == https://localhost:* ]]; then families+=(--ipv6); fi
+    for family in "${families[@]}"; do
+      curl "$family" --cacert "$RUNNER_TEMP/onesa-device/ca.crt" --noproxy '*' \
+        --fail --silent --show-error --max-time 5 --retry 8 --retry-all-errors --retry-max-time 60 \
+        "$endpoint" --output /dev/null || return 1
+    done
+  done
+}
 ios_maestro() {
   local seconds=$1
   shift
@@ -88,16 +104,6 @@ for role in cancel member admin; do
     xcrun simctl bootstatus "$device" -b
     xcrun simctl keychain "$device" add-root-cert "$RUNNER_TEMP/onesa-device/ca.crt"
     xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
-    # Each clean boot can temporarily starve the local services. Exercise the
-    # TLS issuer and its real API on both localhost routes before opening Safari.
-    portal_origin=${PORTAL_TEST_ORIGIN:-https://localhost:46501}
-    families=(--ipv4)
-    if [[ "$portal_origin" == https://localhost:* ]]; then families+=(--ipv6); fi
-    for family in "${families[@]}"; do
-      curl "$family" --cacert "$RUNNER_TEMP/onesa-device/ca.crt" --noproxy '*' \
-        --fail --silent --show-error --max-time 5 --retry 8 --retry-all-errors --retry-max-time 60 \
-        "$portal_origin/api/v1/account/config" --output /dev/null
-    done
     # XCTest launches the installed app and its embedded bundle on this clean device.
   else
     adb shell pm clear com.android.chrome
@@ -123,6 +129,11 @@ for role in cancel member admin; do
     set -- ${opts[@]+"${opts[@]}"}
     # Bind allowlisted issuer responses to the appropriate planned role/phase.
     if [[ "$platform" == ios ]]; then
+      if ! ios_services_ready; then
+        printf 'FAIL iOS fixture readiness before %s %s\n' "$role" "$state" | tee -a "$evidence/ios-results.txt"
+        status=1
+        break
+      fi
       printf 'START %s %s %s\n' "$role" "$state" "$(date -u +%FT%TZ)" | tee -a "$evidence/ios-results.txt"
       portal_log_start=$(wc -l < "$RUNNER_TEMP/onesa-device/fixture.log")
     fi
@@ -149,7 +160,7 @@ for role in cancel member admin; do
     fi
     if [[ "$platform" == ios ]]; then
       # Raw logs, data, credentials and callbacks stay private to the runner.
-      awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
+      awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(config|authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
       awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_PORTAL (login|continue|cancel) [1-5][0-9][0-9]$/ {print; seen=1} END {if (!seen) print "No Portal interaction submission response observed for this attempt."}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
     fi
     if [[ "$passed" == false ]]; then break; fi

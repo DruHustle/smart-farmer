@@ -103,7 +103,7 @@ print(root)' "$device") || report_failure simulator-data
       # Only these fixed stage names may leave the private observer log.
       awk '/^FARMER_OCR_STAGE (observer-started|runner-directory|received-request|recognized-frame|answered-request|recognizer-timeout|frame-unavailable)$/ && !seen[$0]++ {print}' \
         "$run/observer-$attempt.log" | tee -a "$evidence/ios-results.txt"
-      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|reauthenticate|rememberedSession|signedOut|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
+      last=$(awk '/^FARMER_XCUI_CHECKPOINT (fixture|reauthenticate|rememberedSession|signedOut|configRetry|localLauncher|introduction|developerMenu|signInControl|consent|email|password|remember|firstSubmit|mfa|secondSubmit|returnLink|nativeInvitation|joinFarm|farmWorkspace|forumTab|forumScreen|forumFeed|completed)$/ { phase=$2 } END { print phase }' "$log")
       # XCTest can abort during a snapshot before the Swift capture hook runs.
       # Capture from the host only before credentials, and emit fixed categories
       # plus source line numbers instead of copying private XCTest output.

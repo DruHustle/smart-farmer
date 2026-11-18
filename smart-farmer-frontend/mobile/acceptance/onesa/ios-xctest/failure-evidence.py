@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-CHECKPOINTS = set("fixture reauthenticate rememberedSession signedOut localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
+CHECKPOINTS = set("fixture reauthenticate rememberedSession signedOut configRetry localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
 PATTERNS = {
     "execution-timeout": r"exceeded (?:its |the )?execution time allowance|test (?:case )?.{0,180}timed out|test execution time allowance",
     "snapshot-failure": r"failed to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)|unable to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)",
@@ -19,7 +19,7 @@ PATTERNS = {
 }
 CONTROL_FACT = re.compile(
     r"^FARMER_XCUI_CONTROL (startup|cancel) (farmer|safari|authSheet) "
-    r"(signIn|introduction|developerMenu|localChooser|savedBundle|cancelButton|cancelLink) "
+    r"(signIn|configRetry|introduction|developerMenu|localChooser|savedBundle|cancelButton|cancelLink) "
     r"(absent|present|enabled|disabled|visible-frame|not-visible-frame|hittable-query|hittable|not-hittable)$",
     re.MULTILINE,
 )

@@ -3,7 +3,7 @@ import UIKit
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, reauthenticate, rememberedSession, signInControl
+        case fixture, signedOut, reauthenticate, rememberedSession, configRetry, signInControl
         case consent, email, password, remember, firstSubmit
         case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm
         case farmWorkspace, forumTab, forumScreen, forumFeed, completed
@@ -21,7 +21,7 @@ final class PortalColdTests: XCTestCase {
     private enum ControlPhase: String { case startup, cancel }
     private enum ControlOwner: String { case farmer, safari, authSheet }
     private enum PreInputControl: String {
-        case signIn, cancelButton, cancelLink
+        case signIn, configRetry, cancelButton, cancelLink
     }
     private enum ControlFact: String {
         case absent, present, enabled, disabled, hittable
@@ -92,9 +92,21 @@ final class PortalColdTests: XCTestCase {
             XCTAssertTrue(lock.waitForNonExistence(timeout: 30), "Device lock sheet dismissed before sign-in")
         }
         let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        let retry = app.descendants(matching: .any)["auth-onesa-retry"].firstMatch
+        var retriedConfiguration = false
         let ready = waitFor({
-            self.app.state == .runningForeground && self.controlReady(start, phase: .startup,
-                owner: .farmer, control: .signIn) && start.isEnabled
+            guard self.app.state == .runningForeground else { return false }
+            if self.controlReady(start, phase: .startup, owner: .farmer, control: .signIn), start.isEnabled {
+                return true
+            }
+            // A failed configuration request exposes the app's existing Retry.
+            // Exercise it once before beginning any browser authorization.
+            if !retriedConfiguration, self.controlReady(retry, phase: .startup, owner: .farmer, control: .configRetry), retry.isEnabled {
+                retriedConfiguration = true
+                self.checkpoint(.configRetry)
+                retry.tap()
+            }
+            return false
         }, seconds: 60)
         let button = try XCTUnwrap(ready ? start : nil, "Installed release Farmer offers Onesa sign-in")
         checkpoint(.signInControl)
