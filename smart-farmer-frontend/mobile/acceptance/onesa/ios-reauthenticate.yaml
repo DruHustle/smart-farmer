@@ -1,0 +1,9 @@
+appId: eu.onesa.smartfarmer
+---
+- extendedWaitUntil:
+    visible: {id: device-reauthenticate}
+    timeout: 120000
+- tapOn: {id: device-reauthenticate}
+- extendedWaitUntil:
+    visible: {id: auth-onesa}
+    timeout: 30000

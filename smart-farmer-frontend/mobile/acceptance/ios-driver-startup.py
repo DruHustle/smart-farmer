@@ -1,13 +1,18 @@
 """Identify an XCTest startup failure before the first login command."""
 from pathlib import Path
+import json
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 
 def failed_before_test(evidence, label, device=None):
-    if label not in ("ios-login", "ipad-large-font") or (evidence / (label + ".xml")).exists():
+    if label not in ("ios-login", "ipad-large-font"):
         return False
     folder = evidence / label
+    report = evidence / (label + ".xml")
+    if report.exists():
+        return initial_launch_disconnected(report, folder, device) and only_startup_reads(evidence / "proxy.log")
     excluded = ("commands.json", "manifest.json")
     if any(path.name in excluded or path.suffix == ".png" for path in folder.rglob("*")):
         return False
@@ -19,7 +24,7 @@ def failed_before_test(evidence, label, device=None):
     # A refused transport is distinct from an Accessibility initialization
     # error, but both precede UI work. Require every status probe to be either
     # a start or this exact refusal, bound to the selected simulator.
-    if label == "ios-login" and device and re.fullmatch(r"[0-9a-fA-F-]{36}", device):
+    if device and re.fullmatch(r"[0-9a-fA-F-]{36}", device):
         probes = [line for line in driver if "xcTestDriverStatusCheck:" in line]
         failure = f"[Failed] Perform XCUITest driver status check on {device}, exception: java.net.ConnectException: Failed to connect to /127.0.0.1:"
         transport_only = f"id:{device}," in runner and bool(probes) and failure in probes[-1] and all(
@@ -49,9 +54,53 @@ def failed_before_test(evidence, label, device=None):
     return (evidence / "proxy.log").read_text().strip() == "Native acceptance network proxy ready."
 
 
+def initial_launch_disconnected(report, folder, device):
+    # The startup subflow ends at the signed-out screen. Once Maestro returns
+    # from it, resetting the app could replay credential or product actions.
+    if not device or not re.fullmatch(r"[0-9a-fA-F-]{36}", device):
+        return False
+    commands = folder / "login" / "commands.json"
+    if not commands.is_file():
+        return False
+    root = ET.parse(report)
+    suites = root.findall(".//testsuite")
+    cases = root.findall(".//testcase")
+    if len(suites) != 1 or not suites[0].get("device", "").endswith(" - " + device):
+        return False
+    if len(cases) != 1 or cases[0].get("file") != "smart-farmer-frontend/mobile/acceptance/login.yaml":
+        return False
+    failure = cases[0].findtext("failure") or ""
+    if (not failure.startswith("maestro.DeviceUnreachableException: Device became unreachable during ")
+            or "Failed to connect to /127.0.0.1:" not in failure
+            or "Caused by: java.net.ConnectException: Connection refused" not in failure):
+        return False
+    trace = json.loads(commands.read_text())
+    # Commands inside a nested flow have depth >= 1. A later top-level step
+    # (including credentials.yaml) excludes recovery, even on driver loss.
+    top = [row for row in trace if row["metadata"]["depth"] == 0]
+    return (len(top) == 3
+            and "defineVariablesCommand" in top[0]["command"]
+            and "applyConfigurationCommand" in top[1]["command"]
+            and top[2]["command"].get("runFlowCommand", {}).get("sourceDescription") == "open-fixture-app.yaml"
+            and top[2]["metadata"]["status"] in ("RUNNING", "FAILED"))
+
+
+def only_startup_reads(proxy):
+    ready, *requests = proxy.read_text().splitlines()
+    if ready != "Native acceptance network proxy ready.":
+        return False
+    for line in requests:
+        if not line.startswith("[native-proxy] "):
+            return False
+        event = json.loads(line.removeprefix("[native-proxy] "))
+        if event.get("method") not in ("GET", "HEAD") or event.get("route") != "other":
+            return False
+    return True
+
+
 if __name__ == "__main__":
     try:
         eligible = len(sys.argv) in (3, 4) and failed_before_test(Path(sys.argv[1]), *sys.argv[2:])
-    except (OSError, UnicodeError):
+    except (OSError, ValueError, TypeError, KeyError, ET.ParseError):
         eligible = False
     sys.exit(0 if eligible else 1)

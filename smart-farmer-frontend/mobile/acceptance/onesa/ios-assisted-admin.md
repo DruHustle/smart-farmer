@@ -2,7 +2,7 @@
 
 Use a local Mac with Xcode, an installed iOS simulator runtime and an existing available iPhone simulator model, CocoaPods, Node 24.3 or newer on the Node 24 line, JDK 17, Maestro CLI 2.12.0, PostgreSQL 17 and OpenSSL. Use a fresh disposable checkout of the Farmer revision under review. The app and system browser open on the Mac so an observer can operate the real secure form. The hosted PR workflow runs unattended.
 
-Run the following in Bash from the Farmer checkout. The npm, Xcode, pinned Portal checkout, fixture and Metro steps match the native acceptance workflow. Use free localhost ports 46501 through 46506 and 8081. The private Postgres cluster uses 55432. The name shown in Simulator identifies the disposable iPhone the helper will remove.
+Run the following in Bash from the Farmer checkout. This witnessed procedure uses a Debug build with Metro and the pinned Portal fixture. The automated iPhone Onesa workflow uses an installed Release build and XCTest against the same isolated issuer. Use free localhost ports 46501 through 46506 and 8081. The private Postgres cluster uses 55432. The name shown in Simulator identifies the disposable iPhone the helper will remove.
 
 ```bash
 set -euo pipefail

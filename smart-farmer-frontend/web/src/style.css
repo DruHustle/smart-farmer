@@ -102,6 +102,16 @@
 .deletion-panel label{display:flex;align-items:baseline;gap:.5rem}
 .deletion-panel input[type=checkbox]{width:auto;min-height:0}
 .auth-card .onesa-signin{justify-content:center;margin:0 0 1.25rem}
+.auth-card a.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 15px;
+  border-radius: 10px;
+  font-weight: 650;
+  text-decoration: none;
+}
 @media(max-width:540px){
   .auth-main .auth-card{grid-row:1}
   .auth-main .auth-intro{margin-top:8px}

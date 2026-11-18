@@ -245,5 +245,14 @@ appId: eu.onesa.smartfarmer
 - takeScreenshot: accounting-issued-invoice-partial-receipt
 - tapOn:
     id: "sheet-close"
+# Wait for the sales list beneath the invoice before targeting Finance's close
+# button. Both sheets use the same control at the same screen position.
+- extendedWaitUntil:
+    visible: {id: invoice-new-sale}
+    timeout: 15000
 - tapOn:
-    id: "sheet-close"
+    id: sheet-close
+    above: {id: invoice-new-sale}
+- extendedWaitUntil:
+    visible: {id: tab-more}
+    timeout: 15000
