@@ -15,7 +15,8 @@ test('legacy Portal accounts retain their original account entry', () => {
 test('native account fallback stays on the managed Account host', async () => {
   const {readFileSync} = await import('node:fs');
   const {fileURLToPath} = await import('node:url');
-  const source = readFileSync(fileURLToPath(import.meta.resolve('../src/screens/AuthScreen.tsx')), 'utf8');
+  const {dirname, resolve} = await import('node:path');
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/screens/AuthScreen.tsx'), 'utf8');
   assert.match(source, /Linking\.openURL\('https:\/\/account\.onesa\.eu\/account'\)/);
   assert.doesNotMatch(source, /Linking\.openURL\('https:\/\/portal\.onesa\.eu\/account'\)/);
 });
