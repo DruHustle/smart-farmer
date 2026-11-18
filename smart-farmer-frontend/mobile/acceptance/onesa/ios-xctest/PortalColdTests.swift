@@ -599,14 +599,17 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.returnLink)
         var action: BrowserAction?
         var declinedPasswordSheet = false
-        // On a cold browser the first compositor read can time out while the
-        // denied callback page loads. Leave room for a second observed frame.
+        // The OCR observer permits two 20-second segmentation passes per
+        // compositor frame. A 40-second return-link deadline therefore allows
+        // only one worst-case frame and can fail although the real callback
+        // page has already loaded. Permit a second observation, without
+        // resubmitting credentials or fabricating the browser return link.
         let found = waitFor({
             action = self.callbackAction(issuerOwner: issuerOwner, checkPasswordSheet: !afterCancellation) { point in
                 if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
             }
             return action != nil
-        }, seconds: afterCancellation ? 100 : 40)
+        }, seconds: afterCancellation ? 100 : 85)
         try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
     }
 
