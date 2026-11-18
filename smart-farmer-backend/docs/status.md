@@ -73,7 +73,7 @@ The numbered rows correspond exactly to section 23 of the brief. API evidence us
 
 ### Combined CI acceptance
 
-CI has separate API/browser, native JavaScript and storage/container jobs. The native-acceptance workflow compiles and caches matching Android APK and iOS simulator app binaries before running Maestro. Each binary cache is keyed to native dependencies/configuration/source; new JavaScript is served by the current revision.
+CI has separate API/browser, native JavaScript and storage/container jobs. The native-acceptance workflow compiles and caches matching Android APK and iOS simulator binaries. Android and the iPhone/iPad farm suites run development builds through Maestro with current JavaScript from Metro. The iPhone Onesa suite runs an installed Release build through XCTest against the isolated HTTPS fixture. Its cache key also includes bundled app source, Xcode/SDK versions and the fixture API origin.
 
 At checkpoint `7a75075edc2fb464aa93db082e09ac99f075e2cf`, [CI run 41759367935](https://github.com/DruHustle/smart-farmer/actions/runs/41759367935) passed all three jobs: API/edge/web-unit/full-browser, native JavaScript and storage/container. The [storage job](https://github.com/DruHustle/smart-farmer/actions/runs/41759367935/job/126343115751) also verified the actual backup runtime: both API/backup images built, backup Node 24.22.2, PostgreSQL 17.11 clients and Python 3.13.5 executed, and both encrypted restore tests passed with field-photo/camera-clip, tamper and non-empty-target verification. The actual backup image also restored a restricted archive fixture and refused traversal as its unprivileged runtime user.
 

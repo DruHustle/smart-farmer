@@ -83,6 +83,19 @@ class SubmittedLogin(unittest.TestCase):
             alternate[index]["command"][kind][field] = value
             self.assertIsNone(self.checkpoint(sheet.DEVICE_LOSS, alternate))
 
+    def test_late_visible_password_sheet_after_decline_lookup(self):
+        failure = r'Assertion is false: "^Save Password\?$" is not visible'
+        events = trace()[-3:]
+        events[0]["metadata"]["status"] = "FAILED"
+        events[-1]["metadata"]["status"] = "WARNED"
+        events.append({"command": {"assertConditionCommand": {"condition": {
+            "notVisible": {"textRegex": r"^Save Password\?$", "optional": False}}}},
+                       "metadata": {"status": "FAILED"}})
+        self.assertEqual(self.checkpoint(failure, events), "password-sheet-visible")
+        self.assertIsNone(self.checkpoint(failure, events[:-1]))
+        events[-2]["command"]["tapOnElement"]["selector"]["textRegex"] = "^Save$"
+        self.assertIsNone(self.checkpoint(failure, events))
+
     def test_record_tap_requires_prior_visibility_and_the_exact_failed_control(self):
         failure = "Element not found: Id matching regex: tab-record, Enabled"
         visible = {"metadata": {"status": "COMPLETED"}, "command": {
@@ -98,6 +111,18 @@ class SubmittedLogin(unittest.TestCase):
     def test_previous_record_failures_still_require_frame_check(self):
         for failure in sheet.RECORD_CHECKPOINTS:
             self.assertEqual(self.checkpoint(failure, []), "record-assertion")
+
+    def test_tablet_sheet_recovery_requires_the_first_failed_farm_tap(self):
+        events = [{"command": {cmd: {}}, "metadata": {"status": status}} for cmd, status in (
+            ("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
+            ("repeatCommand", "FAILED"), ("tapOnElement", "FAILED"))]
+        events[-1]["command"]["tapOnElement"]["selector"] = {"idRegex": "tab-farm", "enabled": True, "optional": False}
+        failure = "Element not found: Id matching regex: tab-farm, Enabled"
+        self.assertEqual(self.checkpoint(failure, events, "tablet"), "tablet-first-farm-tap")
+        self.assertIsNone(self.checkpoint(failure, events + events[-1:], "tablet"))
+        self.assertIsNone(self.checkpoint("Device became unreachable", events, "tablet"))
+        events[-1]["command"]["tapOnElement"]["selector"]["idRegex"] = "tab-more"
+        self.assertIsNone(self.checkpoint(failure, events, "tablet"))
 
 
     def test_invoice_requires_draft_restart_and_exact_driver_disconnect(self):

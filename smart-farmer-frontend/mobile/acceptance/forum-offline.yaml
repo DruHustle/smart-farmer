@@ -39,6 +39,15 @@ appId: eu.onesa.smartfarmer
 - assertVisible:
     id: forum-compose-body
     text: '^Synthetic unshared offline forum text[.]$'
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # Reveal the form footer so the native switch is clear of the bottom edge.
+      - scrollUntilVisible:
+          element: {id: forum-compose-submit, enabled: false}
+          direction: DOWN
+          timeout: 30000
 - scrollUntilVisible:
     element:
       id: forum-compose-consent

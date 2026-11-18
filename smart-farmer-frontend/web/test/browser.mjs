@@ -1,5 +1,6 @@
 /** Real browser + real PostgreSQL acceptance. Requires an isolated TEST_DATABASE_URL. */
 import assert from 'node:assert/strict';
+import {once} from 'node:events';
 import {spawn} from 'node:child_process';
 import {existsSync, writeFileSync} from 'node:fs';
 import {mkdir, mkdtemp, writeFile} from 'node:fs/promises';
@@ -97,6 +98,31 @@ try {
   await Promise.all([waitUrl(`${api}/ready`), waitUrl(ui)]);
   checkpoint('Launch Chromium');
   browser = await chromium.launch({headless: true, timeout: 15000, ...((process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) ? {executablePath: process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : existsSync(chromium.executablePath()) ? {} : existsSync('/usr/bin/chromium') ? {executablePath: '/usr/bin/chromium'} : {}), args: ['--no-sandbox']});
+  checkpoint('Return to the installed app from a phone browser');
+  for (const [language, width] of [['sn', 320], ['nd', 390]]) {
+    const phone = await browser.newContext({viewport: {width, height: 844}, hasTouch: true});
+    try {
+      await phone.addInitScript(lang => localStorage.setItem('smart-farmer-language', lang), language);
+      const callback = await phone.newPage();
+      const query = new URLSearchParams({state: 'native_' + '1'.repeat(64), code: 'synthetic-code'});
+      await callback.goto(ui + '/auth/onesa/callback?' + query);
+      const link = callback.getByRole('link', {name: catalog[language].returnToApp, exact: true});
+      await expectVisible(link);
+      const bounds = await link.boundingBox();
+      assert.ok(bounds.width >= 44 && bounds.height >= 44, 'Return link provides a phone-sized tap target');
+      const protocol = await phone.newCDPSession(callback);
+      await protocol.send('Page.enable');
+      const [[navigation]] = await Promise.all([
+        once(protocol, 'Page.frameRequestedNavigation', {signal: AbortSignal.timeout(10000)}),
+        link.tap({position: {x: 8, y: 8}}),
+      ]);
+      assert.equal(navigation.reason, 'anchorClick');
+      assert.equal(navigation.url, 'smartfarmer://onesa/callback?' + query);
+    } finally {
+      await phone.close();
+    }
+  }
+  pass('Localized return links have a 44px touch target and open the native callback on phones');
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');

@@ -58,6 +58,22 @@ esac
 # Each role starts with a freshly cleared browser and Farmer data. Keep every
 # resulting credential, cookie and raw Maestro diagnostic on the runner only.
 read_fixture() { node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1]))[process.argv[2]])' "$fixture" "$1"; }
+ios_services_ready() {
+  local endpoint family
+  local families
+  # A clean boot or runner handoff can temporarily starve either local API.
+  # Probe both real TLS routes before starting an authorization transaction.
+  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
+                  "${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}/v1/onesa/config"; do
+    families=(--ipv4)
+    if [[ "$endpoint" == https://localhost:* ]]; then families+=(--ipv6); fi
+    for family in "${families[@]}"; do
+      curl "$family" --cacert "$RUNNER_TEMP/onesa-device/ca.crt" --noproxy '*' \
+        --fail --silent --show-error --max-time 5 --retry 8 --retry-all-errors --retry-max-time 60 \
+        "$endpoint" --output /dev/null || return 1
+    done
+  done
+}
 ios_maestro() {
   local seconds=$1
   shift
@@ -74,20 +90,10 @@ run_identity_flow() {
       node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" "$phase_dir/browser-target.json" > "$phase_dir/browser.log" 2>&1 &&
       maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1
   else
-    mkdir -p "$phase_dir/complete"
-    # XCTest alone owns the native UI and Safari sign-in sheet for cancel and
-    # first sign-in. Starting Maestro's XCTest server on the same freshly erased
-    # simulator left a second driver attached and made browser snapshots hang.
-    # Keep both the denial and the positive return assertions in XCTest.
-    if [[ "$phase_state" != active ]]; then
-      bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role"
-      return $?
-    fi
-    # Warm same-account replay happens only after the cold XCTest process exits.
-    ios_maestro 300 hierarchy > "$phase_dir/driver-ready.json" 2> "$phase_dir/driver-ready.log" || return 1
-    ios_maestro 480 test --no-reinstall-driver "$@" -e FLOW_STATE="$phase_state" \
-      --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" \
-      "$dir/ios-journey.yaml" > "$phase_dir/complete.log" 2>&1
+    # Keep the installed app and its hosted Safari sheet under one UI driver
+    # for cold, remembered-account and denial flows. Preserve the device and
+    # the real issuer cookies between a role's cold and active phases.
+    bash "$dir/ios-xctest/browser.sh" test "$device" "$phase_role" "$phase_state"
   fi
 }
 status=0
@@ -97,8 +103,8 @@ for role in cancel member admin; do
     xcrun simctl boot "$device"
     xcrun simctl bootstatus "$device" -b
     xcrun simctl keychain "$device" add-root-cert "$RUNNER_TEMP/onesa-device/ca.crt"
-    xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Debug-iphonesimulator/SmartFarmer.app"
-    # The single XCTest session launches the prewarmed bundle on this fresh installation.
+    xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
+    # XCTest launches the installed app and its embedded bundle on this clean device.
   else
     adb shell pm clear com.android.chrome
     adb shell pm clear eu.onesa.smartfarmer
@@ -109,8 +115,10 @@ for role in cancel member admin; do
   opts=()
   if [[ "$role" != cancel ]]; then
     states=(cold active)
-    prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
-    opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+    if [[ "$platform" == android ]]; then
+      prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
+      opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+    fi
   fi
   reference=''
   for state in "${states[@]}"; do
@@ -121,6 +129,11 @@ for role in cancel member admin; do
     set -- ${opts[@]+"${opts[@]}"}
     # Bind allowlisted issuer responses to the appropriate planned role/phase.
     if [[ "$platform" == ios ]]; then
+      if ! ios_services_ready; then
+        printf 'FAIL iOS fixture readiness before %s %s\n' "$role" "$state" | tee -a "$evidence/ios-results.txt"
+        status=1
+        break
+      fi
       printf 'START %s %s %s\n' "$role" "$state" "$(date -u +%FT%TZ)" | tee -a "$evidence/ios-results.txt"
       portal_log_start=$(wc -l < "$RUNNER_TEMP/onesa-device/fixture.log")
     fi
@@ -136,9 +149,9 @@ for role in cancel member admin; do
       status=1
       echo "$role $state FAIL" | tee -a "$evidence/$platform-results.txt"
       # List the matching visible controls (never screen text, tokens or input).
-      if [[ "$platform" == ios ]]; then
+      if [[ "$platform" == ios && "$state" != active ]]; then
         ios_maestro 30 hierarchy --no-reinstall-driver > "$private/hierarchy.json" 2>/dev/null || true
-      else
+      elif [[ "$platform" == android ]]; then
         maestro --device "$device" hierarchy > "$private/hierarchy.json" 2>/dev/null || true
       fi
       node "$dir/redact.mjs" "$private" | tee -a "$evidence/$platform-results.txt"
@@ -147,7 +160,7 @@ for role in cancel member admin; do
     fi
     if [[ "$platform" == ios ]]; then
       # Raw logs, data, credentials and callbacks stay private to the runner.
-      awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
+      awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(config|authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
       awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_PORTAL (login|continue|cancel) [1-5][0-9][0-9]$/ {print; seen=1} END {if (!seen) print "No Portal interaction submission response observed for this attempt."}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
     fi
     if [[ "$passed" == false ]]; then break; fi

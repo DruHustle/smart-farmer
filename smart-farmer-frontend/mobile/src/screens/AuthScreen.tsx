@@ -97,7 +97,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
     {!configFailed && !onesa && !allowLocal && <Text style={styles.muted} accessibilityRole="text">{t.loading}</Text>}
     {configFailed && <Card>
       <Notice error text={t.onesa_unavailable}/>
-      <Button secondary title={t.retry} onPress={() => setConfigAttempt(value => value + 1)}/>
+      <Button testID="auth-onesa-retry" secondary title={t.retry} onPress={() => setConfigAttempt(value => value + 1)}/>
       <Button secondary title={t.onesaAccount} onPress={() => {
         void Linking.openURL('https://portal.onesa.eu/account').catch(setError);
       }}/>

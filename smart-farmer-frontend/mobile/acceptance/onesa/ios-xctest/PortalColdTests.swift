@@ -3,21 +3,25 @@ import UIKit
 
 final class PortalColdTests: XCTestCase {
     private enum Checkpoint: String {
-        case fixture, signedOut, localLauncher, introduction, developerMenu, signInControl
+        case fixture, signedOut, reauthenticate, rememberedSession, configRetry, signInControl
         case consent, email, password, remember, firstSubmit
         case mfa, secondSubmit, returnLink, nativeInvitation, joinFarm
         case farmWorkspace, forumTab, forumScreen, forumFeed, completed
     }
 
+    private var currentCheckpoint: Checkpoint = .fixture
+    private var retainedCancelFrame = false
+
     // Only these fixed names leave the runner. Never print a field, URL or assertion payload.
     private func checkpoint(_ value: Checkpoint) {
+        currentCheckpoint = value
         print("FARMER_XCUI_CHECKPOINT " + value.rawValue)
     }
 
     private enum ControlPhase: String { case startup, cancel }
     private enum ControlOwner: String { case farmer, safari, authSheet }
     private enum PreInputControl: String {
-        case signIn, introduction, developerMenu, localChooser, savedBundle, cancelButton, cancelLink
+        case signIn, configRetry, cancelButton, cancelLink
     }
     private enum ControlFact: String {
         case absent, present, enabled, disabled, hittable
@@ -78,92 +82,48 @@ final class PortalColdTests: XCTestCase {
         return owners
     }
 
-    // The iOS release flow needs one automation owner. Native test setup now
-    // enters the prewarmed Expo app directly, without a Maestro XCTest session
-    // that can outlive a browser handoff on the same disposable simulator.
-    @MainActor private func signedOutStart() throws -> XCUIElement {
-        let bundle = "http://127.0.0.1:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
-        var link = URLComponents()
-        link.scheme = "smartfarmer"
-        link.host = "expo-development-client"
-        link.path = "/"
-        link.queryItems = [URLQueryItem(name: "url", value: bundle),
-                           URLQueryItem(name: "__expo_disable_fab", value: "1"),
-                           URLQueryItem(name: "disableFab", value: "1")]
-        let localURL = try XCTUnwrap(link.url)
-        // The launch argument is consumed on process startup. Give the test
-        // runner ownership from startup so activating the app cannot replace it.
-        app.launchArguments = ["--initialUrl", localURL.absoluteString]
+    @MainActor private func startOnesaSignIn(reauthenticate: Bool = false) throws {
         app.launch()
-        let nodes = app.descendants(matching: .any)
-        let start = nodes["auth-onesa"].firstMatch
-        let intro = nodes.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-        let close = nodes.matching(NSPredicate(format: "label == %@", "Close")).firstMatch
-        let chooser = nodes.matching(NSPredicate(format: "label == %@", "Enter URL manually")).firstMatch
-        func ready(_ element: XCUIElement, _ control: PreInputControl) -> Bool {
-            controlReady(element, phase: .startup, owner: .farmer, control: control)
+        if reauthenticate {
+            checkpoint(.reauthenticate)
+            let lock = app.descendants(matching: .any)["device-reauthenticate"].firstMatch
+            let ready = waitFor({ lock.exists && lock.isEnabled && lock.isHittable }, seconds: 60)
+            try XCTUnwrap(ready ? lock : nil, "Restarted Farmer offers device reauthentication").tap()
+            XCTAssertTrue(lock.waitForNonExistence(timeout: 30), "Device lock sheet dismissed before sign-in")
         }
-        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) || ready(chooser, .localChooser) }, seconds: 100)
-        if !ready(start, .signIn) && ready(chooser, .localChooser) {
-            checkpoint(.localLauncher)
-            let savedBundle = nodes.matching(NSPredicate(format: "label == %@", bundle)).firstMatch
-            if ready(savedBundle, .savedBundle) { savedBundle.tap() }
-            if !waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 12), ready(chooser, .localChooser) {
-                // Repeat only before any authentication request and only while
-                // the known local-development chooser remains on screen.
-                app.terminate()
-                app.launch()
+        let start = app.descendants(matching: .any)["auth-onesa"].firstMatch
+        let retry = app.descendants(matching: .any)["auth-onesa-retry"].firstMatch
+        var retriedConfiguration = false
+        let ready = waitFor({
+            guard self.app.state == .runningForeground else { return false }
+            if self.controlReady(start, phase: .startup, owner: .farmer, control: .signIn), start.isEnabled {
+                return true
             }
-        }
-        _ = waitFor({ ready(start, .signIn) || ready(intro, .introduction) || ready(close, .developerMenu) }, seconds: 30)
-        // Expo's sheet can leave the sign-in button visible and hittable above
-        // it. Dismiss onboarding before using that underlying control; its
-        // first tap can otherwise dismiss the sheet without starting sign-in.
-        if ready(intro, .introduction) {
-            checkpoint(.introduction)
-            intro.tap()
-            _ = waitFor({ ready(start, .signIn) || ready(close, .developerMenu) }, seconds: 45)
-        }
-        if ready(close, .developerMenu) {
-            checkpoint(.developerMenu)
-            close.tap()
-        }
-        let unlocked = waitFor({ ready(start, .signIn) && start.isEnabled }, seconds: 45)
-        if unlocked { checkpoint(.signInControl) }
-        return try XCTUnwrap(unlocked ? start : nil, "Installed Farmer reached its signed-out Onesa control")
+            // A failed configuration request exposes the app's existing Retry.
+            // Exercise it once before beginning any browser authorization.
+            if !retriedConfiguration, self.controlReady(retry, phase: .startup, owner: .farmer, control: .configRetry), retry.isEnabled {
+                retriedConfiguration = true
+                self.checkpoint(.configRetry)
+                retry.tap()
+            }
+            return false
+        }, seconds: 60)
+        let button = try XCTUnwrap(ready ? start : nil, "Installed release Farmer offers Onesa sign-in")
+        checkpoint(.signInControl)
+        button.tap()
     }
 
     @MainActor private func browserConsent() -> XCUIElement? {
-        // ASWebAuthenticationSession's confirmation can be exposed as more
-        // than one alert node. Inspect every alert and combine its accessible
-        // text instead of requiring host and purpose to share one label.
-        // Before consent, SafariViewService and Safari may not have launched.
-        // Querying a stopped application's alerts aborts XCTest before the
-        // SpringBoard fallback can inspect the visible OS confirmation.
-        for owner in [springboard] + browserOwners {
-            for alert in owner.alerts.allElementsBoundByIndex {
-                let labels = [alert.label, (alert.value as? String) ?? ""] +
-                    alert.staticTexts.allElementsBoundByIndex.map { $0.label }
-                let text = labels.joined(separator: " ").lowercased()
-                guard (text.contains("localhost") || text.contains("127.0.0.1")),
-                      text.contains("sign in") else { continue }
-                let button = alert.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-                if button.exists && button.isHittable { return button }
-            }
-        }
-        // Some iOS simulator releases surface the same host confirmation in
-        // SpringBoard's accessibility tree rather than its alerts collection.
-        // Keep this fallback confined to SpringBoard and require both the
-        // loopback host and sign-in purpose before tapping its Continue button.
-        let host = springboard.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "localhost", "127.0.0.1")
-        ).firstMatch
-        let purpose = springboard.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@", "sign in")
-        ).firstMatch
-        let continueButton = springboard.buttons.matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-        if host.exists && purpose.exists && continueButton.exists && continueButton.isHittable {
-            return continueButton
+        // Only query the exact system prompt. Enumerating every alert on a stale
+        // background SafariViewService can abort XCTest before authorization.
+        let prompt = NSPredicate(format: "label MATCHES[c] %@",
+            #"^[“"]Smart\s?Farmer[”"]\s+Wants\s+to\s+Use\s+[“"](localhost|127[.]0[.]0[.]1)[”"]\s+to\s+Sign\s+In$"#)
+        for owner in [springboard, app] {
+            let title = owner.staticTexts.matching(prompt).firstMatch
+            guard title.exists else { continue }
+            let cancel = owner.buttons["Cancel"].firstMatch
+            let accept = owner.buttons["Continue"].firstMatch
+            if cancel.exists && accept.exists && accept.isEnabled && accept.isHittable { return accept }
         }
         return nil
     }
@@ -175,31 +135,43 @@ final class PortalColdTests: XCTestCase {
         try? data.write(to: destination, options: .atomic)
     }
 
-    @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
-        var consent: XCUIElement?
-        let presented = {
-            consent = self.browserConsent()
-            return consent != nil || ready()
-        }
-        // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
-        // live alert once before failing. Rendering Portal gets its own wait
-        // after the OS prompt has actually been accepted.
-        guard waitFor(presented) || presented() else {
-            // This checkpoint occurs before any fixture credentials are entered;
-            // retain the simulator's actual blocking prompt for diagnosis.
-            captureConsentFailure()
+    @MainActor private func awaitBrowser(captureFailure: Bool = true, _ ready: @escaping () -> Bool) -> Bool {
+        var lastConsentTap: Date?
+        var retriedConsent = false
+        let visible = waitFor({
+            // The compositor sees the iOS prompt even while the foreground
+            // Farmer screen is disabled and WebKit has no accessibility tree.
+            let screen = self.renderedScreen()
+            var consent: BrowserAction?
+            if let point = screen?.systemConsentPoint() {
+                consent = .point(point)
+            } else if screen?.hasLoopbackChrome == true {
+                self.renderObserved(.browserVisible)
+                return true
+            } else if let button = self.browserConsent() {
+                consent = .element(button)
+            }
+            if let consent {
+                self.renderObserved(.systemConsent)
+                if let previous = lastConsentTap, retriedConsent || Date().timeIntervalSince(previous) < 5 {
+                    return false
+                }
+                retriedConsent = lastConsentTap != nil
+                lastConsentTap = Date()
+                consent.tap()
+                self.renderObserved(.consentTapped)
+                return false
+            }
+            // Fall back to a visible live browser surface if OCR is unavailable.
+            // The caller still has to identify the real issuer or return control.
+            return [self.app, self.safari, self.authSheet].contains { owner in
+                owner.state == .runningForeground && owner.webViews.firstMatch.exists
+            }
+        }, seconds: 90)
+        guard visible else {
+            if captureFailure { captureConsentFailure() }
             return false
         }
-        guard let consent else { return true }
-        consent.tap()
-        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
-            // The first tap can coincide with presentation. Retry only the
-            // same local sign-in alert, without repeating the app's request.
-            stillPresented.tap()
-        }
-        // A slow remote AX snapshot can cross the deadline before WebKit's
-        // current controls are returned. Refresh the same predicate once; this
-        // neither repeats sign-in nor changes the required native gesture.
         return waitFor(ready) || ready()
     }
 
@@ -218,26 +190,27 @@ final class PortalColdTests: XCTestCase {
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
     }
 
+    @MainActor private func keyboardReady(_ acceptedTutorial: inout Bool) -> Bool {
+        let owners = browserOwners + [springboard]
+        for surface in owners {
+            let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
+            guard tutorial.exists else { continue }
+            let explanation = surface.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."].firstMatch
+            if !acceptedTutorial && explanation.exists {
+                let buttons = surface.buttons.matching(NSPredicate(format: "label == %@", "Continue")).allElementsBoundByIndex
+                if let button = buttons.first(where: { $0.isHittable && $0.frame.minY >= explanation.frame.maxY &&
+                    tutorial.frame.intersects($0.frame) }) {
+                    button.tap()
+                    acceptedTutorial = true
+                }
+            }
+            return false
+        }
+        return owners.contains { $0.keyboards.firstMatch.exists }
+    }
+
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
-        @MainActor func keyboardReady() -> Bool {
-            let owners = browserOwners + [springboard]
-            for surface in owners {
-                let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
-                guard tutorial.exists else { continue }
-                let explanation = surface.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."].firstMatch
-                if !acceptedTutorial && explanation.exists {
-                    let buttons = surface.buttons.matching(NSPredicate(format: "label == %@", "Continue")).allElementsBoundByIndex
-                    if let button = buttons.first(where: { $0.isHittable && $0.frame.minY >= explanation.frame.maxY &&
-                        tutorial.frame.intersects($0.frame) }) {
-                        button.tap()
-                        acceptedTutorial = true
-                    }
-                }
-                return false
-            }
-            return owners.contains { $0.keyboards.firstMatch.exists }
-        }
         let input = field(label, in: web)
         let editable = waitFor({ input.exists && input.isEnabled && !input.frame.intersection(self.app.frame).isEmpty }, seconds: 15)
         _ = try XCTUnwrap(editable ? true : nil, "Browser input is editable")
@@ -250,7 +223,7 @@ final class PortalColdTests: XCTestCase {
             let point = CGVector(dx: visible.midX - app.frame.minX, dy: visible.midY - app.frame.minY)
             app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
         }
-        if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
+        if !waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 6), input.exists && input.isEnabled && input.isHittable {
             // A newly presented WebKit field can appear before its first tap
             // gives the software keyboard focus. This repeat only focuses it.
             let visible = web.frame.intersection(input.frame)
@@ -261,7 +234,7 @@ final class PortalColdTests: XCTestCase {
                 web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
             }
         }
-        let ready = waitFor(keyboardReady, seconds: 10)
+        let ready = waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 10)
 
         // A focused descendant receives real OS typing. Verify privately that
         // the intended field received it before entering another value.
@@ -286,7 +259,7 @@ final class PortalColdTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in browserOwners {
+            for surface in browserOwners + [springboard] {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -294,7 +267,7 @@ final class PortalColdTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
+            (self.browserOwners + [self.springboard]).allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
@@ -348,12 +321,240 @@ final class PortalColdTests: XCTestCase {
         try XCTUnwrap(ready ? button : nil, "Portal Continue is enabled").tap()
     }
 
-    @MainActor private func returnLink() -> XCUIElement? {
+    private enum BrowserAction {
+        case element(XCUIElement)
+        case point(XCUICoordinate)
+
+        @MainActor func tap() {
+            switch self {
+            case .element(let element): element.tap()
+            case .point(let point): point.tap()
+            }
+        }
+    }
+
+    private struct RenderedScreen {
+        let rows: [(text: String, box: CGRect)]
+        let display: CGRect
+        let owners: [XCUIApplication]
+
+        var words: Set<String> { Set(rows.map { $0.text }) }
+        let titleBottom: CGFloat?
+        var hasLoopbackChrome: Bool { titleBottom != nil }
+
+        func unique(_ text: String) -> CGRect? {
+            let matches = rows.filter { $0.text == text }
+            return matches.count == 1 ? matches[0].box : nil
+        }
+
+        @MainActor func systemConsentPoint() -> XCUICoordinate? {
+            guard let title = unique("systemConsentTitle"),
+                  let cancel = unique("Cancel"), let accept = unique("Continue"),
+                  title.minY > max(cancel.maxY, accept.maxY),
+                  cancel.maxX < accept.minX,
+                  abs(cancel.midY - accept.midY) < max(cancel.height, accept.height)
+            else { return nil }
+            return point(at: CGPoint(x: accept.midX, y: accept.midY))
+        }
+
+        // These normalized boxes span the entire captured display and grow upward.
+        // XCTest coordinates use points within the owner, which may be an inset
+        // authentication sheet. Convert through display space before selecting it.
+        @MainActor func point(at normalized: CGPoint) -> XCUICoordinate? {
+            guard normalized.x >= 0, normalized.x <= 1, normalized.y >= 0, normalized.y <= 1 else { return nil }
+            let target = CGPoint(x: display.minX + normalized.x * display.width,
+                                 y: display.minY + (1 - normalized.y) * display.height)
+            for owner in owners {
+                let bounds = owner.frame
+                guard !bounds.isEmpty, !bounds.isInfinite, bounds.contains(target) else { continue }
+                return owner.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: target.x - bounds.minX, dy: target.y - bounds.minY))
+            }
+            return nil
+        }
+    }
+
+    private enum RenderObservation: String { case systemConsent, consentTapped, browserVisible, frameRequested, frameWritten, requestWriteFailed, responseTimedOut, screenshotUnavailable, displayMismatch, noForegroundOwner, recognitionUnavailable, chromeMissing, landmarksMissing, ambiguousAction, outsideOwner, actionReady }
+    private var renderObservations = Set<RenderObservation>()
+    private func renderObserved(_ value: RenderObservation) {
+        if renderObservations.insert(value).inserted { print("FARMER_RENDER " + value.rawValue) }
+    }
+
+    private struct ControlResponse: Decodable {
+        struct Screen: Decodable {
+            struct Row: Decodable {
+                let text: String
+                let box: [CGFloat]
+            }
+            let width: Int
+            let height: Int
+            let titleBottom: CGFloat?
+            let rows: [Row]
+        }
+        let id: String
+        let screen: Screen?
+    }
+
+    @MainActor private func renderedScreen() -> RenderedScreen? {
+        guard let session = ProcessInfo.processInfo.environment["FARMER_OCR_SESSION"],
+              let uuid = UUID(uuidString: session) else { return nil }
+        guard let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            renderObserved(.requestWriteFailed); return nil
+        }
+        let directory = cache.appendingPathComponent("farmer-ocr-" + uuid.uuidString, isDirectory: true)
+        let request = UUID().uuidString
+        let frame = directory.appendingPathComponent(request + ".png")
+        defer { try? FileManager.default.removeItem(at: frame) }
+        // Capture through the XCTest session that owns the foreground browser.
+        // The host recognizes this exact image and never starts a second display reader.
+        renderObserved(.frameRequested)
+        let png = XCUIScreen.main.screenshot().pngRepresentation
+        guard !png.isEmpty else { renderObserved(.screenshotUnavailable); return nil }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                     attributes: [.posixPermissions: 0o700])
+            try png.write(to: frame, options: .atomic)
+            renderObserved(.frameWritten)
+            try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
+            // xcodebuild output stays private on the Mac. The observer validates
+            // this directory inside the booted device; published receipts exclude it.
+            print("FARMER_PRIVATE_OCR_DIRECTORY " + directory.path)
+        } catch { renderObserved(.requestWriteFailed); return nil }
+        var screen: ControlResponse.Screen?
+        let received = waitFor({
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent("response.json")),
+                  let response = try? JSONDecoder().decode(ControlResponse.self, from: data),
+                  response.id == request else { return false }
+            screen = response.screen
+            return true
+        }, seconds: 45)
+        guard received else { renderObserved(.responseTimedOut); return nil }
+        guard let screen else { renderObserved(.recognitionUnavailable); return nil }
+        // Cancellation does not receive credentials. Retain one verified
+        // pre-input screen using the same pixels that produced its landmarks.
+        let labels = Set(screen.rows.map { $0.text })
+        if currentCheckpoint == .consent, !retainedCancelFrame,
+           ProcessInfo.processInfo.environment["FARMER_ROLE"] == "cancel",
+           labels.contains("systemConsentTitle") ||
+            (screen.titleBottom != nil && labels.contains("Sign in to Onesa") && labels.contains("Cancel sign-in")),
+           let base = ProcessInfo.processInfo.environment["FARMER_XCUI_EVIDENCE_DIR"] {
+            let destination = URL(fileURLWithPath: base).appendingPathComponent("ios-cancel-live-consent.png")
+            if (try? png.write(to: destination, options: .atomic)) != nil { retainedCancelFrame = true }
+        }
+        let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
+        guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
+        let pixels = CGSize(width: screen.width, height: screen.height)
+        guard let display = owners.map({ $0.frame }).first(where: { frame in
+            guard frame.origin == .zero, !frame.isEmpty, !frame.isInfinite else { return false }
+            let scale = (pixels.width / frame.width).rounded()
+            return scale >= 1 && abs(pixels.width - scale * frame.width) <= 1 &&
+                abs(pixels.height - scale * frame.height) <= 1
+        }) else { renderObserved(.displayMismatch); return nil }
+        let rows = screen.rows.compactMap { row -> (String, CGRect)? in
+            let box = row.box
+            guard box.count == 4, box.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 1 }),
+                  box[2] > 0, box[3] > 0, box[0] + box[2] <= 1.000001,
+                  box[1] + box[3] <= 1.000001 else { return nil }
+            return (row.text, CGRect(x: box[0], y: box[1], width: box[2], height: box[3]))
+        }
+        return RenderedScreen(rows: rows, display: display, owners: owners, titleBottom: screen.titleBottom)
+    }
+
+    // Embedded WebKit can render the issuer without publishing its DOM nodes
+    // to XCTest. Recognized controls must belong to the verified visible page.
+    @MainActor private func renderedAction(labels: Set<String>, landmarks: Set<String>,
+                                          onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
+        guard let screen = renderedScreen() else { return nil }
+        if screen.words.contains("Save Password?"), screen.words.contains("Save") {
+            if let decline = screen.unique("Not Now"),
+               let point = screen.point(at: CGPoint(x: decline.midX, y: decline.midY)) {
+                onPasswordSheet?(point)
+            }
+            return nil
+        }
+        guard let titleBottom = screen.titleBottom, titleBottom.isFinite,
+              (0...1).contains(titleBottom) else { renderObserved(.chromeMissing); return nil }
+        guard landmarks.isSubset(of: screen.words) else { renderObserved(.landmarksMissing); return nil }
+        let targets = screen.rows.filter { labels.contains($0.text) && $0.box.maxY < titleBottom }
+        guard targets.count == 1, let box = targets.first?.box else { renderObserved(.ambiguousAction); return nil }
+        if landmarks == ["Smart Farmer"], !screen.rows.contains(where: {
+            $0.text == "Smart Farmer" && $0.box.minY > box.maxY
+        }) { renderObserved(.landmarksMissing); return nil }
+        guard let point = screen.point(at: CGPoint(x: box.midX, y: box.midY)) else { renderObserved(.outsideOwner); return nil }
+        renderObserved(.actionReady)
+        return .point(point)
+    }
+
+    // The hosted ASWebAuthenticationSession can render the real form without
+    // exposing its HTML inputs to XCTest. Portal nests every input inside its
+    // visible HTML label. Tapping the label focuses that real input or toggles
+    // the real checkbox. The synthetic credentials only enter the native keyboard.
+    @MainActor private func renderedFormAction(_ label: String) -> BrowserAction? {
+        // Each step has another form landmark in addition to the browser origin.
+        let landmarks: Set<String> = label == "Authenticator or recovery code"
+            ? ["Password", "Remember this browser"] : ["Email address", "Password"]
+        return renderedAction(labels: [label], landmarks: landmarks)
+    }
+
+    @MainActor private func tapRenderedForm(_ label: String) throws {
+        var action: BrowserAction?
+        let ready = waitFor({
+            action = self.renderedFormAction(label)
+            return action != nil
+        }, seconds: 15)
+        try XCTUnwrap(ready ? action : nil, "Unique visible control in the loopback issuer form").tap()
+    }
+
+    @MainActor private func enterRendered(_ value: String, into label: String) throws {
+        try tapRenderedForm(label)
+        var acceptedTutorial = false
+        let ready = waitFor({ self.keyboardReady(&acceptedTutorial) }, seconds: 10)
+        try XCTUnwrap(ready ? true : nil, "System keyboard opened for the selected issuer input")
+        let owner = try XCTUnwrap(browserOwners.first(where: { $0.keyboards.firstMatch.exists })
+            ?? browserOwners.first(where: { $0.state == .runningForeground }),
+            "System keyboard has an issuer owner")
+        for character in value { owner.typeText(String(character)) }
+        try dismissNativeKeyboard()
+        // Check the exact email within its own field before typing a password.
+        // Password and recovery values stay private. The real issuer validates
+        // both and the external receipt check requires the exact role sequence.
+        if label == "Email address" {
+            let correct = waitFor({
+                guard let screen = self.renderedScreen(), screen.hasLoopbackChrome,
+                      let email = screen.unique("Email address"), let password = screen.unique("Password")
+                else { return false }
+                return screen.rows.contains { row in
+                    row.text == "fixtureEmail" && row.box.midY < email.minY && row.box.midY > password.maxY
+                }
+            }, seconds: 8)
+            try XCTUnwrap(correct ? true : nil, "Issuer email input received the synthetic account")
+        }
+    }
+
+    @MainActor private func signInWithRenderedForm(email: String, password: String,
+                                                   adminFactor: String?) throws {
+        checkpoint(.email)
+        try enterRendered(email, into: "Email address")
+        checkpoint(.password)
+        try enterRendered(password, into: "Password")
+        checkpoint(.remember)
+        try tapRenderedForm("Remember this browser")
+        checkpoint(.firstSubmit)
+        try tapRenderedForm("Continue")
+        if let code = adminFactor {
+            checkpoint(.mfa)
+            try enterRendered(code, into: "Authenticator or recovery code")
+            checkpoint(.secondSubmit)
+            try tapRenderedForm("Continue")
+        }
+    }
+
+    @MainActor private func returnLink(checkPasswordSheet: Bool = true) -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
         for owner in browserOwners + [springboard] {
             let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
             let notNow = owner.buttons["Not Now"].firstMatch
-            if app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
+            if checkPasswordSheet && app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
                 let frame = notNow.frame
                 // Apple's remote AutoFill alert can report a hittable button
                 // with an invalid activation point. Use the exact identified
@@ -375,22 +576,43 @@ final class PortalColdTests: XCTestCase {
         return nil
     }
 
-    @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil) throws {
-        checkpoint(.returnLink)
-        var link: XCUIElement?
-        let found = waitFor({
-            link = self.returnLink()
-            if link == nil, let owner = issuerOwner {
-                let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
-                let links = owner.links.matching(names)
-                if links.count == 1, links.firstMatch.isHittable { link = links.firstMatch }
-            }
-            return link != nil
-        }, seconds: 40)
-        try XCTUnwrap(found ? link : nil, "Real browser return link").tap()
+    @MainActor private func callbackAction(issuerOwner: XCUIApplication? = nil, checkPasswordSheet: Bool = true,
+                                           onPasswordSheet: ((XCUICoordinate) -> Void)? = nil) -> BrowserAction? {
+        if let link = returnLink(checkPasswordSheet: checkPasswordSheet) { return .element(link) }
+        if let owner = issuerOwner {
+            let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
+            let links = owner.links.matching(names)
+            if links.count == 1, links.firstMatch.isHittable { return .element(links.firstMatch) }
+        }
+        return renderedAction(labels: ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"],
+                              landmarks: ["Smart Farmer"], onPasswordSheet: checkPasswordSheet ? onPasswordSheet : nil)
     }
 
-    @MainActor private func portalCancel() -> XCUIElement? {
+    @MainActor private func returnToFarmer(issuerOwner: XCUIApplication? = nil, afterCancellation: Bool = false) throws {
+        checkpoint(.returnLink)
+        var action: BrowserAction?
+        var declinedPasswordSheet = false
+        // On a cold browser the first compositor read can time out while the
+        // denied callback page loads. Leave room for a second observed frame.
+        let found = waitFor({
+            action = self.callbackAction(issuerOwner: issuerOwner, checkPasswordSheet: !afterCancellation) { point in
+                if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
+            }
+            return action != nil
+        }, seconds: afterCancellation ? 100 : 40)
+        try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
+    }
+
+    @MainActor private func rememberedAccount(_ email: String) -> BrowserAction? {
+        for owner in browserOwners {
+            let button = owner.buttons["Continue as " + email].firstMatch
+            if button.exists && button.isEnabled && button.isHittable { return .element(button) }
+        }
+        // The observer only emits this label for the full expected account button.
+        return renderedAction(labels: ["rememberedAccount"], landmarks: ["Sign in to Onesa"])
+    }
+
+    @MainActor private func portalCancel() -> BrowserAction? {
         // The localized issuer is real WebKit UI, not a synthetic callback.
         // XCUITest may expose it under SafariViewService or the foreground app.
         // The embedded issuer's Cancel button is exposed by foreground Farmer.
@@ -399,10 +621,27 @@ final class PortalColdTests: XCTestCase {
         let owners = runningOwners.filter { $0 === app } + runningOwners.filter { $0 !== app }
         for owner in owners {
             let ownerName: ControlOwner = owner === app ? .farmer : owner === safari ? .safari : .authSheet
-            let button = owner.buttons["Cancel sign-in"].firstMatch
-            if controlReady(button, phase: .cancel, owner: ownerName, control: .cancelButton) { return button }
-            let link = owner.links["Cancel sign-in"].firstMatch
-            if controlReady(link, phase: .cancel, owner: ownerName, control: .cancelLink) { return link }
+            let name = "Cancel sign-in"
+            let label = NSPredicate(format: "label == %@ OR identifier == %@", name, name)
+            let candidates: [(XCUIElementQuery, PreInputControl)] = [
+                (owner.buttons.matching(label), .cancelButton), (owner.links.matching(label), .cancelLink)
+            ]
+            for (query, kind) in candidates {
+                let element = query.firstMatch
+                guard controlReady(element, phase: .cancel, owner: ownerName, control: kind),
+                      query.count == 1, element.isEnabled else { continue }
+                // The remote WebKit button can be hittable while element.tap()
+                // fails resolving its activation point. Tap its verified live
+                // bounds through the foreground window, as for WebKit fields.
+                let display = app.state == .runningForeground ? app : owner
+                let frame = element.frame
+                let bounds = display.frame
+                guard display.state == .runningForeground, !frame.isEmpty,
+                      !frame.isInfinite, bounds.contains(frame) else { continue }
+                let offset = CGVector(dx: frame.midX - bounds.minX, dy: frame.midY - bounds.minY)
+                renderObserved(.actionReady)
+                return .point(display.coordinate(withNormalizedOffset: .zero).withOffset(offset))
+            }
         }
         return nil
     }
@@ -411,17 +650,18 @@ final class PortalColdTests: XCTestCase {
         continueAfterFailure = false
         checkpoint(.fixture)
         checkpoint(.signedOut)
-        try signedOutStart().tap()
+        try startOnesaSignIn()
         checkpoint(.consent)
-        var cancel: XCUIElement?
+        var cancel: BrowserAction?
         let visible = awaitBrowser {
-            cancel = self.portalCancel()
+            cancel = self.portalCancel() ?? self.renderedAction(labels: ["Cancel sign-in"],
+                                                                 landmarks: ["Sign in to Onesa", "Remember this browser"])
             return cancel != nil
         }
         try XCTUnwrap(visible ? cancel : nil, "Actual issuer offers cancel sign-in").tap()
         // A real denied issuer callback must return through the operating-system
         // browser link. Merely observing an HTTP 200 is not sufficient.
-        try returnToFarmer()
+        try returnToFarmer(afterCancellation: true)
         let denied = NSPredicate(format: "label IN %@", [
             "Onesa haina kupa mvumo yekupinda muSmart Farmer.",
             "I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer."
@@ -445,41 +685,60 @@ final class PortalColdTests: XCTestCase {
         // App setup is part of this one XCTest session, before the timed
         // authorization request. No second UI driver may remain attached.
         checkpoint(.signedOut)
-        try signedOutStart().tap()
+        try startOnesaSignIn()
         checkpoint(.consent)
         var surface: XCUIElement?
         let visible = awaitBrowser {
             surface = self.portalWeb() ?? self.embeddedIssuer()
-            return surface != nil
+            return surface != nil || self.renderedFormAction("Cancel sign-in") != nil
         }
-        let web = try XCTUnwrap(visible ? surface : nil, "System browser owns the issuer form")
+        try XCTUnwrap(visible ? true : nil, "System browser owns the issuer form")
         let email = try XCTUnwrap(env["FARMER_EMAIL"], "Synthetic email exists")
         let password = try XCTUnwrap(env["FARMER_PASSWORD"], "Synthetic password exists")
-        checkpoint(.email)
-        try enter(email, into: "Email address", in: web)
-        try dismissNativeKeyboard()
-        checkpoint(.password)
-        try enter(password, into: "Password", in: web)
-        try dismissNativeKeyboard()
-        checkpoint(.remember)
-        try remember(web)
-        checkpoint(.firstSubmit)
-        try submit(web)
-        if role == "admin" {
-            checkpoint(.mfa)
-            let code = field("Authenticator or recovery code", in: web)
-            try XCTUnwrap(code.waitForExistence(timeout: 20) ? true : nil, "Issuer requested an administrator factor")
-            try enter(try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists"),
-                      into: "Authenticator or recovery code", in: web)
+        if let web = surface {
+            checkpoint(.email)
+            try enter(email, into: "Email address", in: web)
             try dismissNativeKeyboard()
-            checkpoint(.secondSubmit)
+            checkpoint(.password)
+            try enter(password, into: "Password", in: web)
+            try dismissNativeKeyboard()
+            checkpoint(.remember)
+            try remember(web)
+            checkpoint(.firstSubmit)
             try submit(web)
+            if role == "admin" {
+                checkpoint(.mfa)
+                let code = field("Authenticator or recovery code", in: web)
+                try XCTUnwrap(code.waitForExistence(timeout: 20) ? true : nil, "Issuer requested an administrator factor")
+                try enter(try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists"),
+                          into: "Authenticator or recovery code", in: web)
+                try dismissNativeKeyboard()
+                checkpoint(.secondSubmit)
+                try submit(web)
+            }
+        } else {
+            let code = role == "admin" ? try XCTUnwrap(env["FARMER_MFA"], "Synthetic factor exists") : nil
+            try signInWithRenderedForm(email: email, password: password, adminFactor: code)
         }
-        try returnToFarmer(issuerOwner: web as? XCUIApplication)
+        try returnToFarmer(issuerOwner: surface as? XCUIApplication)
         checkpoint(.nativeInvitation)
         let invitation = app.descendants(matching: .any)["first-farm-invitation"].firstMatch
-        try XCTUnwrap(waitFor({ self.app.state == .runningForeground && invitation.exists }, seconds: 40) ? true : nil,
-                      "Native callback opened the expected unaffiliated account")
+        let invitationVisible = { self.app.state == .runningForeground && invitation.exists }
+        if !waitFor(invitationVisible, seconds: 25) {
+            // Only retry membership discovery in the signed-in, unjoined workspace.
+            // Never replay sign-in, token exchange, or farm invitation acceptance.
+            XCTAssertEqual(app.state, .runningForeground, "Callback did not return to Farmer")
+            let workspace = app.descendants(matching: .any)["workspace-language"].firstMatch
+            XCTAssertTrue(workspace.exists, "The signed-in workspace did not open")
+            XCTAssertFalse(app.descendants(matching: .any)["tab-forum"].firstMatch.exists,
+                           "The fixture already belongs to a farm")
+            let sync = app.buttons["workspace-sync"].firstMatch
+            XCTAssertTrue(waitFor({ invitationVisible() || (sync.exists && sync.isEnabled && sync.isHittable) }, seconds: 10),
+                          "Membership loading did not finish or offer Sync")
+            if !invitationVisible() { sync.tap() }
+            XCTAssertTrue(waitFor(invitationVisible, seconds: 25),
+                          "The first-farm invitation did not appear after membership discovery")
+        }
         // Keep the XCTest session that observed the native callback. Starting
         // a second runner here used to lose the visible invitation mid-handoff.
         checkpoint(.joinFarm)
@@ -510,8 +769,13 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.forumScreen)
         let newDiscussion = app.descendants(matching: .any)["forum-new"].firstMatch
         XCTAssertTrue(newDiscussion.waitForExistence(timeout: 30), "Forum opened")
+        try assertSeededDiscussion()
+        checkpoint(.completed)
+    }
+
+    @MainActor private func assertSeededDiscussion() throws {
         checkpoint(.forumFeed)
-        let title = try XCTUnwrap(env["FARMER_DISCUSSION"])
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["FARMER_DISCUSSION"])
         let discussion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "forum-open-", title)).firstMatch
         let scroll = app.scrollViews.firstMatch
         for _ in 0..<8 {
@@ -519,6 +783,42 @@ final class PortalColdTests: XCTestCase {
             scroll.swipeUp()
         }
         XCTAssertTrue(discussion.exists && discussion.isHittable, "Seeded discussion is visible")
+    }
+
+    @MainActor func testActivePortal() throws {
+        continueAfterFailure = false
+        checkpoint(.fixture)
+        let env = ProcessInfo.processInfo.environment
+        let email = try XCTUnwrap(env["FARMER_EMAIL"])
+        let farmName = try XCTUnwrap(env["FARMER_FARM"])
+        try startOnesaSignIn(reauthenticate: true)
+        checkpoint(.rememberedSession)
+        var callback: BrowserAction?
+        var account: BrowserAction?
+        // A remembered browser may return immediately or ask which account to
+        // continue as. Neither path enters credentials or joins a farm again.
+        let ready = awaitBrowser(captureFailure: false) {
+            callback = self.callbackAction()
+            if callback == nil { account = self.rememberedAccount(email) }
+            return callback != nil || account != nil
+        }
+        try XCTUnwrap(ready ? true : nil, "Issuer restored the existing browser session")
+        if let callback {
+            checkpoint(.returnLink)
+            callback.tap()
+        } else {
+            try XCTUnwrap(account, "Issuer offers the same remembered account").tap()
+            try returnToFarmer()
+        }
+        checkpoint(.forumScreen)
+        let forum = app.descendants(matching: .any)["tab-forum"].firstMatch
+        let composer = app.descendants(matching: .any)["forum-new"].firstMatch
+        let farm = app.staticTexts[farmName].firstMatch
+        XCTAssertTrue(waitFor({
+            self.app.state == .runningForeground && forum.exists && forum.isSelected &&
+                composer.exists && farm.exists
+        }), "Same farm and previously selected Forum restored after reauthentication")
+        try assertSeededDiscussion()
         checkpoint(.completed)
     }
 }

@@ -1,14 +1,12 @@
 """Retain bounded, secret-free XCTest failure metadata and pre-input screenshots."""
 import json
 import re
-import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 
-CHECKPOINTS = set("fixture signedOut localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
+CHECKPOINTS = set("fixture reauthenticate rememberedSession signedOut configRetry localLauncher introduction developerMenu signInControl consent email password remember firstSubmit mfa secondSubmit returnLink nativeInvitation joinFarm farmWorkspace forumTab forumScreen forumFeed completed test-launch".split())
 PATTERNS = {
     "execution-timeout": r"exceeded (?:its |the )?execution time allowance|test (?:case )?.{0,180}timed out|test execution time allowance",
     "snapshot-failure": r"failed to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)|unable to (?:get|take|fetch).{0,100}(?:snapshot|screenshot)",
@@ -21,7 +19,7 @@ PATTERNS = {
 }
 CONTROL_FACT = re.compile(
     r"^FARMER_XCUI_CONTROL (startup|cancel) (farmer|safari|authSheet) "
-    r"(signIn|introduction|developerMenu|localChooser|savedBundle|cancelButton|cancelLink) "
+    r"(signIn|configRetry|introduction|developerMenu|localChooser|savedBundle|cancelButton|cancelLink) "
     r"(absent|present|enabled|disabled|visible-frame|not-visible-frame|hittable-query|hittable|not-hittable)$",
     re.MULTILINE,
 )
@@ -35,6 +33,9 @@ def classify(log, role, checkpoint):
         "role": role,
         "checkpoint": checkpoint,
         "signals": [name for name, pattern in PATTERNS.items() if re.search(pattern, log, re.IGNORECASE)],
+        "renderObservations": sorted(set(re.findall(
+            r"^FARMER_RENDER (systemConsent|consentTapped|browserVisible|frameRequested|frameWritten|requestWriteFailed|responseTimedOut|screenshotUnavailable|displayMismatch|noForegroundOwner|recognitionUnavailable|chromeMissing|landmarksMissing|ambiguousAction|outsideOwner|actionReady)$",
+            log, re.MULTILINE))),
         "sourceLines": sorted({int(line) for line in re.findall(r"PortalColdTests\.swift:(\d{1,5})(?::\d+)?:", log) if 0 < int(line) < 10000})[:20],
         "controls": [dict(zip(("phase", "owner", "control", "fact"), fact))
                      for fact in list(dict.fromkeys(CONTROL_FACT.findall(log)))[:64]],
@@ -67,29 +68,23 @@ def read_tail(log_path):
         return stream.read().decode("utf-8", errors="replace")
 
 
-def last_checkpoint(log):
-    checkpoints = re.findall(r"^FARMER_XCUI_CHECKPOINT ([A-Za-z]+)$", log, re.MULTILINE)
-    return checkpoints[-1] if checkpoints and checkpoints[-1] in CHECKPOINTS else None
-
-
-def watch_cancel(log_path, device, directory):
-    # This watcher runs only for the cancellation test, which never loads or
-    # enters credentials. simctl reads the frame without starting a UI driver.
-    # Take the live blocking screen before XCTest's timeout can tear it down.
-    deadline = time.monotonic() + 450
-    while time.monotonic() < deadline:
-        try:
-            checkpoint = last_checkpoint(read_tail(log_path))
-        except FileNotFoundError:
-            checkpoint = None
-        if checkpoint == "consent":
-            time.sleep(3)
-            if last_checkpoint(read_tail(log_path)) == "consent":
-                capture(device, Path(directory), "cancel-live", "consent")
-            return
-        if checkpoint in {"returnLink", "completed"}:
-            return
-        time.sleep(1)
+def launch_retry_reason(log, summary, fixture_lines, initial_lines):
+    # Never repeat a journey which started, sent an issuer request, or has a
+    # test outcome. Use the entire private log here, not its diagnostics tail.
+    if initial_lines < 0 or len(fixture_lines) < initial_lines or any(
+        line.startswith(("ONESA_DEVICE_HTTP ", "ONESA_DEVICE_PORTAL ")) for line in fixture_lines[initial_lines:]
+    ):
+        return None
+    if re.search(r"FARMER_XCUI_|FARMER_RENDER |Test Case[^\n]*testCancelPortal[^\n]*started", log, re.I):
+        return None
+    counts = [summary.get(key) for key in ("passedTests", "failedTests", "skippedTests", "totalTestCount")]
+    if any(value is not None and (type(value) is not int or value != 0) for value in counts):
+        return None
+    if all(value == 0 for value in counts):
+        return "zero-tests"
+    if re.search(r"failed to (?:install or launch|install|launch) (?:the )?test runner|test runner never began", log, re.I):
+        return "runner-launch"
+    return None
 
 
 def main(args):
@@ -105,12 +100,16 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # subprocess.run kills its child when interrupted by SystemExit, so the
-    # owning shell can stop this bounded watcher without leaving simctl behind.
-    def stop(_signal, _frame):
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, stop)
-    if len(sys.argv) == 5 and sys.argv[1] == "watch-cancel":
-        watch_cancel(*sys.argv[2:])
+    if len(sys.argv) == 6 and sys.argv[1] == "launch-retry":
+        log_file, summary_file, fixture_file, initial = sys.argv[2:]
+        try:
+            summary = json.loads(Path(summary_file).read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            summary = {}
+        reason = launch_retry_reason(Path(log_file).read_text(errors="replace"), summary,
+                                     Path(fixture_file).read_text(errors="replace").splitlines(), int(initial))
+        if reason is None:
+            sys.exit(1)
+        print(reason)
     else:
         main(sys.argv[1:])

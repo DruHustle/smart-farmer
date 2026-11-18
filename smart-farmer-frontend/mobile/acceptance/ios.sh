@@ -61,15 +61,17 @@ run_native_login() {
   fi
   if [[ "$flow" == login ]] &&
      python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label" "$device"; then
-    # XCTest failed before it could launch the form. Keep the failed install
-    # trace, then give the same simulator one clean driver installation.
+    # Before credentials, retry the complete startup once with its original evidence.
     mv "$EVIDENCE/$label" "$EVIDENCE/$label-driver-startup"
+    if [[ -f "$report" ]]; then mv "$report" "$EVIDENCE/$label-driver-startup.xml"; fi
     if [[ "$label" == ipad-large-font || "$label" == ios-login ]]; then
       # Re-register the same installed simulator with CoreSimulator and Xcode.
-      # The detector already verified that no Farmer UI command was issued.
+      # Reinstall to reset partially dismissed Expo first-launch prompts.
       xcrun simctl shutdown "$device" || return 1
       xcrun simctl boot "$device" || return 1
       xcrun simctl bootstatus "$device" -b || return 1
+      xcrun simctl uninstall "$device" eu.onesa.smartfarmer || return 1
+      xcrun simctl install "$device" "$NATIVE_APP" || return 1
       if [[ "$label" == ipad-large-font ]]; then
         xcrun simctl ui "$device" content_size accessibility-extra-large || return 1
       fi
@@ -98,6 +100,13 @@ run_native_login() {
   set -- "$report" "$EVIDENCE/$label/$flow/commands.json"
   if [[ "$label" == ipad-large-font && "$flow" == login ]]; then set -- "$@" "$EVIDENCE/proxy.log"; fi
   checkpoint=$(python3 "$check" checkpoint "$@") || return 1
+  if [[ "$checkpoint" == password-sheet-visible ]]; then
+    local sheet_frames=("$EVIDENCE/$label/$flow/screenshots"/step-*-assertCondition-^Save_Password_\$.png)
+    if [[ ${#sheet_frames[@]} != 1 || ! -f "${sheet_frames[0]}" ]] ||
+       ! python3 "$check" locate "${sheet_frames[0]}" "$layout" > /dev/null; then
+      return 1
+    fi
+  fi
   if [[ "$checkpoint" == record-tap ]]; then
     # The Record control was visible before its tap failed. Only Apple's exact
     # password sheet in that failed display permits the post-login recovery.
@@ -123,10 +132,11 @@ run_native_login() {
     xcrun simctl launch "$device" eu.onesa.smartfarmer > /dev/null || return 1
     xcrun simctl io "$device" screenshot "$prompt_image" || return 1
     if ! prompt_point=$(python3 "$check" locate "$prompt_image" "$layout"); then
-      # The iPad's native screenshot can omit the AutoFill overlay. The
+      # A native screenshot can omit the AutoFill overlay. The
       # XCTest display capture includes it. Classify a fresh frame from this
       # same simulator, never a coordinate calculated from the failed step.
-      if [[ "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap || "$checkpoint" == submitted-session-confirmed ) ]]; then
+      if [[ "$checkpoint" == password-sheet-visible ||
+            ( "$layout" == ipad && ( "$checkpoint" == record-assertion || "$checkpoint" == record-tap || "$checkpoint" == submitted-session-confirmed ) ) ]]; then
         local display="$EVIDENCE/$label-current-display"
         maestro --device "$device" test --no-reinstall-driver --flatten-debug-output \
           --test-output-dir "$display" --debug-output "$display" \
@@ -163,7 +173,29 @@ run_tablet() {
   start_native_log "$NATIVE_TABLET" ios-tablet
   run_native_login "$NATIVE_TABLET" ipad ipad-large-font
   read -r NATIVE_PROJECT NATIVE_REMAINING_IDS < <(node "$NATIVE_DIR/acceptance/fixture.mjs" ids)
-  maestro --device "$NATIVE_TABLET" test -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$EVIDENCE/ipad-products.xml" --test-output-dir "$EVIDENCE/ipad-products" "$NATIVE_DIR/acceptance/tablet.yaml"
+  local flow="$NATIVE_DIR/acceptance/tablet.yaml" report="$EVIDENCE/ipad-products.xml"
+  local out="$EVIDENCE/ipad-products" display="$EVIDENCE/ipad-products-current-display"
+  local check="$NATIVE_DIR/acceptance/ios-password-sheet.py" phase decline
+  local driver=(maestro --device "$NATIVE_TABLET" test --no-reinstall-driver)
+  if "${driver[@]}" -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$report" \
+      --flatten-debug-output --test-output-dir "$out" --debug-output "$out" "$flow"; then
+    return 0
+  fi
+  phase=$(python3 "$check" checkpoint "$report" "$out/tablet/commands.json") || return 1
+  [[ "$phase" == tablet-first-farm-tap ]] || return 1
+  local failed_frame=("$out/tablet/screenshots"/step-*-tapOnElement-tab-farm.png)
+  [[ ${#failed_frame[@]} == 1 && -f "${failed_frame[0]}" ]] || return 1
+  python3 "$check" locate "${failed_frame[0]}" ipad >/dev/null || return 1
+  # Apple's sheet can appear after login has already shown the Record screen.
+  # Calculate the decline point on the live display before issuing any tap.
+  "${driver[@]}" --flatten-debug-output --test-output-dir "$display" --debug-output "$display" \
+      "$NATIVE_DIR/acceptance/ios-current-display.yaml" || return 1
+  decline=$(python3 "$check" locate "$display/ios-current-display/takeScreenshot/current-system-view.png" ipad) || return 1
+  "${driver[@]}" -e NOT_NOW_POINT="$decline" --test-output-dir "$EVIDENCE/ipad-products-dismiss" \
+      "$NATIVE_DIR/acceptance/accounting-intake-dismiss-system-sheet.yaml" || return 1
+  mv "$report" "$EVIDENCE/ipad-products-before-password-sheet.xml"
+  "${driver[@]}" -e PROJECT_ID="$NATIVE_PROJECT" --format junit --output "$report" \
+      --test-output-dir "$EVIDENCE/ipad-products-after-password-sheet" "$flow"
 }
 
 # The iPad uses its own clean install, accessible text size and the preseeded

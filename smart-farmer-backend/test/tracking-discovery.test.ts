@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import pg from 'pg';
+import type {InjectOptions} from 'fastify';
 import {buildApp} from '../src/app.js';
 
 const url=process.env.TEST_DATABASE_URL;
@@ -25,7 +26,7 @@ async function fixture(){
     return {farmId:created.json().farmId,headers:{authorization:'Bearer '+logged.json().token}};
   }
   const owner=await register('seller'),buyer=await register('buyer');
-  const request=(method:any,path:string,payload?:unknown,headers:Record<string,string>=owner.headers)=>app.inject({
+  const request=(method:InjectOptions['method'],path:string,payload?:InjectOptions['payload'],headers:Record<string,string>=owner.headers)=>app.inject({
     method,url:path,headers,...(payload===undefined?{}:{payload})
   });
   return {db,app,owner,buyer,request,async close(){
@@ -133,6 +134,9 @@ test('market discovery supports scoped favourites, saved searches, follows and m
    assert.equal((await f.request('PUT','/v1/market/follows/'+f.owner.farmId,undefined,f.buyer.headers)).statusCode,404,'Cannot follow an unpublished farm');
    const saved=await f.request('POST','/v1/market/saved-searches',{id:randomUUID(),query:'maize',category:'produce',area:'Harare',currency:'USD',minPrice:1,maxPrice:5,condition:'',notify:true},f.buyer.headers);
    assert.equal(saved.statusCode,201,saved.body);
+   const searches = await f.request('GET','/v1/market/saved-searches',undefined,f.buyer.headers);
+   assert.equal(searches.statusCode,200,searches.body);
+   assert.deepEqual(searches.json().items.map((item:{id:string}) => item.id), [saved.json().id]);
    const stock=await f.request('POST',seller+'/stock',{id:randomUUID(),name:'Stored maize',unit:'kg',quantity:100});
    assert.equal(stock.statusCode,201,stock.body);
    const makeListing=(title:string,price:number)=>({id:randomUUID(),stockItemId:stock.json().id,animalProjectId:null,title,quantity:10,price,currency:'USD',collectionArea:'Harare',category:'produce',condition:'fresh',grade:'A',terms:'Collect at market'});
@@ -164,4 +168,23 @@ test('market discovery supports scoped favourites, saved searches, follows and m
    assert.equal((await f.request('DELETE','/v1/market/favorites/'+listing.json().id,undefined,f.buyer.headers)).statusCode,204);
    assert.equal((await f.request('DELETE','/v1/market/follows/'+f.owner.farmId,undefined,f.buyer.headers)).statusCode,204);
  }finally{await f.close();}
+});
+
+test('a saved search rejected at commit never receives a success response', async () => {
+  const f = await fixture();
+  try {
+    // Only this disposable schema has this constraint. The insert succeeds
+    // inside the transaction and PostgreSQL rejects it when COMMIT runs.
+    await f.db.query(`ALTER TABLE market_saved_searches
+      ADD FOREIGN KEY (id) REFERENCES users(id) DEFERRABLE INITIALLY DEFERRED`);
+    const id = randomUUID();
+    const response = await f.request('POST', '/v1/market/saved-searches',
+      {id, query: 'maize'}, f.buyer.headers);
+    assert.equal(response.statusCode, 404, response.body);
+    assert.equal(response.json().error, 'related_record_not_found');
+    const stored = await f.db.query('SELECT id FROM market_saved_searches WHERE id=$1', [id]);
+    assert.equal(stored.rowCount, 0);
+  } finally {
+    await f.close();
+  }
 });

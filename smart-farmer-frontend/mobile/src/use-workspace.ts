@@ -129,6 +129,9 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
   async function sync(forceMedia = false) {
     if (busy || !alive.current) return;
     if (!settings.current.online) { setError(new Error('onlineRequired')); return; }
+    // A failed first membership request leaves no selected farm to flush.
+    // Sync must still let this account reload its memberships and invitations.
+    if (!currentFarm.current) { await refresh(); return; }
     setBusy(true); setError(null);
     try {
       const id = currentFarm.current;

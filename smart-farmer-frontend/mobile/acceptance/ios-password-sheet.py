@@ -150,8 +150,9 @@ def restored_invoice_login(trace):
 def checkpoint(report, commands, proxy=None):
     tests = ET.parse(report).findall(".//testcase")
     invoice = "smart-farmer-frontend/mobile/acceptance/accounting-intake-check-local.yaml"
+    tablet = "smart-farmer-frontend/mobile/acceptance/tablet.yaml"
     if len(tests) != 1 or tests[0].get("file") not in {
-        invoice,
+        invoice, tablet,
         "smart-farmer-frontend/mobile/acceptance/login.yaml",
         "smart-farmer-frontend/mobile/acceptance/reconcile-signin.yaml",
     }:
@@ -160,11 +161,39 @@ def checkpoint(report, commands, proxy=None):
     if len(failures) != 1 or not failures[0].text:
         return None
     failure = failures[0].text
+    if tests[0].get("file") == tablet:
+        if failure != "Element not found: Id matching regex: tab-farm, Enabled":
+            return None
+        with open(commands, encoding="utf-8") as stream:
+            trace = json.load(stream)
+        # This was the first navigation tap. A later failure must never replay
+        # the project, finance, language or forum interactions.
+        expected = [("defineVariablesCommand", "COMPLETED"), ("applyConfigurationCommand", "COMPLETED"),
+                    ("repeatCommand", "FAILED"), ("tapOnElement", "FAILED")]
+        if len(trace) == len(expected) and all(list(row["command"]) == [cmd] and
+                row["metadata"]["status"] == status for row, (cmd, status) in zip(trace, expected)):
+            target = {"idRegex": "tab-farm", "enabled": True, "optional": False}
+            if trace[-1]["command"]["tapOnElement"].get("selector") == target:
+                return "tablet-first-farm-tap"
+        return None
     if tests[0].get("file") == invoice:
         if failure.splitlines()[0] not in {DEVICE_LOSS, STATIC_LOSS}:
             return None
         with open(commands, encoding="utf-8") as stream:
             return "invoice-restored-postlogin" if restored_invoice_login(json.load(stream)) else None
+    if failure == r'Assertion is false: "^Save Password\?$" is not visible':
+        with open(commands, encoding="utf-8") as stream:
+            trace = json.load(stream)
+        # A late AutoFill sheet can appear between two dismiss checks, after
+        # Maestro has already warned that the first decline lookup missed.
+        target = {"textRegex": r"^Save Password\?$", "optional": False}
+        if (len(trace) >= 4
+                and trace[-4]["command"].get("runFlowCommand", {}).get("sourceDescription") == "dismiss-password-save.yaml"
+                and trace[-2]["metadata"]["status"] == "WARNED"
+                and trace[-2]["command"].get("tapOnElement", {}).get("selector", {}).get("textRegex") == "^Not Now$"
+                and trace[-1]["metadata"]["status"] == "FAILED"
+                and trace[-1]["command"].get("assertConditionCommand", {}).get("condition") == {"notVisible": target}):
+            return "password-sheet-visible"
     if failure == "Element not found: Id matching regex: tab-record, Enabled":
         with open(commands, encoding="utf-8") as stream:
             trace = json.load(stream)

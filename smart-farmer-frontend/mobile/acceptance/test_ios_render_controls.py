@@ -1,0 +1,164 @@
+import importlib.util
+import json
+import struct
+import subprocess
+import tempfile
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+
+
+path = Path(__file__).parent / "onesa/ios-xctest/render-controls.py"
+spec = importlib.util.spec_from_file_location("render_controls", path)
+controls = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(controls)
+
+
+def tsv(lines):
+    header = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"
+    rows = [header]
+    for block, line, top, left, words in lines:
+        for index, word in enumerate(words.split()):
+            width = len(word) * 7
+            rows.append(f"5\t1\t{block}\t1\t{line}\t{index + 1}\t{left}\t{top}\t{width}\t14\t95\t{word}")
+            left += width + 5
+    return "\n".join(rows)
+
+
+def screen(lines, email=""):
+    return controls.recognize_controls(tsv(lines), 400, 850, email)
+
+
+class SimulatorControls(unittest.TestCase):
+    def test_finds_actual_runner_cache_even_when_xctest_output_is_buffered(self):
+        with tempfile.TemporaryDirectory() as private:
+            root = Path(private).resolve()
+            log = root / "private.log"
+            name = "farmer-ocr-session"
+            folder = root / "Containers/Data/Application/runner/Library/Caches" / name
+            folder.mkdir(parents=True)
+            self.assertEqual(controls.request_directory(root, "session", log), folder)
+            alternate = root / "Library/Caches" / name
+            alternate.mkdir(parents=True)
+            self.assertIsNone(controls.request_directory(root, "session", log))
+
+    def test_private_runner_location_must_resolve_inside_this_device_and_match_the_session(self):
+        with tempfile.TemporaryDirectory() as private:
+            parent = Path(private).resolve()
+            root = parent / "device-data"
+            root.mkdir()
+            log = parent / "private.log"
+            outside = parent / "outside/Library/Caches/farmer-ocr-session"
+            outside.mkdir(parents=True)
+            linked = root / "Library/Caches/farmer-ocr-session"
+            linked.parent.mkdir(parents=True)
+            linked.symlink_to(outside)
+            actual = root / "alternate-runner/Library/Caches/farmer-ocr-session"
+            actual.mkdir(parents=True)
+            log.write_text("FARMER_PRIVATE_OCR_DIRECTORY " + str(outside) + "\n")
+            self.assertIsNone(controls.request_directory(root, "session", log))
+            log.write_text("FARMER_PRIVATE_OCR_DIRECTORY " + str(actual) + "\n")
+            self.assertEqual(controls.request_directory(root, "session", log), actual)
+            self.assertIsNone(controls.request_directory(root, "another-session", log))
+
+    def test_xctest_frame_is_consumed_before_ocr_without_another_capture(self):
+        header = b"\x89PNG\r\n\x1a\n" + bytes(8) + struct.pack(">II", 400, 850)
+        with tempfile.TemporaryDirectory() as private:
+            frame = Path(private) / "current.png"
+            frame.write_bytes(header)
+            def tool(args, **kwargs):
+                self.assertEqual(args[0], "tesseract")
+                self.assertEqual(kwargs["input"], header)
+                self.assertFalse(frame.exists())
+                return subprocess.CompletedProcess(args, 0, stdout=tsv([]).encode())
+            with patch.object(controls.subprocess, "run", side_effect=tool):
+                self.assertEqual(controls.recognize_frame(frame, "")["rows"], [])
+            self.assertEqual(list(Path(private).iterdir()), [])
+
+    def test_rejects_partial_and_symlink_frames_without_reading_the_target(self):
+        with tempfile.TemporaryDirectory() as private:
+            directory = Path(private)
+            source = directory / "outside"
+            source.write_bytes(b"private")
+            frame = directory / "frame.png"
+            frame.symlink_to(source)
+            with self.assertRaises(OSError):
+                controls.recognize_frame(frame, "")
+            self.assertFalse(frame.is_symlink())
+            self.assertEqual(source.read_bytes(), b"private")
+            frame.write_bytes(b"partial")
+            with self.assertRaises(ValueError):
+                controls.recognize_frame(frame, "")
+            self.assertFalse(frame.exists())
+
+    def test_observer_teardown_removes_only_private_frames_in_its_session(self):
+        with tempfile.TemporaryDirectory() as private:
+            root = Path(private).resolve()
+            folder = root / "Library/Caches/farmer-ocr-session"
+            folder.mkdir(parents=True)
+            frame = folder / "11111111-2222-3333-4444-555555555555.png"
+            unrelated = folder / "unrelated.png"
+            frame.touch()
+            unrelated.touch()
+            controls.remove_private_frames(root, "session", root / "xcode.log")
+            self.assertFalse(frame.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_browser_title_and_complete_controls_have_normalized_in_control_positions(self):
+        result = screen([(1, 1, 80, 160, "X localhost"), (2, 1, 150, 35, "Sign in to Onesa"),
+                         (3, 1, 300, 40, "Cancel sign-in"), (4, 1, 500, 70, "Cancel")])
+        self.assertTrue(result["chrome"])
+        self.assertEqual([x["text"] for x in result["rows"]], ["Sign in to Onesa", "Cancel sign-in"])
+        x, y, w, h = result["rows"][1]["box"]
+        self.assertAlmostEqual((x+w/2)*400, 61)
+        self.assertAlmostEqual((1-y-h/2)*850, 307)
+
+    def test_chrome_is_confined_to_device_browser_and_exact_loopback_names(self):
+        for host, top, left in (("localhost.example", 60, 160), ("localhost", 250, 160),
+                                ("127.0.0.1", 60, 6), ("127.0.0.1:9999", 60, 150)):
+            self.assertFalse(screen([(1, 1, top, left, host)])["chrome"])
+        self.assertTrue(screen([(1, 1, 80, 162, "127.0.0.1")])["chrome"])
+        self.assertTrue(screen([(1, 1, 80, 145, "127.0.0.1:46502")])["chrome"])
+
+    def test_system_consent_requires_the_farmer_loopback_title(self):
+        buttons = [(2, 1, 450, 95, "Cancel"), (2, 1, 450, 235, "Continue")]
+        title = '“SmartFarmer” Wants to Use “localhost” to Sign In'
+        def names(heading):
+            result = screen([(1, 1, 350, 30, heading), *buttons])
+            return {row["text"] for row in result["rows"]}
+
+        self.assertEqual(names(title), {"systemConsentTitle", "Cancel", "Continue"})
+        self.assertNotIn("Cancel", names(title.replace("localhost", "example.com")))
+
+    def test_callback_below_compact_browser_title_can_occupy_top_twelfth(self):
+        result = screen([(1, 1, 12, 160, "127.0.0.1"), (2, 1, 36, 35, "Smart Farmer"),
+                         (3, 1, 65, 100, "Dzokera muSmart Farmer")])
+        heading, link = (row["box"] for row in result["rows"])
+        self.assertGreater(link[1] + link[3]/2, .88)
+        self.assertLess(link[1] + link[3], heading[1])
+        self.assertLess(heading[1] + heading[3], result["titleBottom"])
+
+    def test_both_languages_and_wrapped_return_link_stay_distinct_from_heading(self):
+        for first, last, label in (("Dzokera", "muSmart Farmer", "Dzokera muSmart Farmer"),
+                                   ("Buyela", "ku-Smart Farmer", "Buyela ku-Smart Farmer")):
+            result = screen([(1, 1, 80, 165, "127.0.0.1"), (2, 1, 220, 80, "Smart Farmer"),
+                             (3, 1, 310, 95, first), (3, 2, 330, 95, last)])
+            self.assertEqual([row["text"] for row in result["rows"]], ["Smart Farmer", label])
+            self.assertGreater(result["rows"][0]["box"][1], sum(result["rows"][1]["box"][1::2]))
+
+    def test_ambiguous_actions_are_preserved_for_the_driver_to_reject(self):
+        result = screen([(1, 1, 280, 40, "Continue"), (2, 1, 500, 60, "Continue")])
+        self.assertEqual([row["text"] for row in result["rows"]], ["Continue", "Continue"])
+
+    def test_credentials_and_free_text_never_leave_the_observer(self):
+        email = "test@example.invalid"
+        text = [(1, 1, 180, 60, "Password"), (2, 1, 200, 60, "private-password"), (3, 1, 250, 60, email)]
+        result = screen(text, email)
+        self.assertCountEqual([row["text"] for row in result["rows"]], ["Password", "fixtureEmail"])
+        self.assertNotIn(email, json.dumps(result))
+        self.assertNotIn("private-password", json.dumps(result))
+        self.assertNotIn("fixtureEmail", json.dumps(screen(text, email.upper())))
+
+
+if __name__ == "__main__":
+    unittest.main()
