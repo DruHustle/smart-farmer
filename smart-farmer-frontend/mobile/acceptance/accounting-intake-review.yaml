@@ -114,7 +114,10 @@ appId: eu.onesa.smartfarmer
 - eraseText
 - inputText: '12.25'
 - runFlow: dismiss-keyboard.yaml
+# iOS can expose the Review control below the sheet's clipped viewport.
+# Scroll it into the sheet before exercising the unchanged tax-review guard.
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
@@ -139,6 +142,7 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: invoice-line-0-tax-option-0
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: invoice-review-draft
     direction: DOWN
