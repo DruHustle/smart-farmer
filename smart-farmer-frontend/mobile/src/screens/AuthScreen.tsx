@@ -109,7 +109,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       <Notice error text={t.onesa_unavailable}/>
       <Button testID="auth-onesa-retry" secondary title={t.retry} onPress={() => setConfigAttempt(value => value + 1)}/>
       <Button secondary title={t.onesaAccount} onPress={() => {
-        void Linking.openURL('https://portal.onesa.eu/account').catch(setError);
+        void Linking.openURL('https://account.onesa.eu/account').catch(setError);
       }}/>
     </Card>}
     {onesa && <Button testID="auth-onesa" title={t.onesaSignIn} disabled={busy} onPress={() => {
