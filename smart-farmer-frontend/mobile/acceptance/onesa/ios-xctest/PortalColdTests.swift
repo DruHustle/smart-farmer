@@ -143,7 +143,14 @@ final class PortalColdTests: XCTestCase {
             // Farmer screen is disabled and WebKit has no accessibility tree.
             let screen = self.renderedScreen()
             var consent: BrowserAction?
-            if let point = screen?.systemConsentPoint() {
+            // Prefer the actual verified operating-system Continue control.
+            // A compositor frame can describe a real consent prompt while a
+            // coordinate touch on the app window never reaches SpringBoard.
+            // Keep the fixed-title accessibility guard; use the recognized
+            // frame only when WebKit does not publish the native control.
+            if screen?.systemConsentPoint() != nil, let button = self.browserConsent() {
+                consent = .element(button)
+            } else if let point = screen?.systemConsentPoint() {
                 consent = .point(point)
             } else if screen?.hasLoopbackChrome == true {
                 self.renderObserved(.browserVisible)
