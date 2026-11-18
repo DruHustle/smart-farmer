@@ -39,10 +39,40 @@ jobs:
       - run: npm ci && npx --no-install expo prebuild --platform ios --no-install && pod install --project-directory=ios
       - name: Build and install the standalone release on an iPhone simulator
         run: |
-          phone=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name|startswith("iPhone"))][0].udid // empty')
-          test -n "$phone"
-          xcrun simctl boot "$phone" || xcrun simctl bootstatus "$phone" -b
-          xcrun simctl bootstatus "$phone" -b
+          # macOS shared runners can retain a broken preinstalled simulator.
+          # Create a fresh, disposable device and require an actual completed boot.
+          # A boot acknowledgement alone does not prove installation can succeed.
+          read -r device_type runtime < <(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          available = [(d["deviceTypeIdentifier"], runtime)
+                       for runtime, items in sorted(devices.items(), reverse=True)
+                       if ".iOS-" in runtime
+                       for d in items if d["name"].startswith("iPhone") and d.get("isAvailable")]
+          if not available:
+              raise SystemExit("No available iPhone simulator runtime")
+          print(*available[0])
+          ')
+          phone=''
+          cleanup_phone() {
+            if [[ -n "$phone" ]]; then
+              xcrun simctl shutdown "$phone" >/dev/null 2>&1 || true
+              xcrun simctl delete "$phone" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_phone EXIT
+          booted=false
+          for attempt in 1 2; do
+            phone=$(xcrun simctl create "Farmer CI $GITHUB_RUN_ID-$attempt" "$device_type" "$runtime")
+            if xcrun simctl boot "$phone" &&
+               python3 -c 'import subprocess,sys; subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],check=True,timeout=480)' "$phone"; then
+              booted=true
+              break
+            fi
+            cleanup_phone
+            phone=''
+          done
+          [[ "$booted" == true ]] || { echo "No fully booted iPhone simulator is available" >&2; exit 1; }
           xcodebuild -workspace ios/SmartFarmer.xcworkspace -scheme SmartFarmer -configuration Release -destination "id=$phone" -derivedDataPath "$RUNNER_TEMP/farmer-build" build
           app="$RUNNER_TEMP/farmer-build/Build/Products/Release-iphonesimulator/SmartFarmer.app"
           test -s "$app/main.jsbundle"
