@@ -139,8 +139,22 @@ final class PortalColdTests: XCTestCase {
         var lastConsentTap: Date?
         var retriedConsent = false
         let visible = waitFor({
-            // The compositor sees the iOS prompt even while the foreground
-            // Farmer screen is disabled and WebKit has no accessibility tree.
+            // A SpringBoard consent alert can abort a full-screen XCTest
+            // snapshot on a cold simulator. Prefer its exact verified native
+            // accessibility controls before asking the compositor for pixels.
+            if let accept = self.browserConsent() {
+                self.renderObserved(.systemConsent)
+                if let previous = lastConsentTap, retriedConsent || Date().timeIntervalSince(previous) < 5 {
+                    return false
+                }
+                retriedConsent = lastConsentTap != nil
+                lastConsentTap = Date()
+                accept.tap()
+                self.renderObserved(.consentTapped)
+                return false
+            }
+            // When SpringBoard cannot publish the control, use the observed
+            // frame (or an actual browser surface) instead of guessing a tap.
             let screen = self.renderedScreen()
             var consent: BrowserAction?
             // Prefer the actual verified operating-system Continue control.
