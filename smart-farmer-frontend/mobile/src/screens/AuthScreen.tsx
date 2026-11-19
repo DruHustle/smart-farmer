@@ -131,7 +131,12 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
     {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
       <Choice label={t.choose} value={mode} onChange={value => { setMode(value); setError(null); setCode(''); setRecoveringUsername(''); }} closeLabel={t.close} options={(['signIn', 'register', 'join', 'recover'] as const).map(value => ({ value, label: t[value] }))} />
       <Field testID="auth-username" label={t.username} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none" importantForAutofill="no" maxLength={80} />
-      <Field testID="auth-password" label={t.password} hint={t.passwordHint} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none" importantForAutofill="no" maxLength={128} />
+      {/* The isolated iOS __DEV__ local-credentials fixture has no customer
+          Keychain enrollment. iOS 26 AutoFill occasionally opens an untouchable
+          system Save Password sheet after login on the iPad simulator. Mark the
+          fixture password as a code to avoid registering a password-save
+          candidate. Production uses hosted Onesa/Auth0 and never enters here. */}
+      <Field testID="auth-password" label={t.password} hint={t.passwordHint} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={Platform.OS === 'ios' ? undefined : 'off'} textContentType={Platform.OS === 'ios' && allowLocal ? 'oneTimeCode' : 'none'} importantForAutofill="no" maxLength={128} />
       {mode === 'register' ? <Field label={t.farmName} value={farmName} onChangeText={setFarmName} maxLength={100} /> : null}
       {mode === 'join' || mode === 'recover' ? <Field label={mode === 'join' ? t.invitationCode : t.recoveryCode} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} secureTextEntry /> : null}
       <Button testID="auth-submit" title={t.submit} busy={busy} onPress={() => { void submit(); }} />
