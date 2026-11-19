@@ -6,7 +6,7 @@ appId: eu.onesa.smartfarmer
     when:
       true: ${FLOW_STATE !== 'active'}
     commands:
-      - runFlow: entry.yaml
+      - runFlow: android-return-entry.yaml
       - runFlow: open.yaml
       - extendedWaitUntil:
           visible: '^Email address$'

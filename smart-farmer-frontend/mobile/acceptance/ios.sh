@@ -154,8 +154,16 @@ run_native_login() {
   fi
   set --
   if [[ -n "$prompt_point" ]]; then
-    set -- -e NOT_NOW_POINT="$prompt_point"
     mv "$prompt_image" "$EVIDENCE/$layout-confirmed-system-password-sheet.png"
+    if [[ "$layout" == ipad ]]; then
+      # The iPad's Apple-owned AutoFill sheet is absent from Maestro's
+      # Farmer accessibility tree. A coordinate tap to Farmer cannot close it.
+      # Require a real native XCTest dismissal and visible authenticated tab.
+      bash "$NATIVE_DIR/acceptance/ios-dismiss-native-password-sheet.sh" "$device" || return 1
+      resume="$NATIVE_DIR/acceptance/record-after-login.yaml"
+    else
+      set -- -e NOT_NOW_POINT="$prompt_point"
+    fi
   else
     rm -f "$prompt_image"
   fi

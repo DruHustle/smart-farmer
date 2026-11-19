@@ -139,11 +139,32 @@ final class PortalColdTests: XCTestCase {
         var lastConsentTap: Date?
         var retriedConsent = false
         let visible = waitFor({
-            // The compositor sees the iOS prompt even while the foreground
-            // Farmer screen is disabled and WebKit has no accessibility tree.
+            // A SpringBoard consent alert can abort a full-screen XCTest
+            // snapshot on a cold simulator. Prefer its exact verified native
+            // accessibility controls before asking the compositor for pixels.
+            if let accept = self.browserConsent() {
+                self.renderObserved(.systemConsent)
+                if let previous = lastConsentTap, retriedConsent || Date().timeIntervalSince(previous) < 5 {
+                    return false
+                }
+                retriedConsent = lastConsentTap != nil
+                lastConsentTap = Date()
+                accept.tap()
+                self.renderObserved(.consentTapped)
+                return false
+            }
+            // When SpringBoard cannot publish the control, use the observed
+            // frame (or an actual browser surface) instead of guessing a tap.
             let screen = self.renderedScreen()
             var consent: BrowserAction?
-            if let point = screen?.systemConsentPoint() {
+            // Prefer the actual verified operating-system Continue control.
+            // A compositor frame can describe a real consent prompt while a
+            // coordinate touch on the app window never reaches SpringBoard.
+            // Keep the fixed-title accessibility guard; use the recognized
+            // frame only when WebKit does not publish the native control.
+            if screen?.systemConsentPoint() != nil, let button = self.browserConsent() {
+                consent = .element(button)
+            } else if let point = screen?.systemConsentPoint() {
                 consent = .point(point)
             } else if screen?.hasLoopbackChrome == true {
                 self.renderObserved(.browserVisible)
@@ -592,14 +613,17 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.returnLink)
         var action: BrowserAction?
         var declinedPasswordSheet = false
-        // On a cold browser the first compositor read can time out while the
-        // denied callback page loads. Leave room for a second observed frame.
+        // The OCR observer permits two 20-second segmentation passes per
+        // compositor frame. A 40-second return-link deadline therefore allows
+        // only one worst-case frame and can fail although the real callback
+        // page has already loaded. Permit a second observation, without
+        // resubmitting credentials or fabricating the browser return link.
         let found = waitFor({
             action = self.callbackAction(issuerOwner: issuerOwner, checkPasswordSheet: !afterCancellation) { point in
                 if !declinedPasswordSheet { declinedPasswordSheet = true; point.tap() }
             }
             return action != nil
-        }, seconds: afterCancellation ? 100 : 40)
+        }, seconds: afterCancellation ? 100 : 85)
         try XCTUnwrap(found ? action : nil, "Real browser return link").tap()
     }
 
@@ -763,7 +787,13 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.farmWorkspace)
         let farmName = try XCTUnwrap(env["FARMER_FARM"])
         let farm = app.staticTexts[farmName].firstMatch
-        XCTAssertTrue(waitFor({ farm.exists && forum.exists && forum.isHittable }), "Farm and forum available")
+        // A fresh administrator account joins while the initial encrypted
+        // local farm workspace is still populating. Require the actual named
+        // farm and actionable Forum control; do not replay invitation or grant.
+        // Keep individual assertions so an absent farm is distinguishable from
+        // a still-mounting tab on the slowest clean macOS simulator.
+        XCTAssertTrue(waitFor({ farm.exists }, seconds: 90), "Joined farm becomes visible")
+        XCTAssertTrue(waitFor({ forum.exists && forum.isHittable }, seconds: 45), "Forum becomes actionable")
         checkpoint(.forumTab)
         forum.tap()
         checkpoint(.forumScreen)
@@ -821,4 +851,30 @@ final class PortalColdTests: XCTestCase {
         try assertSeededDiscussion()
         checkpoint(.completed)
     }
+    // Only used after the isolated iPad Maestro run captured and identified
+    // Apple's exact Save Password? sheet. The system owns this overlay, so a
+    // Maestro tap sent to Farmer cannot dismiss it. XCTest can target its owner.
+    // Never replay credentials or treat a hidden tab as an authenticated pass.
+    @MainActor func testDismissSystemPasswordSheet() throws {
+        continueAfterFailure = false
+        let record = app.descendants(matching: .any)["tab-record"].firstMatch
+        for owner in [springboard, app] {
+            let title = owner.staticTexts["Save Password?"].firstMatch
+            let decline = owner.buttons["Not Now"].firstMatch
+            if title.exists && decline.exists && decline.isEnabled && decline.isHittable {
+                decline.tap()
+                XCTAssertTrue(title.waitForNonExistence(timeout: 15),
+                              "The observed Apple system password dialog must close")
+                break
+            }
+        }
+        // Starting a separate XCTest runner can itself put Farmer in the
+        // background or dismiss the transient OS sheet. Restore only the
+        // existing installed application, retaining its encrypted session.
+        if app.state != .runningForeground { app.activate() }
+        XCTAssertTrue(waitFor({
+            self.app.state == .runningForeground && record.exists && record.isHittable
+        }, seconds: 45), "Previously authenticated Farmer workspace must be usable")
+    }
+
 }

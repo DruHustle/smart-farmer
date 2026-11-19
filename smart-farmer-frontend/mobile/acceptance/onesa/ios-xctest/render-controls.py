@@ -88,7 +88,7 @@ def recognize_frame(frame, email):
     def read(mode):
         result = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", mode, "tsv"],
                                 input=image, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                check=True, timeout=8)
+                                check=True, timeout=20)
         return recognize_controls(result.stdout.decode("utf-8"), width, height, email)
 
     screen = read("3")
@@ -97,7 +97,11 @@ def recognize_frame(frame, email):
     form = {"Email address", "Password", "Cancel sign-in", "Remember this browser"} <= labels
     if "systemConsentTitle" in labels and {"Cancel", "Continue"} <= labels:
         return screen
-    if screen["chrome"] and ((callback and "Smart Farmer" in labels) or (form and (not email or "fixtureEmail" in labels))):
+    # The cold issuer has blank email/password fields. Requiring the fixture
+    # email to already appear made every valid first form pay for a second OCR
+    # pass, which can time out on a freshly migrated macOS simulator. The
+    # caller still verifies exact visible controls before touching anything.
+    if screen["chrome"] and ((callback and "Smart Farmer" in labels) or form):
         return screen
     # Sparse segmentation also finds the earlier, narrow inline link. Use
     # the same frame for both passes and keep duplicate controls ambiguous.

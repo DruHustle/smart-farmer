@@ -14,6 +14,7 @@ import {forumJourneys} from './browser-forum.mjs';
 import {trackingJourneys} from './browser-tracking.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
+import { registrationJourney } from './browser-registration.mjs';
 import {appStoreListings} from '../src/components/app-store-listings.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,6 +124,8 @@ try {
     }
   }
   pass('Localized return links have a 44px touch target and open the native callback on phones');
+  await registrationJourney(browser, ui, api, sn.createOnesaAccount,'user');
+  await registrationJourney(browser, ui, api, sn.requestOnesaAdmin,'admin');
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');

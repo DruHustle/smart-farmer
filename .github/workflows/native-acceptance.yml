@@ -40,7 +40,7 @@ jobs:
     # Preserve each platform's compile/cache without blocking the other platform's UI feedback.
     concurrency:
       group: native-android-${{ matrix.suite }}-${{ github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       DATABASE_URL: postgresql://smart_farmer:test-only@127.0.0.1:5432/smart_farmer_test
     services:
@@ -184,7 +184,7 @@ jobs:
     timeout-minutes: ${{ matrix.suite == 'onesa' && 105 || 75 }}
     concurrency:
       group: native-ios-${{ matrix.suite }}-${{ github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
       IOS_CONFIGURATION: ${{ matrix.suite == 'onesa' && 'Release' || 'Debug' }}
@@ -288,9 +288,11 @@ jobs:
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       - name: Native iOS ${{ matrix.suite }} journeys
-        # Allow measured cold XCTest startup; application flow timeouts stay unchanged.
+        # A clean iPad on macOS 26 can start XCTest's HTTP driver only after
+        # the 240s deadline (observed late server boot with zero UI commands).
+        # Allow the actual driver to finish booting; retain all real journey asserts.
         env:
-          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: ${{ matrix.suite == 'tablet' && '360000' || '240000' }}
           NATIVE_SUITE: ${{ matrix.suite }}
           NATIVE_TABLET_SEPARATE: '1'
         run: |

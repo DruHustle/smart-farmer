@@ -1,21 +1,21 @@
 appId: eu.onesa.smartfarmer
 ---
-# A driver-acknowledged tap can leave Record selected after earlier journeys.
-# Bound only this read-only navigation retry and require the actual Farm state.
+# XCTest can report the Farm tab selected while Maestro's selected-state
+# matcher returns false. Require the actual farm-specific project entry instead
+# of weakening the user journey to a tab-only visibility assertion.
+# At most two read-only navigation taps are permitted before any project action.
 - repeat:
     times: 2
     while:
       notVisible:
-        id: "tab-farm"
-        selected: true
+        id: project-open-${PROJECT_ID}
     commands:
       - tapOn:
           id: "tab-farm"
           enabled: true
 - extendedWaitUntil:
     visible:
-      id: "tab-farm"
-      selected: true
+      id: project-open-${PROJECT_ID}
     timeout: 5000
 - scrollUntilVisible:
     element:
@@ -33,6 +33,14 @@ appId: eu.onesa.smartfarmer
 - takeScreenshot: ipad-large-font-farm-overview
 - tapOn:
     id: project-open-${PROJECT_ID}
+# A successful project tap initiates the modal animation. Require the
+# real enabled workspace selector to appear before scrolling or interacting;
+# never replay the navigation while the modal is mounting.
+- extendedWaitUntil:
+    visible:
+      id: project-workspace
+      enabled: true
+    timeout: 15000
 - runFlow:
     when:
       notVisible:

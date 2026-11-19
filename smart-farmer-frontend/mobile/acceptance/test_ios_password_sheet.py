@@ -38,6 +38,17 @@ class SubmittedLogin(unittest.TestCase):
             evidence.write_text(json.dumps(commands))
             return sheet.checkpoint(report, evidence)
 
+    def test_login_mode_sheet_close_requires_the_modal_control(self):
+        # The localized selection label remains visible without a modal.
+        # A close action is valid only if the real modal button is visible.
+        contents = Path(__file__).with_name("credentials.yaml").read_text()
+        self.assertIn("label: Dismiss an observed iOS sign-in mode selector", contents)
+        section = contents.split("label: Dismiss an observed iOS sign-in mode selector", 1)[1]
+        section = section.split("- scrollUntilVisible:", 1)[0]
+        self.assertIn("when:\\n            visible:\\n              id: sheet-close".replace("\\n", "\n"), section)
+        self.assertIn("tapOn:\\n                id: sheet-close".replace("\\n", "\n"), section)
+        self.assertNotIn("text: '^Sarudza", section)
+
     def test_observed_login_and_reauthentication(self):
         for flow in ("login", "reconcile-signin"):
             self.assertEqual(self.checkpoint(sheet.DEVICE_LOSS + "\n  at driver", trace(), flow),

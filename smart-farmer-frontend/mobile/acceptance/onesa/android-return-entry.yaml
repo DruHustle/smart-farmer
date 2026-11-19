@@ -1,0 +1,19 @@
+appId: eu.onesa.smartfarmer
+---
+# The first-run Expo Continue/Close prompts may recur after the role-specific
+# app-data reset, or may already be dismissed. Neither state authenticates a user.
+# Attempt only those two system prompts, then REQUIRE the actual Farmer sign-in.
+- runFlow: launch.yaml
+- repeat:
+    times: 8
+    commands:
+      - tapOn:
+          text: '^Continue$'
+          optional: true
+      - tapOn:
+          text: '^Close$'
+          optional: true
+- extendedWaitUntil:
+    visible: {id: auth-onesa}
+    timeout: 120000
+- takeScreenshot: signed-out-smart-farmer
