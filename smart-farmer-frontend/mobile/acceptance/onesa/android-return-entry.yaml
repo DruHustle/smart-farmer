@@ -1,0 +1,11 @@
+appId: eu.onesa.smartfarmer
+---
+# device.sh's initial entry.yaml run has already consumed the one-time Expo
+# development-client Continue/Close prompt. A role reset clears Farmer and
+# Chrome state, not the system's earlier development-client consent.
+# Require the real Farmer sign-in control; do not accept an empty splash.
+- runFlow: launch.yaml
+- extendedWaitUntil:
+    visible: {id: auth-onesa}
+    timeout: 120000
+- takeScreenshot: signed-out-smart-farmer
