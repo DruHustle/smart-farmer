@@ -33,23 +33,14 @@ appId: eu.onesa.smartfarmer
 - takeScreenshot: ipad-large-font-farm-overview
 - tapOn:
     id: project-open-${PROJECT_ID}
-# An acknowledged iPad tap can be lost to an OS overlay immediately after
-# restored sign-in. Retry one read-only navigation touch only while the
-# project's modal close control is absent. The suite still requires the
-# actual workspace chooser, performance panel and finance records.
-- runFlow:
-    when:
-      notVisible:
-        id: sheet-close
-    commands:
-      - runFlow:
-          when:
-            visible:
-              id: project-open-${PROJECT_ID}
-          commands:
-            - tapOn:
-                id: project-open-${PROJECT_ID}
-                enabled: true
+# A successful project tap initiates the modal animation. Require the
+# real enabled workspace selector to appear before scrolling or interacting;
+# never replay the navigation while the modal is mounting.
+- extendedWaitUntil:
+    visible:
+      id: project-workspace
+      enabled: true
+    timeout: 15000
 - runFlow:
     when:
       notVisible:
