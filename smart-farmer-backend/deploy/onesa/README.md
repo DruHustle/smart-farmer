@@ -28,9 +28,9 @@ The backup image uses UID/GID 1000, matching the API's media owner. Preserve own
 
 ## Platform administrator sign-in
 
-Register the confidential Farmer client with the Portal issuer and its frontend callback allowlist using the exact callback `https://farmer.onesa.eu/auth/onesa/callback`. The private Compose environment supplies the API-only client ID, client secret, issuer and enable flag. Migration `016_onesa_identity.sql` adds the issuer/subject projection and encrypted grant. Use the normal migration procedure before deploying the API.
+Configure managed Onesa Identity through the Auth0 issuer `https://auth.onesa.eu/`. Register the confidential Farmer web client with exact callback `https://farmer.onesa.eu/auth/onesa/callback`, the reviewed web origin, and the dedicated Farmer API audience. Register a distinct native public client for the Farmer iOS/Android redirect URIs. Put the client credentials, audience, current/next public RS256 JWKS snapshot and its expiry in the private Compose environment; never include private signing keys. Keep `ONESA_IDENTITY_ENABLED=false` until both client registrations, the Onesa registration/policy Actions, signed product/role/MFA claims, and key snapshot have been verified. Set `ONESA_IDENTITY_MODE=managed` and the exact issuer before enabling it. Preserve `ONESA_IDENTITY_ACCOUNT_ISSUER=https://portal.onesa.eu/api/v1/identity` for existing Farmer account associations. Migration `016_onesa_identity.sql` adds the issuer/subject projection and encrypted grant; use the normal migration procedure before deploying the API.
 
-After deployment, `GET /v1/onesa/config` should return the registered public client ID, issuer and callback. Complete sign-in with an approved MFA-enabled Onesa administrator and check that only explicitly joined farms appear. The same callback also returns proof-bound codes to the existing Farmer mobile apps.
+After deployment, `GET /v1/onesa/config` should return the registered public client ID, managed issuer and callback. Complete Auth0 sign-in with an approved MFA-enabled Onesa administrator and check that only explicitly joined farms appear. Verify the existing Farmer native callback separately; it uses the distinct public native client and PKCE.
 
 ## Ingress and safety gate
 
