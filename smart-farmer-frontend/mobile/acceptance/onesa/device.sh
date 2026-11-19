@@ -106,10 +106,25 @@ for role in cancel member admin; do
     xcrun simctl install "$device" "$RUNNER_TEMP/native-ios/Build/Products/Release-iphonesimulator/SmartFarmer.app"
     # XCTest launches the installed app and its embedded bundle on this clean device.
   else
-    adb shell pm clear com.android.chrome
-    adb shell pm clear eu.onesa.smartfarmer
-    grant_android_debug_network
-    adb shell am start -n eu.onesa.smartfarmer/.MainActivity
+    # The disposable Android emulator occasionally drops its shell transport
+    # between finished member and fresh admin journeys (adb exit 255). Retry
+    # only the pre-input reset; never replay a credential or product action.
+    reset_ok=false
+    for reset_attempt in 1 2 3; do
+      if adb get-state >/dev/null 2>&1 &&
+         adb shell pm clear com.android.chrome &&
+         adb shell pm clear eu.onesa.smartfarmer &&
+         grant_android_debug_network &&
+         adb shell am start -n eu.onesa.smartfarmer/.MainActivity; then
+        reset_ok=true
+        break
+      fi
+      sleep 5
+    done
+    if [[ "$reset_ok" != true ]]; then
+      printf 'FAIL Android fresh role reset before %s: emulator transport unavailable\\n' "$role" | tee -a "$evidence/android-results.txt"
+      exit 1
+    fi
   fi
   states=(cancel)
   opts=()
