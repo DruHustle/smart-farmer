@@ -122,7 +122,7 @@ for role in cancel member admin; do
       sleep 5
     done
     if [[ "$reset_ok" != true ]]; then
-      printf 'FAIL Android fresh role reset before %s: emulator transport unavailable\\n' "$role" | tee -a "$evidence/android-results.txt"
+      printf 'FAIL Android fresh role reset before %s: emulator transport unavailable\n' "$role" | tee -a "$evidence/android-results.txt"
       exit 1
     fi
   fi
