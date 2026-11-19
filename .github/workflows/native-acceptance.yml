@@ -288,9 +288,11 @@ jobs:
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       - name: Native iOS ${{ matrix.suite }} journeys
-        # Allow measured cold XCTest startup; application flow timeouts stay unchanged.
+        # A clean iPad on macOS 26 can start XCTest's HTTP driver only after
+        # the 240s deadline (observed late server boot with zero UI commands).
+        # Allow the actual driver to finish booting; retain all real journey asserts.
         env:
-          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: ${{ matrix.suite == 'tablet' && '360000' || '240000' }}
           NATIVE_SUITE: ${{ matrix.suite }}
           NATIVE_TABLET_SEPARATE: '1'
         run: |
