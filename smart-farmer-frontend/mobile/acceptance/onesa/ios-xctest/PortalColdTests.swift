@@ -787,7 +787,13 @@ final class PortalColdTests: XCTestCase {
         checkpoint(.farmWorkspace)
         let farmName = try XCTUnwrap(env["FARMER_FARM"])
         let farm = app.staticTexts[farmName].firstMatch
-        XCTAssertTrue(waitFor({ farm.exists && forum.exists && forum.isHittable }), "Farm and forum available")
+        // A fresh administrator account joins while the initial encrypted
+        // local farm workspace is still populating. Require the actual named
+        // farm and actionable Forum control; do not replay invitation or grant.
+        // Keep individual assertions so an absent farm is distinguishable from
+        // a still-mounting tab on the slowest clean macOS simulator.
+        XCTAssertTrue(waitFor({ farm.exists }, seconds: 90), "Joined farm becomes visible")
+        XCTAssertTrue(waitFor({ forum.exists && forum.isHittable }, seconds: 45), "Forum becomes actionable")
         checkpoint(.forumTab)
         forum.tap()
         checkpoint(.forumScreen)
