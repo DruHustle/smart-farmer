@@ -293,7 +293,7 @@ jobs:
         # the 240s deadline (observed late server boot with zero UI commands).
         # Allow the actual driver to finish booting; retain all real journey asserts.
         env:
-          MAESTRO_DRIVER_STARTUP_TIMEOUT: ${{ matrix.suite == 'tablet' && '360000' || '240000' }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '360000'
           NATIVE_SUITE: ${{ matrix.suite }}
           NATIVE_TABLET_SEPARATE: '1'
         run: |
