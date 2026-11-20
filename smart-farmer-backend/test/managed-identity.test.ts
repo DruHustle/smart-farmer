@@ -49,7 +49,8 @@ test('managed browser and native sessions retain legacy records and survive an i
   const env={ONESA_IDENTITY_ENABLED:'true',ONESA_IDENTITY_MODE:'managed',ONESA_IDENTITY_ISSUER:issuer,
     ONESA_IDENTITY_AUDIENCE:audience, ONESA_IDENTITY_CLIENT_ID:clientId,ONESA_IDENTITY_NATIVE_CLIENT_ID:nativeId,
     ONESA_IDENTITY_CLIENT_SECRET:secret,ONESA_IDENTITY_ACCOUNT_ISSUER:legacy,
-    ONESA_IDENTITY_JWKS:JSON.stringify({keys:[jwk]}),ONESA_IDENTITY_JWKS_EXPIRES_AT:String(now()+3600)};
+    ONESA_IDENTITY_JWKS:JSON.stringify({keys:[jwk]}),ONESA_IDENTITY_JWKS_EXPIRES_AT:String(now()+3600),
+    TRUST_PROXY_IPS:'127.0.0.1'};
   const saved=Object.entries(env).map(([k])=>[k,process.env[k]] as const);
   Object.assign(process.env,env);
   t.after(()=>{for(const [k,v] of saved) {if(v===undefined)delete process.env[k];else process.env[k]=v;}});
@@ -68,9 +69,12 @@ test('managed browser and native sessions retain legacy records and survive an i
   await db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'adviser')",[farmerId,farmId]);
   const start=()=>{const a=buildApp(db,origin);t.after(()=>a.close());return a;};
   const app=start();
+  let clientAddress=0;
   const signin=async(api=app,native=false)=>{
     const code=randomUUID();codes.add(code);
-    return api.inject({method:'POST',url:'/v1/onesa/sessions',payload:{code,nonce,verifier,language:'sn',...(native&&{native:true})}});
+    return api.inject({method:'POST',url:'/v1/onesa/sessions',
+      headers:{'x-forwarded-for':`198.51.100.${++clientAddress}`},
+      payload:{code,nonce,verifier,language:'sn',...(native&&{native:true})}});
   };
   const config=(await app.inject('/v1/onesa/config')).json();
   assert.equal(config.audience,audience);assert.equal(config.nativeClientId,nativeId);
