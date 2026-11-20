@@ -17,8 +17,29 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-amount"
 - eraseText
-- inputText: "${PAYMENT_AMOUNT}"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - inputText: "${PAYMENT_CHAR_1}"
+      - inputText: "${PAYMENT_CHAR_2}"
+      - inputText: "${PAYMENT_CHAR_3}"
+      - inputText: "${PAYMENT_CHAR_4}"
+      - inputText: "${PAYMENT_CHAR_5}"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - inputText: "${PAYMENT_AMOUNT}"
 - runFlow: dismiss-keyboard.yaml
+- scrollUntilVisible:
+    element:
+      id: "form-amount"
+    direction: UP
+    timeout: 20000
+- assertVisible:
+    id: "form-amount"
+    text: "${PAYMENT_AMOUNT_REGEX}"
 - scrollUntilVisible:
     centerElement: true
     element:
