@@ -61,6 +61,45 @@ export async function validate(env) {
     fail('FARMER_DB_IMAGE must be an immutable SHA-256 image reference for the local database');
   const proxies = (runtime.TRUST_PROXY_IPS || '').split(',').map(x => x.trim()).filter(Boolean);
   if (proxies.length > 8 || proxies.some(x => !isIP(x))) fail('TRUST_PROXY_IPS must contain at most eight exact IP addresses');
+  // Static release preflight for explicitly enabled managed Auth0. This does
+  // not replace issuer metadata, signed-token or real callback qualification.
+  if (env.ONESA_IDENTITY_ENABLED !== undefined &&
+      !['true', 'false'].includes(env.ONESA_IDENTITY_ENABLED))
+    fail('ONESA_IDENTITY_ENABLED must be true or false');
+  if (env.ONESA_IDENTITY_ENABLED === 'true') {
+    const mode = env.ONESA_IDENTITY_MODE || 'portal';
+    if (!['portal', 'managed'].includes(mode)) fail('Invalid Onesa Identity mode');
+    if (mode === 'managed') {
+      if (env.ONESA_IDENTITY_ISSUER !== 'https://auth.onesa.eu/')
+        fail('Managed Onesa issuer must be the approved Auth0 custom domain');
+      const webId = env.ONESA_IDENTITY_CLIENT_ID;
+      const nativeId = env.ONESA_IDENTITY_NATIVE_CLIENT_ID;
+      if (!webId || !nativeId || webId === nativeId)
+        fail('Managed Onesa requires distinct web and native client IDs');
+      if (typeof env.ONESA_IDENTITY_CLIENT_SECRET !== 'string' ||
+          env.ONESA_IDENTITY_CLIENT_SECRET.length < 32)
+        fail('Managed Onesa confidential web client secret is missing');
+      const audience = env.ONESA_IDENTITY_AUDIENCE;
+      if (!audience || audience.startsWith('REPLACE_WITH_') || [webId, nativeId].includes(audience))
+        fail('Managed Onesa API audience must be configured separately');
+      if (env.ONESA_IDENTITY_ACCOUNT_ISSUER !== undefined &&
+          env.ONESA_IDENTITY_ACCOUNT_ISSUER !== 'https://portal.onesa.eu/api/v1/identity')
+        fail('Managed Onesa historical account namespace must be preserved');
+      const expiry = Number(env.ONESA_IDENTITY_JWKS_EXPIRES_AT);
+      if (!Number.isSafeInteger(expiry) || expiry <= Math.floor(Date.now() / 1000))
+        fail('Managed Onesa trusted key snapshot is missing or expired');
+      let keys;
+      try { keys = JSON.parse(env.ONESA_IDENTITY_JWKS || '').keys; } catch { /* fail closed below */ }
+      if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 ||
+          keys.some(key => !key || typeof key.kid !== 'string' || !key.kid ||
+            key.kty !== 'RSA' || typeof key.n !== 'string' || !key.n ||
+            typeof key.e !== 'string' || !key.e || key.d !== undefined ||
+            key.use !== undefined && key.use !== 'sig' ||
+            key.alg !== undefined && key.alg !== 'RS256') ||
+          new Set(keys.map(key => key.kid)).size !== keys.length)
+        fail('Managed Onesa requires an unambiguous public RS256 JWKS snapshot');
+    }
+  }
   return true;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
