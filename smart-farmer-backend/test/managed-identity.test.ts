@@ -98,6 +98,8 @@ test('managed browser and native sessions retain legacy records and survive an i
   assert.equal((await change(app,recent.json().token)).statusCode,404);
   role='admin';mfaTime=undefined;
   assert.equal((await signin()).statusCode,401);
+  role='administrator';
+  assert.equal((await signin()).statusCode,401);
   mfaTime=now()-301;
   assert.equal((await signin()).statusCode,401);
   mfaTime=now();
@@ -122,7 +124,7 @@ test('managed browser and native sessions retain legacy records and survive an i
   assert.equal((await signin(restarted)).json().userId,farmerId);
   Object.assign(process.env,env);
   const fresh=start();
-  for(const tier of ['user','admin']){
+  for(const tier of ['user','admin','administrator']){
     role=tier; mfaTime=now(); stableId=randomUUID(); providerSubject='oidc|'+stableId;
     const [firstWeb,firstNative]=await Promise.all([signin(fresh),signin(fresh,true)]);
     assert.equal(firstWeb.statusCode,200,firstWeb.body);
