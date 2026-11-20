@@ -93,7 +93,8 @@ export async function validate(env) {
       if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 ||
           keys.some(key => !key || typeof key.kid !== 'string' || !key.kid ||
             key.kty !== 'RSA' || typeof key.n !== 'string' || !key.n ||
-            typeof key.e !== 'string' || !key.e || key.d !== undefined ||
+            typeof key.e !== 'string' || !key.e ||
+            ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth'].some(field => key[field] !== undefined) ||
             key.use !== undefined && key.use !== 'sig' ||
             key.alg !== undefined && key.alg !== 'RS256') ||
           new Set(keys.map(key => key.kid)).size !== keys.length)
