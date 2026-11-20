@@ -5,6 +5,26 @@ import {isIP} from 'node:net';
 
 const immutable = /^(?:sha256:[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/;
 const fail = message => { throw new Error(message); };
+function validPublicRsaKey(key) {
+  if (!key || typeof key !== 'object' || Array.isArray(key) ||
+      typeof key.kid !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(key.kid) || key.kty !== 'RSA' ||
+      typeof key.n !== 'string' || typeof key.e !== 'string' ||
+      ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth'].some(field => Object.hasOwn(key, field)) ||
+      key.use !== undefined && key.use !== 'sig' ||
+      key.alg !== undefined && key.alg !== 'RS256') return false;
+  const decodeUInt = value => {
+    if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1) return null;
+    const bytes = Buffer.from(value, 'base64url');
+    if (!bytes.length || bytes.toString('base64url') !== value || bytes[0] === 0) return null;
+    return bytes;
+  };
+  const modulus = decodeUInt(key.n);
+  const exponent = decodeUInt(key.e);
+  if (!modulus || !exponent || modulus.length < 256 || modulus[0] < 0x80 ||
+      modulus.at(-1) % 2 === 0 || exponent.length > 4) return false;
+  const exponentValue = BigInt(`0x${exponent.toString('hex')}`);
+  return exponentValue >= 3n && exponentValue % 2n === 1n;
+}
 export async function validate(env) {
   for (const key of ['FARMER_API_IMAGE', 'FARMER_WEB_IMAGE'])
     if (!immutable.test(env[key] || '')) fail(`${key} must be an immutable SHA-256 image reference`);
@@ -91,12 +111,7 @@ export async function validate(env) {
       let keys;
       try { keys = JSON.parse(env.ONESA_IDENTITY_JWKS || '').keys; } catch { /* fail closed below */ }
       if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 ||
-          keys.some(key => !key || typeof key.kid !== 'string' || !key.kid ||
-            key.kty !== 'RSA' || typeof key.n !== 'string' || !key.n ||
-            typeof key.e !== 'string' || !key.e ||
-            ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth'].some(field => key[field] !== undefined) ||
-            key.use !== undefined && key.use !== 'sig' ||
-            key.alg !== undefined && key.alg !== 'RS256') ||
+          keys.some(key => !validPublicRsaKey(key)) ||
           new Set(keys.map(key => key.kid)).size !== keys.length)
         fail('Managed Onesa requires an unambiguous public RS256 JWKS snapshot');
     }
