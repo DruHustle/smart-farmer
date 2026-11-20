@@ -12,9 +12,9 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'smart-farmer-frontend/web/vercel.json', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
   pull_request:
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'smart-farmer-frontend/web/vercel.json', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
 permissions:
   contents: read
 env:

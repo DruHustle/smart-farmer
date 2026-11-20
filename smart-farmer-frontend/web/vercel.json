@@ -3,23 +3,23 @@
   "rewrites": [
     {
       "source": "/health",
-      "destination": "https://api.farmer.onesa.eu/health"
+      "destination": "https://farmer-api.onesa.eu/health"
     },
     {
       "source": "/ready",
-      "destination": "https://api.farmer.onesa.eu/ready"
+      "destination": "https://farmer-api.onesa.eu/ready"
     },
     {
       "source": "/version",
-      "destination": "https://api.farmer.onesa.eu/version"
+      "destination": "https://farmer-api.onesa.eu/version"
     },
     {
       "source": "/v1",
-      "destination": "https://api.farmer.onesa.eu/v1"
+      "destination": "https://farmer-api.onesa.eu/v1"
     },
     {
       "source": "/v1/:path*",
-      "destination": "https://api.farmer.onesa.eu/v1/:path*"
+      "destination": "https://farmer-api.onesa.eu/v1/:path*"
     },
     {
       "source": "/auth/onesa/callback",
