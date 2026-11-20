@@ -70,7 +70,9 @@ test('managed browser and native sessions retain legacy records and survive an i
   const start=()=>{const a=buildApp(db,origin);t.after(()=>a.close());return a;};
   const app=start();
   let clientAddress=0;
-  const signin=async(api=app,native=false)=>{
+  // Auth claim probes run on fresh API instances so the real per-client rate limit
+  // does not mask the independent role, MFA, and outage assertions below.
+  const signin=async(api=start(),native=false)=>{
     const code=randomUUID();codes.add(code);
     return api.inject({method:'POST',url:'/v1/onesa/sessions',
       headers:{'x-forwarded-for':`198.51.100.${++clientAddress}`},
@@ -78,7 +80,7 @@ test('managed browser and native sessions retain legacy records and survive an i
   };
   const config=(await app.inject('/v1/onesa/config')).json();
   assert.equal(config.audience,audience);assert.equal(config.nativeClientId,nativeId);
-  const web=await signin(), native=await signin(app,true);
+  const web=await signin(app), native=await signin(app,true);
   assert.equal(web.statusCode,200,web.body);assert.equal(native.statusCode,200,native.body);
   for(const session of [web,native]) {
     assert.equal(session.json().userId,farmerId);assert.equal(session.json().vaultKey,'persistent-local-key');
