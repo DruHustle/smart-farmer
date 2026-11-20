@@ -64,16 +64,15 @@ export async function currentFarmerAccount(config: Config, grant: string, expect
     active:z.literal(true), iss:z.literal(config.issuer), aud:z.literal(config.clientId), sub:z.uuid(),
     email_verified:z.literal(true), exp:z.number().int(), auth_time:z.number().int().positive(),
     amr:z.array(z.string()), onesa_roles:z.array(z.string()),
-    onesa_applications:z.array(z.string()), onesa_product_roles:z.object({farmer:z.enum(['user','admin'])}),
+    onesa_applications:z.array(z.string()), onesa_product_roles:z.object({farmer:z.enum(['user','admin','administrator'])}),
   }).safeParse(raw);
   const now = Math.floor(Date.now()/1000);
   if (!result.success) throw new ApiError('unauthorized',401);
   const claims = result.data;
   if ((expectedSubject && claims.sub !== expectedSubject) || claims.exp <= now || claims.exp > now+86400 ||
       claims.auth_time > now+30 || !claims.onesa_applications.includes('farmer')) throw new ApiError('unauthorized',401);
-  const globalAdmin = claims.onesa_roles.includes('global_admin');
-  if (globalAdmin !== (claims.onesa_product_roles.farmer === 'admin') ||
-      (globalAdmin && !claims.amr.some(method => method === 'otp' || method === 'mfa'))) throw new ApiError('unauthorized',401);
+  const productAdministrator = ['admin', 'administrator'].includes(claims.onesa_product_roles.farmer);
+  if (productAdministrator && !claims.amr.some(method => method === 'otp' || method === 'mfa')) throw new ApiError('unauthorized',401);
   return claims;
 }
 
