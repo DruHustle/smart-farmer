@@ -46,6 +46,12 @@ appId: eu.onesa.smartfarmer
     file: accounting-payment.yaml
     env:
       PAYMENT_AMOUNT: "7.50"
+      PAYMENT_AMOUNT_REGEX: "^7\\.50$"
+      PAYMENT_CHAR_1: "0"
+      PAYMENT_CHAR_2: "7"
+      PAYMENT_CHAR_3: "."
+      PAYMENT_CHAR_4: "5"
+      PAYMENT_CHAR_5: "0"
       PAYMENT_REFERENCE: "Native supplier payment"
       OUTSTANDING_AMOUNT: "USD 12.50"
 - takeScreenshot: accounting-posted-bill-partial-payment
@@ -240,6 +246,12 @@ appId: eu.onesa.smartfarmer
     file: accounting-payment.yaml
     env:
       PAYMENT_AMOUNT: "10.00"
+      PAYMENT_AMOUNT_REGEX: "^10\\.00$"
+      PAYMENT_CHAR_1: "1"
+      PAYMENT_CHAR_2: "0"
+      PAYMENT_CHAR_3: "."
+      PAYMENT_CHAR_4: "0"
+      PAYMENT_CHAR_5: "0"
       PAYMENT_REFERENCE: "Native customer receipt"
       OUTSTANDING_AMOUNT: "USD 20.50"
 - takeScreenshot: accounting-issued-invoice-partial-receipt
