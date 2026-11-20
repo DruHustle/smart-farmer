@@ -180,7 +180,7 @@ jobs:
         # spending three simulator jobs on code unrelated to the failure.
         # Remove [ios-onesa-only] and requalify all suites before merging.
         suite: ${{ fromJSON((contains(github.event.pull_request.body, '[ios-onesa-only]') || (github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics)) && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: ${{ matrix.suite == 'onesa' && 105 || 75 }}
     concurrency:
       group: native-ios-${{ matrix.suite }}-${{ github.ref }}
