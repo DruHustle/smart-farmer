@@ -58,12 +58,12 @@ export async function managedAccount(config:Config, token:string, expectedId?:st
   const roles = z.array(z.string()).safeParse(payload[claim+'roles']);
   const mfaTime = payload[claim+'mfa_time'];
   const now = Math.floor(Date.now()/1000);
-  if (roles.success && roles.data.includes('admin') &&
+  if (roles.success && roles.data.some(role => role === 'admin' || role === 'administrator') &&
       (typeof mfaTime !== 'number' || !Number.isSafeInteger(mfaTime) || mfaTime > now || now-mfaTime >= 300)) {
     throw new ApiError('unauthorized',401);
   }
   if (!stable.success || !products.success || !products.data.includes('farmer') || !roles.success ||
-      !roles.data.some(r=>r==='user' || r==='admin') || expectedId && stable.data !== expectedId ||
+      !roles.data.some(r=>r==='user' || r==='admin' || r==='administrator') || expectedId && stable.data !== expectedId ||
       payload.exp! - payload.iat! > maxLifetime || payload.azp !== undefined && ![config.clientId,config.managed.nativeClientId].includes(String(payload.azp))) {
     throw new ApiError('unauthorized',401);
   }
