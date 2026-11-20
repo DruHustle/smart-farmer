@@ -67,7 +67,7 @@ test('managed Auth0 release preflight requires valid separate clients, trusted k
       ONESA_IDENTITY_CLIENT_SECRET:'x'.repeat(40),
       ONESA_IDENTITY_AUDIENCE:'https://api.farmer.onesa.eu',
       ONESA_IDENTITY_JWKS_EXPIRES_AT:String(Math.floor(Date.now()/1000)+3600),
-      ONESA_IDENTITY_JWKS:JSON.stringify({keys:[{kid:'fixture-one',kty:'RSA',n:'synthetic-public-modulus',e:'AQAB',alg:'RS256',use:'sig'}]})
+      ONESA_IDENTITY_JWKS:JSON.stringify({keys:[{kid:'fixture-one',kty:'RSA',n:'3IghCdv9fqJLThGxy_4fGnqKXMjr1iGUKd3JwBMiQ0mMfSGWIvF5T4lp6zgDrRqhBaae7uI4HzSjOMi9Lt84z_jAkjtAapyhegtdFYoNf1Jp4U978rbzg4rGbPF6XhPgW3QZfQAE6w5XDxVpaAIQrw-OpyMacpcJ4kl0EPHIUA8odnbM3ITnPyXR4DcgplCEmTbZHbHXETfiLJKVhUeky9wFvImI4VhUuz-0fO5Ib4mbmGjnrpAyHV1eUb0pdLMgwUrNnx3LwdReLBxF3GO2IbhR4jOMrKD7BVkyuIgI1NQrA7U5yjVhVajdlwaDYDS4-pL8P3050dHB_t3t0_7gJQ',e:'AQAB',alg:'RS256',use:'sig'}]})
     };
     assert.equal(await validate(managed), true);
     await assert.rejects(validate({...managed,ONESA_IDENTITY_ENABLED:'yes'}), /true or false/);
