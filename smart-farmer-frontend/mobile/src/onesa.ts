@@ -1,9 +1,9 @@
 import * as Crypto from 'expo-crypto';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {openAuthSessionAsync} from 'expo-web-browser';
 import {createApi} from './api';
-import {PendingOnesaTransactions, requireOwnedOnesaSession, type PendingOnesa} from './onesa-callback';
+import {PendingOnesaTransactions, SingleNativeRedemption, isOwnedNativeCallback, requireOwnedOnesaSession, type PendingOnesa} from './onesa-callback';
 import type {Language,Session} from './types';
 import {accountManagementUrl} from './account-origin';
 
@@ -31,12 +31,36 @@ export async function openOnesa(origin:string, config:OnesaConfig, language:Lang
     redirect_uri:config.callback,code_challenge_method:'S256',code_challenge:challenge,state,nonce});
   const pending:PendingOnesa={state,verifier,nonce:config.audience ? nonce : undefined,issuer:config.issuer,origin,language,expires:Date.now()+300_000};
   await transactions.save(pending);
+  // iOS can deliver the real OS callback event before the WebBrowser promise
+  // resolves after MFA. Accept only this attempt's exact state and route; both
+  // delivery paths share one PKCE redemption, never a synthetic token/session.
+  const redemption = new SingleNativeRedemption<Session|null>();
+  let resolveOS: (session:Session|null)=>void = () => {};
+  let rejectOS: (error:unknown)=>void = () => {};
+  const returnedByOS = new Promise<Session|null>((resolve,reject) => {
+    resolveOS=resolve; rejectOS=reject;
+  });
+  const callbackSubscription = Linking.addEventListener('url', ({url}) => {
+    if (!isOwnedNativeCallback(url,state)) return;
+    void redemption.once(() => redeemOnesa(url,origin)).then(resolveOS,rejectOS);
+  });
   try {
-    const response = await openAuthSessionAsync(target.href + '?' + params, 'smartfarmer://onesa/callback');
-    if (response.type === 'cancel' || response.type === 'dismiss') throw new Error('onesa_cancelled');
-    if (response.type !== 'success') throw new Error('onesa_unavailable');
-    return requireOwnedOnesaSession(await redeemOnesa(response.url, origin));
+    const browser = openAuthSessionAsync(target.href + '?' + params, 'smartfarmer://onesa/callback')
+      .then(response => {
+        if (response.type === 'cancel' || response.type === 'dismiss') {
+          // An already received, state-matched OS callback takes precedence
+          // over a late Safari dismissal; otherwise cancel stays fail-closed.
+          const accepted = redemption.current();
+          if (accepted) return accepted;
+          throw new Error('onesa_cancelled');
+        }
+        if (response.type !== 'success') throw new Error('onesa_unavailable');
+        if (!isOwnedNativeCallback(response.url,state)) throw new Error('unauthorized');
+        return redemption.once(() => redeemOnesa(response.url,origin));
+      });
+    return requireOwnedOnesaSession(await Promise.race([browser,returnedByOS]));
   } finally {
+    callbackSubscription.remove();
     // Cold starts redeem from secure storage. Clear only the attempt owned by this sheet.
     await transactions.clear(state);
   }
