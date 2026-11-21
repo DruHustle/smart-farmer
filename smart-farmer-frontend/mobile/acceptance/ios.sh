@@ -59,10 +59,11 @@ run_native_login() {
   if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
-  # Observed iPhone reconciliation and clean iPad initial sign-in can both
-  # lose the same second username character before any password is entered.
+  # Observed iPhone initial sign-in, iPhone reconciliation and clean iPad
+  # initial sign-in can lose the same username character before password entry.
   # Require the exact original UI receipt; never replay an auth submission.
-  if { [[ "$layout" == iphone && "$label" == ios-reconcile-login && "$flow" == reconcile-signin ]] ||
+  if { [[ "$layout" == iphone && "$label" == ios-login && "$flow" == login ]] ||
+       [[ "$layout" == iphone && "$label" == ios-reconcile-login && "$flow" == reconcile-signin ]] ||
        [[ "$layout" == ipad && "$label" == ipad-large-font && "$flow" == login ]]; } &&
      python3 "$NATIVE_DIR/acceptance/ios-reconcile-username.py" "$report" \
        "$EVIDENCE/$label/$flow/commands.json" "$EVIDENCE/$label/$flow/screen-hierarchy"; then
