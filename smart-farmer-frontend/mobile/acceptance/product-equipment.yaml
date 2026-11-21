@@ -15,8 +15,13 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "more-equipment"
+# Exact iPhone 17 Pro run 44947690224: the authorized equipment asset
+# appeared inside the sheet bounds (y=724..772 of 805), but Maestro's
+# 100%-visible centered scrolling reported it not visible. Use bounded partial
+# viewability; retain the real tap and subsequent command/confirmation checks.
 - scrollUntilVisible:
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 50
     element:
       id: "asset-open-${ASSET_ID}"
     direction: DOWN
