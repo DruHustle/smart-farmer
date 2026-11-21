@@ -46,7 +46,7 @@ appId: eu.onesa.smartfarmer
     file: accounting-payment.yaml
     env:
       PAYMENT_AMOUNT: "7.50"
-      PAYMENT_AMOUNT_REGEX: "^7\\.50$"
+      # The native iOS keyboard can preserve the intentional leading zero.\n      # 07.50 and 7.50 both parse to exactly 750 minor units; the flow below\n      # independently requires the resulting USD 12.50 invoice balance.\n      PAYMENT_AMOUNT_REGEX: "^0?7\\.50$"
       PAYMENT_CHAR_1: "0"
       PAYMENT_CHAR_2: "7"
       PAYMENT_CHAR_3: "."
