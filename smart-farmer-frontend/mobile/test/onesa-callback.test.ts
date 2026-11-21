@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {PendingOnesaTransactions, nativeCode,type PendingOnesa} from '../src/onesa-callback';
+import {PendingOnesaTransactions, nativeCode, requireOwnedOnesaSession, type PendingOnesa} from '../src/onesa-callback';
 
 test('an app return requires the original pending transaction, issuer, exact route and API',()=>{
   const origin='https://farmer-api.example.test', issuer='https://portal.example.test/api/v1/identity';
@@ -58,4 +58,10 @@ test('only one delivery claims a native transaction, and old cleanup preserves a
   await assert.rejects(transactions.claim(denial + '&iss=https://unrelated.example', origin), /unauthorized/);
   await assert.rejects(transactions.claim(denial, origin), /onesa_denied/);
   assert.equal(await transactions.claim(callback, origin), null);
+});
+
+test('interactive sign-in never treats an absent or consumed callback as a successful cancellation', () => {
+  const example = {token: 'synthetic-test-token', username: 'fixture'};
+  assert.equal(requireOwnedOnesaSession(example), example);
+  assert.throws(() => requireOwnedOnesaSession(null), /unauthorized/);
 });
