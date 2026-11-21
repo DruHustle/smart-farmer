@@ -78,14 +78,16 @@ class InputRecoveryBoundary(unittest.TestCase):
         self.assertFalse(self.qualifies())
 
     def test_current_bulk_input_fixture_only_retries_with_exact_pre_submit_evidence(self):
-        # credentials.yaml uses one inputText: native_owner command, whereas
-        # older Maestro traces contain twelve single-character commands.
+        # The captured historical bulk-command trace yielded only "n";
+        # this specific fixture is independent of the new clipboard-based
+        # username entry, and does not authorize arbitrary partial strings.
         self.trace = [
             command("tapOnElement", "COMPLETED",
                     {"selector": {"idRegex": "device-reauthenticate"}}),
             command("inputTextCommand", "COMPLETED", {"text": module.EXPECTED}),
             command("assertConditionCommand", "FAILED", {"condition": module.TARGET}),
         ]
+        self.hierarchy["children"][0]["attributes"]["value"] = "n"
         self.assertTrue(self.qualifies())
         self.trace[-2]["command"]["inputTextCommand"]["text"] = "ntive_owner"
         self.assertFalse(self.qualifies())
