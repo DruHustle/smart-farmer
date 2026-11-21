@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {PendingOnesaTransactions, nativeCode, requireOwnedOnesaSession, type PendingOnesa} from '../src/onesa-callback';
+import {PendingOnesaTransactions, SingleNativeRedemption, isOwnedNativeCallback, nativeCode, requireOwnedOnesaSession, type PendingOnesa} from '../src/onesa-callback';
 
 test('an app return requires the original pending transaction, issuer, exact route and API',()=>{
   const origin='https://farmer-api.example.test', issuer='https://portal.example.test/api/v1/identity';
@@ -64,4 +64,38 @@ test('interactive sign-in never treats an absent or consumed callback as a succe
   const example = {token: 'synthetic-test-token', username: 'fixture'};
   assert.equal(requireOwnedOnesaSession(example), example);
   assert.throws(() => requireOwnedOnesaSession(null), /unauthorized/);
+});
+
+test('OS callback observation is scoped to one exact native state and route', () => {
+  const state='native_'+'d'.repeat(64);
+  const valid='smartfarmer://onesa/callback?state='+state+'&code=one-time-code';
+  assert.equal(isOwnedNativeCallback(valid,state),true);
+  assert.equal(isOwnedNativeCallback('smartfarmer://onesa/callback?state='+state+'&error=access_denied',state),true);
+  for(const candidate of [
+    valid+'&state='+state,
+    valid.replace('code=one-time-code','code=one-time-code#fragment'),
+    valid.replace('smartfarmer:','https:'),
+    valid.replace('//onesa/','//another/'),
+    valid.replace('/callback?','/else?'),
+    valid.replace(state,'wrong'),
+    'not-a-url',
+  ]) assert.equal(isOwnedNativeCallback(candidate,state),false);
+});
+
+test('native and browser handoffs share exactly one secure code redemption', async() => {
+  const redemption=new SingleNativeRedemption<string|null>();
+  let requests=0;
+  const first=redemption.once(async()=>{requests++;return 'verified-server-session';});
+  const second=redemption.once(async()=>{requests++;return 'should-never-run';});
+  assert.strictEqual(first,second);
+  assert.strictEqual(redemption.current(),first);
+  assert.equal(await first,'verified-server-session');
+  assert.equal(await second,'verified-server-session');
+  assert.equal(requests,1);
+});
+
+test('a real browser dismissal cannot convert a missing callback into a session', () => {
+  const redemption=new SingleNativeRedemption<null>();
+  assert.equal(redemption.current(),null);
+  assert.throws(()=>requireOwnedOnesaSession(redemption.current()),/unauthorized/);
 });
