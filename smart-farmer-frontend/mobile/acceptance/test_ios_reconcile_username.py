@@ -100,6 +100,32 @@ class InputRecoveryBoundary(unittest.TestCase):
         self.hierarchy["children"][1]["attributes"]["value"] = "entered-password"
         self.assertFalse(self.qualifies())
 
+    def test_ipad_exact_bulk_input_loss_is_guarded_before_submit(self):
+        # Captured exact pre-submit iPad failure, run 44905808303:
+        # Maestro delivered one bulk command but the field contained "n".
+        self.trace = [
+            command("tapOnElement", "COMPLETED",
+                    {"selector": {"idRegex": "auth-username"}}),
+            command("inputTextCommand", "COMPLETED", {"text": module.EXPECTED}),
+            command("assertConditionCommand", "FAILED", {"condition": module.TARGET}),
+        ]
+        self.hierarchy["children"][0]["attributes"]["value"] = "n"
+        self.assertTrue(self.qualifies())
+        for wrong in ("", "nat", "native_owne", "ntive_owner", "native_owner"):
+            with self.subTest(wrong=wrong):
+                self.hierarchy["children"][0]["attributes"]["value"] = wrong
+                self.assertFalse(self.qualifies())
+        self.hierarchy["children"][0]["attributes"]["value"] = "n"
+        self.trace[-2]["command"]["inputTextCommand"]["text"] = "other_user"
+        self.assertFalse(self.qualifies())
+        self.trace[-2]["command"]["inputTextCommand"]["text"] = module.EXPECTED
+        self.trace.insert(1, command("tapOnElement", "COMPLETED",
+                                     {"selector": {"idRegex": "auth-submit"}}))
+        self.assertFalse(self.qualifies())
+        self.trace.pop(1)
+        self.hierarchy["children"][1]["attributes"]["value"] = "already-entered"
+        self.assertFalse(self.qualifies())
+
     def test_no_replay_after_submit_or_password_entry(self):
         self.assertTrue(self.qualifies())
         self.trace.insert(1, command("tapOnElement", "COMPLETED",
