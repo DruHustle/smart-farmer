@@ -4,7 +4,6 @@ The native test still validates the exact visible form amount before any
 payment submission; this source-level guard prevents the old 07.50 failure.
 """
 from pathlib import Path
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent
