@@ -64,6 +64,19 @@ class InputRecoveryBoundary(unittest.TestCase):
         self.trace[-2]["command"]["inputTextCommand"]["text"] = "x"
         self.assertFalse(self.qualifies())
 
+    def test_ipad_initial_login_requires_same_exact_pre_submit_evidence(self):
+        root = ET.parse(self.report)
+        root.find(".//testcase").set("file", module.LOGIN)
+        root.write(self.report)
+        self.assertTrue(self.qualifies())
+        # Password entry and any session submit invalidate the same clean-login proof.
+        self.hierarchy["children"][1]["attributes"]["value"] = "already-entered"
+        self.assertFalse(self.qualifies())
+        self.hierarchy["children"][1]["attributes"].pop("value")
+        self.trace.insert(1, command("tapOnElement", "COMPLETED",
+                                     {"selector": {"idRegex": "auth-submit"}}))
+        self.assertFalse(self.qualifies())
+
     def test_no_replay_after_submit_or_password_entry(self):
         self.assertTrue(self.qualifies())
         self.trace.insert(1, command("tapOnElement", "COMPLETED",
