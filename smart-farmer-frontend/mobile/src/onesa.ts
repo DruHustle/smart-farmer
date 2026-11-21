@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {openAuthSessionAsync} from 'expo-web-browser';
 import {createApi} from './api';
-import {PendingOnesaTransactions, type PendingOnesa} from './onesa-callback';
+import {PendingOnesaTransactions, requireOwnedOnesaSession, type PendingOnesa} from './onesa-callback';
 import type {Language,Session} from './types';
 import {accountManagementUrl} from './account-origin';
 
@@ -35,7 +35,7 @@ export async function openOnesa(origin:string, config:OnesaConfig, language:Lang
     const response = await openAuthSessionAsync(target.href + '?' + params, 'smartfarmer://onesa/callback');
     if (response.type === 'cancel' || response.type === 'dismiss') throw new Error('onesa_cancelled');
     if (response.type !== 'success') throw new Error('onesa_unavailable');
-    return await redeemOnesa(response.url, origin);
+    return requireOwnedOnesaSession(await redeemOnesa(response.url, origin));
   } finally {
     // Cold starts redeem from secure storage. Clear only the attempt owned by this sheet.
     await transactions.clear(state);
