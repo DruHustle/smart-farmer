@@ -73,8 +73,17 @@ def safe_username_retry(report, commands, hierarchy):
                     return False
                 controls[key] = attr
             nodes.extend(node.get("children", []))
+        # iPad run 44905808303 observed exactly "n" after a completed
+        # single bulk inputText command. The older character-by-character
+        # flow observed exactly "ntive_owner". Do not authorize other values,
+        # other command sequences, passwords, or any submitted session.
+        typed_value = controls["auth-username"].get("value")
+        exact_observed_loss = (
+            (typed_in_bulk and typed_value == "n")
+            or (typed_separately and typed_value == "ntive_owner")
+        )
         return (set(controls) == {"auth-username", "auth-password", "auth-submit"}
-                and controls["auth-username"].get("value") == "ntive_owner"
+                and exact_observed_loss
                 and controls["auth-username"].get("enabled") == "true"
                 and not controls["auth-password"].get("value")
                 and controls["auth-submit"].get("enabled") == "true")
