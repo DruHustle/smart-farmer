@@ -52,6 +52,7 @@ export class SingleNativeRedemption<T> {
     if(this.pending===null) this.pending=fn();
     return this.pending;
   }
+  current():Promise<T>|null { return this.pending; }
 }
 
 /** SecureStore has no atomic read-and-delete operation for a one-time callback. */
