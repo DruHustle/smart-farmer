@@ -15,8 +15,12 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "more-services"
+# Real iPhone 17 Pro receipt: the exact authorized service control was in
+# the accessibility tree inside the sheet, but the 100%-visible, centered
+# scroll never completed. Require 50% viewability AND the real following tap.
 - scrollUntilVisible:
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 50
     element:
       id: "service-open-${SERVICE_ID}"
     direction: DOWN

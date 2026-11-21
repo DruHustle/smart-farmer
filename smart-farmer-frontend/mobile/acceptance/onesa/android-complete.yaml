@@ -9,10 +9,19 @@ appId: eu.onesa.smartfarmer
     when:
       true: ${FLOW_STATE === 'cancel'}
     commands:
+      # The browser may return an explicit issuer denial or an OS dismiss.
+      # Both must display exact, localized feedback while signed out.
       - extendedWaitUntil:
-          visible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.])$'
+          visible: {id: auth-onesa}
           timeout: 30000
-      - assertVisible: {id: auth-onesa}
+      - assertNotVisible: {id: tab-forum}
+      - scrollUntilVisible:
+          element: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.]|Kupinda neOnesa kwamiswa[.] Unogona kuedzazve[.]|Ukungena nge-Onesa kumisiwe[.] Ungazama futhi[.])$'
+          direction: DOWN
+          timeout: 30000
+          visibilityPercentage: 50
+          centerElement: false
+      - assertVisible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.]|Kupinda neOnesa kwamiswa[.] Unogona kuedzazve[.]|Ukungena nge-Onesa kumisiwe[.] Ungazama futhi[.])$'
       - assertNotVisible: {id: tab-forum}
 - runFlow:
     when:

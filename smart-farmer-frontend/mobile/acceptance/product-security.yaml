@@ -15,8 +15,14 @@ appId: eu.onesa.smartfarmer
     timeout: 30000
 - tapOn:
     id: "more-security"
+# Real iOS simulator receipt: the exact camera-playback resource-id was
+# inside the visible sheet bounds, yet Maestro's default 100%-visible,
+# centerElement scroll failed (run 44922668303, ios farm job 136901879227).
+# Do not rely on pixel-perfect centering of nested iOS ScrollViews. A partial
+# viewport match must still be followed by an actual tap and HLS decoder proof.
 - scrollUntilVisible:
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 50
     element:
       id: "camera-playback-${CAMERA_EVENT_ID}"
     direction: DOWN

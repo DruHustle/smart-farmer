@@ -49,7 +49,8 @@ test('managed browser and native sessions retain legacy records and survive an i
   const env={ONESA_IDENTITY_ENABLED:'true',ONESA_IDENTITY_MODE:'managed',ONESA_IDENTITY_ISSUER:issuer,
     ONESA_IDENTITY_AUDIENCE:audience, ONESA_IDENTITY_CLIENT_ID:clientId,ONESA_IDENTITY_NATIVE_CLIENT_ID:nativeId,
     ONESA_IDENTITY_CLIENT_SECRET:secret,ONESA_IDENTITY_ACCOUNT_ISSUER:legacy,
-    ONESA_IDENTITY_JWKS:JSON.stringify({keys:[jwk]}),ONESA_IDENTITY_JWKS_EXPIRES_AT:String(now()+3600)};
+    ONESA_IDENTITY_JWKS:JSON.stringify({keys:[jwk]}),ONESA_IDENTITY_JWKS_EXPIRES_AT:String(now()+3600),
+    TRUST_PROXY_IPS:'127.0.0.1'};
   const saved=Object.entries(env).map(([k])=>[k,process.env[k]] as const);
   Object.assign(process.env,env);
   t.after(()=>{for(const [k,v] of saved) {if(v===undefined)delete process.env[k];else process.env[k]=v;}});
@@ -68,13 +69,18 @@ test('managed browser and native sessions retain legacy records and survive an i
   await db.query("INSERT INTO memberships(user_id,farm_id,role) VALUES($1,$2,'adviser')",[farmerId,farmId]);
   const start=()=>{const a=buildApp(db,origin);t.after(()=>a.close());return a;};
   const app=start();
-  const signin=async(api=app,native=false)=>{
+  let clientAddress=0;
+  // Auth claim probes run on fresh API instances so the real per-client rate limit
+  // does not mask the independent role, MFA, and outage assertions below.
+  const signin=async(api=start(),native=false)=>{
     const code=randomUUID();codes.add(code);
-    return api.inject({method:'POST',url:'/v1/onesa/sessions',payload:{code,nonce,verifier,language:'sn',...(native&&{native:true})}});
+    return api.inject({method:'POST',url:'/v1/onesa/sessions',
+      headers:{'x-forwarded-for':`198.51.100.${++clientAddress}`},
+      payload:{code,nonce,verifier,language:'sn',...(native&&{native:true})}});
   };
   const config=(await app.inject('/v1/onesa/config')).json();
   assert.equal(config.audience,audience);assert.equal(config.nativeClientId,nativeId);
-  const web=await signin(), native=await signin(app,true);
+  const web=await signin(app), native=await signin(app,true);
   assert.equal(web.statusCode,200,web.body);assert.equal(native.statusCode,200,native.body);
   for(const session of [web,native]) {
     assert.equal(session.json().userId,farmerId);assert.equal(session.json().vaultKey,'persistent-local-key');
@@ -97,6 +103,8 @@ test('managed browser and native sessions retain legacy records and survive an i
   // Fresh MFA permits the check to reach local Farmer ownership, which still rejects an adviser.
   assert.equal((await change(app,recent.json().token)).statusCode,404);
   role='admin';mfaTime=undefined;
+  assert.equal((await signin()).statusCode,401);
+  role='administrator';
   assert.equal((await signin()).statusCode,401);
   mfaTime=now()-301;
   assert.equal((await signin()).statusCode,401);
@@ -122,7 +130,7 @@ test('managed browser and native sessions retain legacy records and survive an i
   assert.equal((await signin(restarted)).json().userId,farmerId);
   Object.assign(process.env,env);
   const fresh=start();
-  for(const tier of ['user','admin']){
+  for(const tier of ['user','admin','administrator']){
     role=tier; mfaTime=now(); stableId=randomUUID(); providerSubject='oidc|'+stableId;
     const [firstWeb,firstNative]=await Promise.all([signin(fresh),signin(fresh,true)]);
     assert.equal(firstWeb.statusCode,200,firstWeb.body);
