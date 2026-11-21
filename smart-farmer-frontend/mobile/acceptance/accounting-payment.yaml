@@ -25,7 +25,14 @@ appId: eu.onesa.smartfarmer
       - inputText: "${PAYMENT_CHAR_2}"
       - inputText: "${PAYMENT_CHAR_3}"
       - inputText: "${PAYMENT_CHAR_4}"
-      - inputText: "${PAYMENT_CHAR_5}"
+      # Some fixture amounts have four characters (7.50), others five
+      # (10.00). Never prepend a disposable zero to a monetary amount:
+      # iOS 26 accepted it literally as 07.50 in the real simulator.
+      - runFlow:
+          when:
+            true: ${PAYMENT_CHAR_5 !== ''}
+          commands:
+            - inputText: "${PAYMENT_CHAR_5}"
 - runFlow:
     when:
       platform: Android
