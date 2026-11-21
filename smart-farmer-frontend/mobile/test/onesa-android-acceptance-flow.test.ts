@@ -28,7 +28,9 @@ test('Cancellation tests complete translated denial text and remains signed out'
     }
     assert.ok(!re.test('Login successful'));
   }
-  const cancellation = flow.split("true: ${FLOW_STATE === 'cancel'}")[1].split("- runFlow:")[0];
+  const phase = flow.split("true: ${FLOW_STATE === 'cancel'}")[1] ?? '';
+  assert.ok(phase, 'Cancel phase must be present');
+  const cancellation = phase.split("- runFlow:")[0] ?? '';
   assert.match(cancellation, /id: auth-onesa/);
   assert.match(cancellation, /assertNotVisible:\s*\{id: tab-forum\}/);
   assert.ok(flow.includes("id: first-farm-invitation"));
