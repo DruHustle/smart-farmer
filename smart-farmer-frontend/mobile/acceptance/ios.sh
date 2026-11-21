@@ -244,6 +244,13 @@ printf '%s\n' 'Apple Simulator imported the synthetic invoice into Photos before
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
 run_native_login "$NATIVE_PHONE" iphone ios-login
+if [[ "$NATIVE_SUITE" == farm ]]; then
+  # CI run 44905808303 demonstrated a native Apple Save Password? sheet
+  # covering the Forum tab after login. Maestro could not see the overlay.
+  # XCTest dismisses ONLY the exact Apple sheet, then verifies the existing
+  # authenticated tab-record before any offline/private mutation occurs.
+  bash "$NATIVE_DIR/acceptance/ios-dismiss-native-password-sheet.sh" "$NATIVE_PHONE" iphone
+fi
 if [[ "$NATIVE_SUITE" == invoice ]]; then
   # Independent clean install and seeded API. The full farm suite below keeps
   # its original order, including all product and accounting assertions.
