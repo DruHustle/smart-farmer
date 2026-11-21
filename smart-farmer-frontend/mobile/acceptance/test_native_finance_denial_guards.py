@@ -16,7 +16,14 @@ class NativeAmountAndDenialGuards(unittest.TestCase):
         source = (HERE / "product-accounting.yaml").read_text()
         pay = (HERE / "accounting-payment.yaml").read_text()
         section = source.split('PAYMENT_AMOUNT: "7.50"', 1)[1].split('PAYMENT_REFERENCE:', 1)[0]
-        regexp = json.loads(re.search(r'PAYMENT_AMOUNT_REGEX: (".*?")', section).group(1))
+        # A previous YAML comment accidentally contained literal \\n escapes
+        # before PAYMENT_AMOUNT_REGEX, so Maestro received `undefined` even
+        # though a substring search and local regex test both passed.
+        standalone = [line for line in section.splitlines()
+                      if re.fullmatch(r'      PAYMENT_AMOUNT_REGEX: ".+"', line)]
+        self.assertEqual(len(standalone), 1, 'amount regex must be a real YAML key')
+        self.assertNotIn('\\n', section, 'no serialized newline escapes in YAML')
+        regexp = json.loads(standalone[0].split('PAYMENT_AMOUNT_REGEX: ', 1)[1])
         for amount in ("7.50", "07.50"):
             with self.subTest(amount=amount):
                 self.assertRegex(amount, regexp)
