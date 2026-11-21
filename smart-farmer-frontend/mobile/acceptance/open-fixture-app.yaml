@@ -44,23 +44,15 @@ appId: eu.onesa.smartfarmer
     label: Dismiss the observed Expo developer-menu tutorial on iOS
     when:
       platform: iOS
-      visible: '^This is the developer menu\\. It gives you access to useful tools in development builds\\.
-- takeScreenshot: signed-out-smart-farmer
-
+      visible: '^This is the developer menu\. It gives you access to useful tools in development builds\.$'
     commands:
       - tapOn:
-          text: '^Continue
-- takeScreenshot: signed-out-smart-farmer
-
+          text: '^Continue$'
       - runFlow:
           when:
-            visible: '^Close
-- takeScreenshot: signed-out-smart-farmer
-
+            visible: '^Close$'
           commands:
-            - tapOn: '^Close
-- takeScreenshot: signed-out-smart-farmer
-
+            - tapOn: '^Close$'
 - extendedWaitUntil:
     visible:
       id: auth-username
