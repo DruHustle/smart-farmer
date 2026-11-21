@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 
 // Only synthetic source assertions; real Android OAuth and member/admin
 // journeys must still pass in native acceptance.
-const flow = readFileSync(new URL('../acceptance/onesa/android-complete.yaml', import.meta.url), 'utf8');
+const flow = readFileSync(new URL('../acceptance/onesa/android-complete.yaml', import.meta.url).pathname, 'utf8');
 
 test('Android Onesa acceptance has one cancel, cold and active workflow each', () => {
   const phases = [...flow.matchAll(/true:\s*\$\{FLOW_STATE === '([a-z]+)'\}/g)].map(x => x[1]);
