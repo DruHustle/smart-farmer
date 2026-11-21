@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 RECONCILE = "smart-farmer-frontend/mobile/acceptance/reconcile-signin.yaml"
+LOGIN = "smart-farmer-frontend/mobile/acceptance/login.yaml"
+ALLOWED_FLOWS = frozenset((RECONCILE, LOGIN))
 FAILURE = 'Assertion is false: "^native_owner$", id: auth-username is visible'
 EXPECTED = "native_owner"
 TARGET = {"visible": {"idRegex": "auth-username", "textRegex": "^native_owner$", "optional": False}}
@@ -20,7 +22,7 @@ def safe_username_retry(report, commands, hierarchy):
         if commands.stat().st_size > 2_000_000 or report.stat().st_size > 100_000:
             return False
         cases = ET.parse(report).findall(".//testcase")
-        if len(cases) != 1 or cases[0].get("file") != RECONCILE:
+        if len(cases) != 1 or cases[0].get("file") not in ALLOWED_FLOWS:
             return False
         failures = cases[0].findall("failure")
         if len(failures) != 1 or failures[0].text != FAILURE:
