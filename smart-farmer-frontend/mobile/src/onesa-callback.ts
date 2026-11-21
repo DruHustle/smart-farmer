@@ -31,6 +31,29 @@ type PendingStore = {
   remove(): Promise<void>;
 };
 
+// An OS deep-link event may arrive while the system authentication promise is
+// still active (notably after the iOS native MFA browser handoff). This match
+// only selects an event for the active attempt: nativeCode() + the server
+// exchange still enforce issuer, PKCE, one-time code and account permissions.
+export function isOwnedNativeCallback(incoming:string, state:string):boolean {
+  try {
+    const url=new URL(incoming);
+    return url.protocol==='smartfarmer:' && url.host==='onesa' && url.pathname==='/callback' &&
+      !url.username && !url.password && !url.hash && url.searchParams.getAll('state').length===1 &&
+      url.searchParams.get('state')===state;
+  } catch { return false; }
+}
+
+// Two platform callbacks for the same attempt must share one redemption. A
+// duplicate event never replays the authorization code against the backend.
+export class SingleNativeRedemption<T> {
+  private pending:Promise<T>|null=null;
+  once(fn:()=>Promise<T>):Promise<T> {
+    if(this.pending===null) this.pending=fn();
+    return this.pending;
+  }
+}
+
 /** SecureStore has no atomic read-and-delete operation for a one-time callback. */
 export class PendingOnesaTransactions {
   private idle: Promise<void> = Promise.resolve();
