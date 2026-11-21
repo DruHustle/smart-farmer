@@ -16,6 +16,15 @@ export function nativeCode(incoming: string, pending: PendingOnesa, origin: stri
   return code;
 }
 
+// A successful browser return with no active, matching transaction is not
+// a successful login. Keep cold-start duplicate link deliveries ignorable in
+// PendingOnesaTransactions.claim(), but never silently dismiss the interactive
+// sign-in attempt when its transaction was lost or already consumed.
+export function requireOwnedOnesaSession<T>(session: T | null): T {
+  if (session === null) throw new Error('unauthorized');
+  return session;
+}
+
 type PendingStore = {
   read(): Promise<string | null>;
   write(value: string): Promise<void>;
