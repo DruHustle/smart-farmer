@@ -34,11 +34,22 @@ def safe_username_retry(report, commands, hierarchy):
         if (last.get("metadata", {}).get("status") != "FAILED"
                 or last.get("command", {}).get("assertConditionCommand", {}).get("condition") != TARGET):
             return False
-        tail = trace[-len(EXPECTED)-1:-1]
-        if (len(tail) != len(EXPECTED)
-                or any(row.get("metadata", {}).get("status") != "COMPLETED"
-                       or row.get("command", {}).get("inputTextCommand", {}).get("text") != char
-                       for row, char in zip(tail, EXPECTED))):
+        # Credential entry previously used one command per character, but the
+        # current Maestro fixture uses a single bulk inputText. Both must be
+        # followed immediately by the exact failed username assertion.
+        previous = trace[:-1]
+        typed_separately = (
+            len(previous) >= len(EXPECTED)
+            and all(row.get("metadata", {}).get("status") == "COMPLETED"
+                    and row.get("command", {}).get("inputTextCommand", {}).get("text") == char
+                    for row, char in zip(previous[-len(EXPECTED):], EXPECTED))
+        )
+        typed_in_bulk = (
+            bool(previous)
+            and previous[-1].get("metadata", {}).get("status") == "COMPLETED"
+            and previous[-1].get("command", {}).get("inputTextCommand", {}).get("text") == EXPECTED
+        )
+        if not (typed_separately or typed_in_bulk):
             return False
         # No session may have been submitted anywhere in this UI attempt.
         if any(row.get("command", {}).get("tapOnElement", {}).get("selector", {}).get("idRegex") == "auth-submit"
