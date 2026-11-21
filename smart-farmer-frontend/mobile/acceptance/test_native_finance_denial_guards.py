@@ -17,15 +17,17 @@ class NativeAmountAndDenialGuards(unittest.TestCase):
         pay = (HERE / "accounting-payment.yaml").read_text()
         section = source.split('PAYMENT_AMOUNT: "7.50"', 1)[1].split('PAYMENT_REFERENCE:', 1)[0]
         regexp = json.loads(re.search(r'PAYMENT_AMOUNT_REGEX: (".*?")', section).group(1))
-        for amount in ("7.50", "07.50"):
+        for amount in ("7.50",):
             with self.subTest(amount=amount):
                 self.assertRegex(amount, regexp)
-        for unsafe in ("17.50", "70.50", "7.500", "0.75", "75.0", "007.50", ""):
+        for unsafe in ("07.50", "17.50", "70.50", "7.500", "0.75", "75.0", "007.50", ""):
             with self.subTest(unsafe=unsafe):
                 self.assertIsNone(re.fullmatch(regexp, unsafe))
         self.assertIn('OUTSTANDING_AMOUNT: "USD 12.50"', source)
         self.assertIn('id: "form-amount"', pay)
         self.assertIn('text: "${PAYMENT_AMOUNT_REGEX}"', pay)
+        self.assertIn("true: ${PAYMENT_CHAR_5 !== ''}", pay)
+        self.assertLess(pay.index('text: "${PAYMENT_AMOUNT_REGEX}"'), pay.index('id: "product-confirm"'))
         self.assertIn('id: "invoice-balance"', pay)
         self.assertIn('text: "${OUTSTANDING_AMOUNT}"', pay)
 
@@ -43,6 +45,9 @@ class NativeAmountAndDenialGuards(unittest.TestCase):
         self.assertNotIn("onesa_cancelled", cancel)
         self.assertLess(cancel.index("visible: {id: auth-onesa}"), cancel.index("scrollUntilVisible:"))
         self.assertLess(cancel.index("scrollUntilVisible:"), cancel.index("assertVisible: '^(Onesa"))
+        for state in ('cancel', 'cold', 'active'):
+            self.assertEqual(source.count(f"FLOW_STATE === '{state}'"), 1)
+        self.assertNotIn('\\\\n- runFlow:', source)
 
 
 if __name__ == "__main__":
