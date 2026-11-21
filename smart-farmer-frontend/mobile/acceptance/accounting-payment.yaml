@@ -25,7 +25,13 @@ appId: eu.onesa.smartfarmer
       - inputText: "${PAYMENT_CHAR_2}"
       - inputText: "${PAYMENT_CHAR_3}"
       - inputText: "${PAYMENT_CHAR_4}"
-      - inputText: "${PAYMENT_CHAR_5}"
+      # Four- and five-character currency values both have an exact
+      # pre-submit assertion. Do not insert a disposable leading zero.
+      - runFlow:
+          when:
+            true: ${PAYMENT_CHAR_5 !== ''}
+          commands:
+            - inputText: "${PAYMENT_CHAR_5}"
 - runFlow:
     when:
       platform: Android
