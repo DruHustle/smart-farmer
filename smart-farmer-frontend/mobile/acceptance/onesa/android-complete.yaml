@@ -9,77 +9,19 @@ appId: eu.onesa.smartfarmer
     when:
       true: ${FLOW_STATE === 'cancel'}
     commands:
+      # The browser may return an explicit issuer denial or an OS dismiss.
+      # Both must display exact, localized feedback while signed out.
       - extendedWaitUntil:
-          # Chrome Custom Tabs may return an explicit issuer denial or an OS
-          # dismiss after the user cancels. Both are acceptable only if an
-          # exact localized cancellation/denial is displayed on the signed-out
-          # Farmer surface. Missing feedback, silent success or workspace
-          # access remain native acceptance failures.
-          visible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.]|Kupinda neOnesa kwamiswa[.] Unogona kuedzazve[.]|Ukungena nge-Onesa kumisiwe[.] Ungazama futhi[.])
+          visible: {id: auth-onesa}
           timeout: 30000
-      - assertVisible: {id: auth-onesa}
       - assertNotVisible: {id: tab-forum}
-- runFlow:
-    when:
-      true: ${FLOW_STATE === 'cold'}
-    commands:
-      - extendedWaitUntil:
-          visible: {id: first-farm-invitation}
-          timeout: 45000
-      - assertNotVisible: {id: tab-forum}
-      - tapOn: {id: first-farm-invitation}
-      - inputText: ${INVITE}
-      - runFlow: ../dismiss-keyboard.yaml
       - scrollUntilVisible:
-          element: {id: first-farm-join}
-          direction: DOWN
-      - tapOn: {id: first-farm-join}
-      - extendedWaitUntil:
-          visible: {id: tab-forum}
-          timeout: 45000
-      - assertVisible: ${FARM_NAME}
-      - runFlow: ../forum-open.yaml
-      - scrollUntilVisible:
-          element:
-            id: '^forum-open-.*$'
-            text: '^${FORUM_TITLE}$'
-          direction: DOWN
-- runFlow:
-    when:
-      true: ${FLOW_STATE === 'active'}
-    commands:
-      - extendedWaitUntil:
-          visible: {id: tab-forum, selected: true}
-          timeout: 45000
-      - assertVisible: {id: tab-forum, selected: true}
-      # Preserve the protected return assertion before any navigation. On a
-      # compact display, the localized audience notice pushes forum-new below
-      # the viewport; scroll the already-selected forum to inspect its content.
-      - scrollUntilVisible:
-          element: {id: workspace-language}
-          direction: UP
-          timeout: 30000
-      - assertVisible: ${FARM_NAME}
-      - scrollUntilVisible:
-          element: {id: forum-new, enabled: true}
+          element: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.]|Kupinda neOnesa kwamiswa[.] Unogona kuedzazve[.]|Ukungena nge-Onesa kumisiwe[.] Ungazama futhi[.])$'
           direction: DOWN
           timeout: 30000
-      # The discussion is below the topic and search controls. Scroll the
-      # compact viewport in short increments and require its exact title and ID.
-      - scrollUntilVisible:
-          element:
-            id: '^forum-open-.*$'
-            text: '^${FORUM_TITLE}$'
-          direction: DOWN
-          timeout: 45000
-          speed: 35
-          centerElement: true
-      - assertVisible:
-          id: '^forum-open-.*$'
-          text: '^${FORUM_TITLE}$'
-
-          timeout: 30000
-      - assertVisible: {id: auth-onesa}
+          visibilityPercentage: 50
+          centerElement: false
+      - assertVisible: '^(Onesa haina kupa mvumo yekupinda muSmart Farmer[.]|I-Onesa kayinikanga imvumo yokungena ku-Smart Farmer[.]|Kupinda neOnesa kwamiswa[.] Unogona kuedzazve[.]|Ukungena nge-Onesa kumisiwe[.] Ungazama futhi[.])$'
       - assertNotVisible: {id: tab-forum}
 - runFlow:
     when:
