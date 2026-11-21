@@ -47,9 +47,10 @@ class InputRecoveryBoundary(unittest.TestCase):
             {"attributes": {"resource-id": "auth-submit", "enabled": "true"}},
         ]}
 
-    def qualifies(self):
+    def qualifies(self, *, create_frame=True):
         self.commands.write_text(json.dumps(self.trace))
-        self.frame.write_text(json.dumps(self.hierarchy))
+        if create_frame:
+            self.frame.write_text(json.dumps(self.hierarchy))
         return module.safe_username_retry(self.report, self.commands, self.folder)
 
     def test_only_exact_pre_submit_lost_character_can_retry(self):
@@ -75,7 +76,7 @@ class InputRecoveryBoundary(unittest.TestCase):
     def test_untrusted_report_screen_and_wrong_flow_fail_closed(self):
         self.assertTrue(self.qualifies())
         self.frame.unlink()
-        self.assertFalse(self.qualifies())
+        self.assertFalse(self.qualifies(create_frame=False))
         root = ET.parse(self.report)
         root.find(".//testcase").set("file", "other.yaml")
         root.write(self.report)
