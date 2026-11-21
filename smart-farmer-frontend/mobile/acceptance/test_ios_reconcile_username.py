@@ -77,6 +77,29 @@ class InputRecoveryBoundary(unittest.TestCase):
                                      {"selector": {"idRegex": "auth-submit"}}))
         self.assertFalse(self.qualifies())
 
+    def test_current_bulk_input_fixture_only_retries_with_exact_pre_submit_evidence(self):
+        # credentials.yaml uses one inputText: native_owner command, whereas
+        # older Maestro traces contain twelve single-character commands.
+        self.trace = [
+            command("tapOnElement", "COMPLETED",
+                    {"selector": {"idRegex": "device-reauthenticate"}}),
+            command("inputTextCommand", "COMPLETED", {"text": module.EXPECTED}),
+            command("assertConditionCommand", "FAILED", {"condition": module.TARGET}),
+        ]
+        self.assertTrue(self.qualifies())
+        self.trace[-2]["command"]["inputTextCommand"]["text"] = "ntive_owner"
+        self.assertFalse(self.qualifies())
+        self.trace[-2]["command"]["inputTextCommand"]["text"] = module.EXPECTED
+        self.trace[-2]["metadata"]["status"] = "FAILED"
+        self.assertFalse(self.qualifies())
+        self.trace[-2]["metadata"]["status"] = "COMPLETED"
+        self.trace.insert(1, command("tapOnElement", "COMPLETED",
+                                     {"selector": {"idRegex": "auth-submit"}}))
+        self.assertFalse(self.qualifies())
+        self.trace.pop(1)
+        self.hierarchy["children"][1]["attributes"]["value"] = "entered-password"
+        self.assertFalse(self.qualifies())
+
     def test_no_replay_after_submit_or_password_entry(self):
         self.assertTrue(self.qualifies())
         self.trace.insert(1, command("tapOnElement", "COMPLETED",
