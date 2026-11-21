@@ -90,15 +90,15 @@ run_identity_flow() {
     # stage failed without exporting browser state, callbacks or credentials.
     # Only enum-valued stage facts leave the private runner workspace.
     if ! maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/entry" --debug-output "$phase_dir/entry" "$dir/android-entry.yaml" > "$phase_dir/entry.log" 2>&1; then
-      printf '%s %s failed_stage=native_entry\\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
+      printf '%s %s failed_stage=native_entry\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
       return 1
     fi
     if ! node "$dir/chrome-browser.mjs" "$phase_role" "$phase_state" "$fixture" "$device" "$phase_dir/browser-target.json" > "$phase_dir/browser.log" 2>&1; then
-      printf '%s %s failed_stage=browser_handoff\\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
+      printf '%s %s failed_stage=browser_handoff\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
       return 1
     fi
     if ! maestro --device "$device" test "$@" -e FLOW_STATE="$phase_state" --test-output-dir "$phase_dir/complete" --debug-output "$phase_dir/complete" "$dir/android-complete.yaml" > "$phase_dir/complete.log" 2>&1; then
-      printf '%s %s failed_stage=native_return\\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
+      printf '%s %s failed_stage=native_return\n' "$phase_role" "$phase_state" >> "$evidence/android-results.txt"
       return 1
     fi
   else
