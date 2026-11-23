@@ -16,6 +16,7 @@ import { MoreScreen } from './MoreScreen';
 import { RecordScreen } from './RecordScreen';
 import { TodayScreen } from './TodayScreen';
 import { ForumScreen } from './ForumScreen';
+import { ViewerOverview } from './ViewerOverview';
 
 export function WorkspaceScreen({ session, repository, language, onLanguage, onExpired, onLogout, onLock, nativeBusy, onNativePrompt }: { session: Session; repository: LocalRepository; language: Language; onLanguage: (value: Language) => void; onExpired: () => void; onLogout: () => void; onLock: () => void; nativeBusy: boolean; onNativePrompt: (value: boolean) => void }) {
   const [invitation, setInvitation] = useState('');
@@ -50,7 +51,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
         {work.farmsLoaded && <CreateFirstFarm work={work} language={language}/>}
         <AccountDeletion work={work} language={language}/>
         <Button secondary title={t.logout} onPress={onLogout}/>
-      </> : <React.Fragment key={`${work.farmId}:${work.selectedFarm?.role}`}>
+      </> : work.selectedFarm?.role === 'viewer' ? <ViewerOverview key={work.farmId} work={work} language={language} logout={onLogout} lock={onLock}/> : <React.Fragment key={`${work.farmId}:${work.selectedFarm?.role}`}>
       {tab === 'today' ? <TodayScreen work={work} language={language} onRecord={() => setTab('record')} /> : null}
       {tab === 'farm' ? <FarmScreen work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
       {tab === 'record' ? <RecordScreen work={work} language={language} nativeBusy={nativeBusy} onNativePrompt={onNativePrompt} /> : null}
@@ -59,7 +60,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
       </React.Fragment>}
     </ScrollView>
     <KeyboardDismissButton label={t.hideKeyboard} />
-    {work.farms.length > 0 && <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>
+    {work.farms.length > 0 && work.selectedFarm?.role !== 'viewer' && <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: colors.white }}>
       {/* These observers never claim a responder or retain the native event payload. */}
       {(['today', 'farm', 'record', 'forum', 'more'] as const).map(value => <Pressable key={value} testID={`tab-${value}`} disabled={nativeBusy} accessibilityRole="tab" accessibilityState={{ selected: tab === value, disabled: nativeBusy }} accessibilityLabel={t[value]}
         onTouchStart={value === 'farm' ? () => traceSession('farm_touch', 'start') : undefined}

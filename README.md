@@ -21,6 +21,8 @@ The application includes active or new crop seasons; sourced planning and approv
 
 Field records and attachments use separate encrypted durable queues. Commercial commitments and equipment commands require current online authorisation. A manually recorded payment is never represented as automatic provider settlement, and simulator observations cannot establish hardware commissioning.
 
+Owners and managers can invite farm viewers. Viewer access is limited to a read-only overview of project names, tasks, stock quantities and incident summaries on web and mobile.
+
 ## Verification and release preparation
 
 - [Complete Codex brief](smart-farmer-backend/docs/product-brief.txt)

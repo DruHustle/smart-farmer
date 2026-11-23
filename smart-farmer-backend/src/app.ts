@@ -10,6 +10,7 @@ import { registerOperations } from "./operations.js";
 import { identityConfig, registerOnesa } from "./onesa-identity.js";
 import { registerAccountDeletion } from "./account-deletion.js";
 import { registerIdentity } from "./identity.js";
+import { registerViewerOverview } from "./viewer-overview.js";
 import { registerCore } from "./core.js";
 import { registerFarmEdgeRoutes } from "./edge.js";
 import { registerNodeRedPackages, type NodeRedOptions } from "./node-red/routes.js";
@@ -118,6 +119,7 @@ export function buildApp(
     const ctx = createContext(db, central, localCredentials);
     registerOnesa(app, ctx, central, localCredentials);
     registerIdentity(app, ctx, localCredentials);
+    registerViewerOverview(app, ctx);
     registerAccountDeletion(app, ctx);
     registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
     registerNodeRedPackages(app, ctx, nodeRed);

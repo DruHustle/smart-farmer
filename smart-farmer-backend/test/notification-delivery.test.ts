@@ -352,13 +352,14 @@ test("concurrent workers claim one delivery, and a later receipt resolves only t
   assert.equal((await f.row(item.id)).state, "accepted");
 });
 
-test("opt-out, revoked membership, disabled/unverified channels and acknowledgement still cancel pending retries", async (t) => {
-  for (const kind of ["opt-out", "membership", "disabled", "unverified", "acknowledged"] as const) await t.test(kind, async (child) => {
+test("opt-out, access changes, disabled/unverified channels and acknowledgement cancel pending retries", async (t) => {
+  for (const kind of ["opt-out", "membership", "viewer", "disabled", "unverified", "acknowledged"] as const) await t.test(kind, async (child) => {
     const f = await fixture(child), item = await f.seed();
     f.respond(async () => { throw new TypeError("fixture unknown response"); });
     await deliverNotifications(f.db, 1);
     if (kind === "opt-out") await f.db.query("UPDATE notification_preferences SET email=false");
     if (kind === "membership") await f.db.query("DELETE FROM memberships WHERE user_id=$1", [f.userId]);
+    if (kind === "viewer") await f.db.query("UPDATE memberships SET role='viewer' WHERE user_id=$1", [f.userId]);
     if (kind === "disabled") await f.db.query("UPDATE notification_channels SET disabled_at=now() WHERE id=$1", [item.channelId]);
     if (kind === "unverified") await f.db.query("UPDATE notification_channels SET verified_at=NULL WHERE id=$1", [item.channelId]);
     if (kind === "acknowledged") await f.db.query("UPDATE notifications SET acknowledged_at=now() WHERE id=$1", [item.notificationId]);

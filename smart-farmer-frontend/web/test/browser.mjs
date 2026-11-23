@@ -12,6 +12,7 @@ import {completionJourneys} from './browser-completion.mjs';
 import {accountingJourneys} from './browser-accounting.mjs';
 import {forumJourneys} from './browser-forum.mjs';
 import {trackingJourneys} from './browser-tracking.mjs';
+import {viewerJourney} from './browser-viewer.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
 import { registrationJourney } from './browser-registration.mjs';
@@ -261,6 +262,10 @@ try {
   checkpoint('Guests browse public market and service offers, then sign in to buy');
   await guestJourney(browser, ui, api, catalog);
   pass('Guests browse real market listings (shared link, search) and service offers without credentials or errors; buying signs in and returns to the same listing (nd desktop, sn 320px)');
+
+  checkpoint('Viewer invitation and read-only farm overview');
+  await viewerJourney({browser, ui, apiCall, farm, token, sn, unique});
+  pass('A separately invited viewer can open the farm summary without operational controls at 320px');
 
   checkpoint('Phone and desktop notifications evidence');
   await more('notifications');

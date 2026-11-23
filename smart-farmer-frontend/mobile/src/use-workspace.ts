@@ -102,6 +102,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
           await repository.setPreference('selectedFarm', selected.id);
           const pendingLanguage = await repository.preference<Language>('languageToSync');
           if (pendingLanguage) { await api.request('/v1/me', 'PATCH', { language: pendingLanguage }); await repository.setPreference('languageToSync', null); }
+          if (selected.role === 'viewer') return;
           const resultSync = await flush(selected.id);
           if (resultSync?.unauthorized || !alive.current) return;
           await download(selected);
@@ -131,7 +132,7 @@ export function useWorkspace(session: Session, repository: LocalRepository, lang
     if (!settings.current.online) { setError(new Error('onlineRequired')); return; }
     // A failed first membership request leaves no selected farm to flush.
     // Sync must still let this account reload its memberships and invitations.
-    if (!currentFarm.current) { await refresh(); return; }
+    if (!currentFarm.current || currentFarms.current.some(farm => farm.id === currentFarm.current && farm.role === 'viewer')) { await refresh(); return; }
     setBusy(true); setError(null);
     try {
       const id = currentFarm.current;

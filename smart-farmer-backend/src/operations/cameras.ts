@@ -123,7 +123,7 @@ export function registerCameras(app: FastifyInstance, ctx: Context) {
     const row = requireRow(
       (
         await c.query(
-          "SELECT a.*,cc.provider,cc.version AS config_version,cc.retention_days,cc.events_enabled,cc.live_enabled,cc.capabilities AS camera_capabilities,cc.zones,cc.schedules,cc.dedupe_seconds,cc.last_frame_at FROM assets a LEFT JOIN camera_configurations cc ON cc.asset_id=a.id WHERE a.farm_id=$1 AND a.id=$2 AND a.category='camera' AND EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=a.farm_id AND m.user_id=$3 AND (m.role IN ('owner','manager') OR EXISTS(SELECT 1 FROM camera_access ca WHERE ca.asset_id=a.id AND ca.user_id=$3)))",
+          "SELECT a.*,cc.provider,cc.version AS config_version,cc.retention_days,cc.events_enabled,cc.live_enabled,cc.capabilities AS camera_capabilities,cc.zones,cc.schedules,cc.dedupe_seconds,cc.last_frame_at FROM assets a LEFT JOIN camera_configurations cc ON cc.asset_id=a.id WHERE a.farm_id=$1 AND a.id=$2 AND a.category='camera' AND EXISTS(SELECT 1 FROM memberships m WHERE m.farm_id=a.farm_id AND m.user_id=$3 AND m.role<>'viewer' AND (m.role IN ('owner','manager') OR EXISTS(SELECT 1 FROM camera_access ca WHERE ca.asset_id=a.id AND ca.user_id=$3)))",
           [farmId, assetId, userId],
         )
       ).rows[0],

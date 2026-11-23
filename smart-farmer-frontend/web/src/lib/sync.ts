@@ -15,6 +15,7 @@ export type Send = (entry: OutboxItem, payload: Record<string, unknown>) => Prom
 export async function drainOutbox(vault: Vault, send: Send, includeMedia: boolean, now = () => Date.now()): Promise<void> {
   for (const entry of vault.snapshot().outbox) {
     if (vault.snapshot().requiresAuth) return;
+    if (vault.snapshot().farms.some(farm => farm.id === entry.farmId && farm.role === 'viewer')) continue;
     if (entry.status !== 'pending' || entry.mediaId && !includeMedia) continue;
     if (entry.nextAttemptAt && new Date(entry.nextAttemptAt).getTime() > now()) continue;
     if (!isQueueable(entry.path, entry.method)) throw new Error('unsafe_outbox_route');

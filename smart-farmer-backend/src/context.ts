@@ -52,7 +52,10 @@ export function createContext(db: pg.Pool, central: ReturnType<typeof identityCo
   }
   async function member(farmId: string, userId: string, roles?: string[]) {
     const result = await db.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2', [farmId,userId]);
-    return !!result.rowCount && (!roles || roles.includes(result.rows[0].role));
+    const role = result.rows[0]?.role;
+    // Routes that request an ordinary farm membership grant operational access.
+    // The viewer has only the dedicated overview and must be opted into explicitly.
+    return role !== undefined && (roles ? roles.includes(role) : role !== 'viewer');
   }
   async function transaction<T>(action: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await db.connect();
