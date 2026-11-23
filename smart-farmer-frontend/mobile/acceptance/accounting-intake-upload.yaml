@@ -2,7 +2,6 @@ appId: eu.onesa.smartfarmer
 ---
 - runFlow: activate-ios.yaml
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: '^invoice-upload-[0-9a-f-]+$'
     direction: DOWN
@@ -10,6 +9,7 @@ appId: eu.onesa.smartfarmer
 # This is the only upload consent. No capture or restart step submits the source.
 - tapOn:
     id: '^invoice-upload-[0-9a-f-]+$'
+    enabled: true
 - extendedWaitUntil:
     notVisible:
       id: '^invoice-upload-[0-9a-f-]+$'
