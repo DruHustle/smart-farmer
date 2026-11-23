@@ -40,6 +40,12 @@ With a fresh, running [Portal and Farmer fixture](../../scripts/portal-device-fi
 
 Serve `dist/` using HTTPS in production. Localhost is supported for development. Encryption, service workers, microphone access, and clipboard sharing require a secure context. The service worker is generated during production builds. It precaches the application shell, scripts, styles and icons, excludes authenticated/API responses, and loads the HLS player only when a person requests video.
 
+### Signed-out visitors and guests
+
+The first screen works without an account. Below the sign-in card, a feature tour shows six features (daily work, crops and livestock, machinery and services, market, forum and reports), each with a clearly labelled synthetic example. The tour makes no API calls. Each card's "sign in to use" action stores that feature's route (`/?page=…`) before Onesa sign-in, so the visitor returns to that feature.
+
+Guests can also browse what the API already publishes without credentials: active market listings (`GET /v1/market/listings`, with photos) and service offers (`GET /v1/services`). A shared listing link (`/?listing=<id>`) opens that listing for a guest. Guests never send credentials and cannot write anything. Buying, asking, offering and booking start sign-in and return to the same listing or to services. Farm records, the forum, reports and every management or device action stay behind sign-in. The API answers those with 401 when there is no session.
+
 ### Private camera deployment
 
 Chrome/Firefox use a lazily loaded HLS player with short-lived, camera-session-scoped Bearer credentials. Requests outside the same API origin and session path are rejected by the player. Safari native HLS uses the backend's HttpOnly session cookie and therefore requires the website and API under the same HTTPS origin, normally through a reverse proxy for `/v1/`. The hosted Vercel site does this in `vercel.json`: it rewrites `/v1/*`, `/health`, `/ready` and `/version` to the API at `https://farmer-api.onesa.eu` (the dedicated Farmer tunnel) with rewrite caching disabled, so build it with `VITE_API_URL=https://farmer.onesa.eu`. `/release.json`, `/healthz` and application routes stay on the static deployment. The server rechecks membership and camera grants on every playlist and segment request. Private stream tokens, snapshots, and clips are never put into a public URL or browser cache. Switching farm or role unmounts the private viewers and revokes local blob URLs.
