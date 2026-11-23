@@ -100,6 +100,16 @@ test('Approved Onesa users keep their farm membership and administrators require
     assert.equal((await app.inject({url:'/v1/me',headers:h})).statusCode,200);
     assert.equal(identity.userId,a.userId);
   });
+  await t.test('The holder can revoke their current Farmer session during an issuer outage',async()=>{
+    const identity=(await fresh()).json(), headers={authorization:'Bearer '+identity.token};
+    unavailable=true;
+    try {
+      assert.equal((await app.inject({url:'/v1/me',headers})).statusCode,503);
+      assert.equal((await app.inject({method:'DELETE',url:'/v1/sessions/current?scope=onesa',headers})).statusCode,204);
+    } finally {unavailable=false;}
+    assert.equal((await app.inject({url:'/v1/me',headers})).statusCode,401);
+    assert.equal((await app.inject({url:'/v1/me',headers:{authorization:'Bearer '+retryToken}})).statusCode,200);
+  });
   await t.test('A substituted subject permanently retires its local session',async()=>{
     const identity=(await fresh()).json(), h={authorization:'Bearer '+identity.token};
     returnedSubject=randomUUID();assert.equal((await app.inject({url:'/v1/me',headers:h})).statusCode,401);returnedSubject=subject;

@@ -1,6 +1,7 @@
 import {lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore} from 'react';
+import {flushSync} from 'react-dom';
 import {Auth} from './Auth';
-import {destination, pagePath} from './lib/destination';
+import {centralLogoutDestination, destination, pagePath} from './lib/destination';
 import {AccountDeletion} from './pages/AccountDeletion';
 import {catalog, errorLabel, label, translatedNotice} from './locales';
 import {ApiError, request, jsonBody, uploadRecord} from './lib/api';
@@ -132,9 +133,15 @@ export function App() {
   }
   async function logout() {
     if (!vault) return;
-    if (navigator.onLine) await request('/v1/sessions/current', vault.snapshot().identity.token, {method: 'DELETE'}).catch(() => {});
+    const result = navigator.onLine
+      ? await request<{sharedLogout?:string} | undefined>('/v1/sessions/current?scope=onesa', vault.snapshot().identity.token, {method:'DELETE'}).catch(() => undefined)
+      : undefined;
     await vault.mutate(next => {next.requiresAuth = true;});
-    setVault(null); setNotice(''); setPage('today'); setRecordProject(null);
+    flushSync(() => {
+      setVault(null); setNotice(''); setPage('today'); setRecordProject(null);
+    });
+    const url = centralLogoutDestination(result?.sharedLogout, location.origin);
+    if (url) location.replace(url);
   }
   function lock() {setVault(null); setNotice(''); setRecordProject(null);}
   if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(v.snapshot().language); showPage(destination(location).page); setNotice('');}}/>;

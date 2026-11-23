@@ -49,7 +49,7 @@ async function revokeEquipmentCommands(client:PoolClient,farmId:string,userId:st
   }
 }
 
-export function registerIdentity(app:FastifyInstance, ctx:Context, localCredentials:boolean) {
+export function registerIdentity(app:FastifyInstance, ctx:Context, localCredentials:boolean, browserLogout?:string) {
   const {db,user,member,transaction}=ctx;
   app.post('/v1/register',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
     if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);
@@ -89,7 +89,21 @@ export function registerIdentity(app:FastifyInstance, ctx:Context, localCredenti
     const hash=sha256(req.headers.authorization!.slice(7));
     const r=await db.query('SELECT id,label,created_at,expires_at,(token_hash=$2) AS current FROM sessions WHERE user_id=$1 AND expires_at>now() ORDER BY created_at DESC',[id,hash]);return {items:r.rows};
   });
-  app.delete('/v1/sessions/current',async(req,reply)=>{const id=await user(req,reply);if(!id)return;await db.query('DELETE FROM sessions WHERE token_hash=$1',[sha256(req.headers.authorization!.slice(7))]);return reply.code(204).send();});
+  app.delete('/v1/sessions/current',async(req,reply)=>{
+    const bearer = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+    if (!bearer) throw new ApiError('unauthorized',401);
+    // Possession of the opaque local token authorizes revoking that token only.
+    // An issuer outage should not prevent the holder from ending the session.
+    const {rows:[revoked]} = await db.query(
+      'DELETE FROM sessions WHERE token_hash=$1 RETURNING onesa_token_issuer',
+      [sha256(bearer)],
+    );
+    if (!revoked) throw new ApiError('unauthorized',401);
+    const {scope} = req.query as {scope?:string};
+    if (scope === 'onesa' && browserLogout && revoked.onesa_token_issuer === 'https://auth.onesa.eu/')
+      return {sharedLogout:browserLogout};
+    return reply.code(204).send();
+  });
   app.delete('/v1/sessions/:sessionId',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {sessionId}=z.object({sessionId:uuid}).parse(req.params);await db.query('DELETE FROM sessions WHERE user_id=$1 AND id=$2',[id,sessionId]);return reply.code(204).send();});
   app.post('/v1/recovery-codes',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
     if (!localCredentials) throw new ApiError('onesa_sign_in_required',403);

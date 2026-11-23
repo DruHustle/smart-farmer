@@ -6,7 +6,7 @@ import { sha256, token } from './security.js';
 
 import { managedAccount, managedIdentity, checkIdentityToken, type ManagedIdentity } from './managed-identity.js';
 
-type Config = { issuer: string; clientId: string; secret: string; callback: string; accountIssuer:string; managed?:ManagedIdentity };
+type Config = { issuer: string; clientId: string; secret: string; callback: string; accountIssuer:string; managed?:ManagedIdentity; browserLogout?:string };
 
 export function identityConfig(origin: string, env = process.env): Config | null {
   if (env.ONESA_IDENTITY_ENABLED !== 'true') return null;
@@ -25,7 +25,14 @@ export function identityConfig(origin: string, env = process.env): Config | null
     || !clientId || clientId.length > 200 || secret.length < 32) {
     throw new Error('Invalid Onesa Identity configuration');
   }
-  return { issuer, clientId, secret, managed, accountIssuer:managed?.accountIssuer ?? issuer, callback: origin + '/auth/onesa/callback' };
+  const returnUrl = env.ONESA_IDENTITY_WEB_LOGOUT_RETURN_URL;
+  let browserLogout: string | undefined;
+  if (managed && issuer === 'https://auth.onesa.eu/' && returnUrl === origin + '/') {
+    const url = new URL('oidc/logout', issuer);
+    url.search = new URLSearchParams({client_id:clientId,post_logout_redirect_uri:returnUrl}).toString();
+    browserLogout = url.href;
+  }
+  return { issuer, clientId, secret, managed, accountIssuer:managed?.accountIssuer ?? issuer, callback: origin + '/auth/onesa/callback', browserLogout };
 }
 
 async function provider(config: Config, path: string, body: URLSearchParams | { token: string }, publicClient = false) {
