@@ -206,6 +206,24 @@ run_tablet() {
       --test-output-dir "$EVIDENCE/ipad-products-after-password-sheet" "$flow"
 }
 
+run_offline_restart() {
+  local report="$EVIDENCE/ios-offline-restart.xml"
+  local out="$EVIDENCE/ios-offline-restart"
+  local flow="$NATIVE_DIR/acceptance/offline-restart.yaml"
+  local driver=(maestro --device "$NATIVE_PHONE" test --format junit --output "$report")
+  if "${driver[@]}" --no-reinstall-driver --test-output-dir "$out" "$flow"; then
+    return 0
+  fi
+  if ! grep -Fq 'maestro.DeviceUnreachableException: Device became unreachable during deviceInfo' "$report"; then
+    return 1
+  fi
+  # Only restart and verify the locked workspace again. The completed save
+  # and the offline flag are untouched, so a driver recovery cannot replay a write.
+  mv "$report" "$EVIDENCE/ios-offline-restart-interrupted.xml"
+  echo 'Retrying the offline restart with a fresh XCTest driver.'
+  "${driver[@]}" --test-output-dir "$EVIDENCE/ios-offline-restart-retry" "$flow"
+}
+
 # The iPad uses its own clean install, accessible text size and the preseeded
 # project/forum records. Its UI verification does not consume iPhone mutations.
 if [[ "$NATIVE_SUITE" == tablet ]]; then
@@ -235,7 +253,9 @@ if [[ "$NATIVE_SUITE" == invoice ]]; then
   exit 0
 fi
 touch "$NATIVE_OFFLINE_FLAG"
-maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline.xml" --test-output-dir "$EVIDENCE/ios-offline" "$NATIVE_DIR/acceptance/offline.yaml"
+maestro --device "$NATIVE_PHONE" test --format junit --output "$EVIDENCE/ios-offline-save.xml" \
+  --test-output-dir "$EVIDENCE/ios-offline-save" "$NATIVE_DIR/acceptance/offline-save.yaml"
+run_offline_restart
 NATIVE_CONTAINER=$(xcrun simctl get_app_container "$NATIVE_PHONE" eu.onesa.smartfarmer data)
 python3 "$NATIVE_DIR/acceptance/assert-encrypted.py" "$NATIVE_CONTAINER" > "$EVIDENCE/ios-encryption.txt"
 rm "$NATIVE_OFFLINE_FLAG"
