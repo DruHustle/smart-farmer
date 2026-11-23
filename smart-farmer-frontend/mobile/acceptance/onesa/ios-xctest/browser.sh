@@ -80,6 +80,12 @@ root = Path(next(d["dataPath"] for d in devices if d["udid"] == sys.argv[1])).re
 if not root.is_dir(): sys.exit(1)
 print(root)' "$device") || report_failure simulator-data
     fixture_log="$RUNNER_TEMP/onesa-device/fixture.log"
+    allowance=330
+    # The administrator has a second issuer form, native keyboard and MFA
+    # verification. On shared Intel runners it can reach the final assertion
+    # before XCTest reports an execution timeout. Still require a passing
+    # XCTest result and the complete issuer receipt sequence.
+    if [[ "$role-$phase" == admin-cold ]]; then allowance=540; fi
     for attempt in 1 2; do
       result="$run/identity-$attempt.xcresult"
       log="$run/xcode-$attempt.log"
@@ -93,7 +99,8 @@ print(root)' "$device") || report_failure simulator-data
         initial_lines=$(wc -l < "$fixture_log")
       fi
       if xcodebuild test-without-building -xctestrun "${runs[0]}" -destination "platform=iOS Simulator,id=$device" \
-        -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 330 \
+        -parallel-testing-enabled NO -test-timeouts-enabled YES \
+        -default-test-execution-time-allowance "$allowance" -maximum-test-execution-time-allowance "$allowance" \
         -resultBundlePath "$result" \
         -only-testing:FarmerBrowserTests/PortalColdTests/"$test_name" > "$log" 2>&1; then
         stop_observer

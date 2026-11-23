@@ -62,9 +62,13 @@ ios_services_ready() {
   local endpoint family
   local families
   # A clean boot or runner handoff can temporarily starve either local API.
-  # Probe both real TLS routes before starting an authorization transaction.
-  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
-                  "${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}/v1/onesa/config"; do
+  # Check each database-backed readiness route as well as the public config.
+  # That establishes real SQL readiness after simulator boot before the
+  # first issuer request writes to the database.
+  local portal="${PORTAL_TEST_ORIGIN:-https://localhost:46501}"
+  local farmer="${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}"
+  for endpoint in "$portal/api/v1/ready" "$portal/api/v1/account/config" \
+                  "$farmer/ready" "$farmer/v1/onesa/config"; do
     families=(--ipv4)
     if [[ "$endpoint" == https://localhost:* ]]; then families+=(--ipv6); fi
     for family in "${families[@]}"; do

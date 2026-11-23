@@ -63,15 +63,15 @@
       <string>_expo._tcp</string>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>Tora mifananidzo yebasa repapurazi / Thatha izithombe zomsebenzi wepulazi.</string>
+    <string>Take a photo to attach to a farm record.</string>
     <key>NSFaceIDUsageDescription</key>
-    <string>Vhura zvinyorwa zvako zvakakiyiwa / Vula imibhalo yakho ekhiyiweyo.</string>
+    <string>Unlock your Smart Farmer workspace on this device.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Rekodha shoko rezwi repapurazi / Rekhoda izwi lomsebenzi wepulazi.</string>
+    <string>Record a voice note to attach to a farm record.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Sarudza mufananidzo webasa repapurazi / Khetha isithombe somsebenzi wepulazi.</string>
+    <string>Choose a photo to attach to a farm record.</string>
     <key>RCTMetroPort</key>
     <string>$(RCT_METRO_PORT)</string>
     <key>UIApplicationSceneManifest</key>

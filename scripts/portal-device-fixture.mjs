@@ -232,7 +232,7 @@ async function listen(origin, isPortal) {
     }
     if (
       (isPortal && path.startsWith("/api/")) ||
-      (!isPortal && path.startsWith("/v1/"))
+      (!isPortal && (path === "/ready" || path.startsWith("/v1/")))
     ) {
       const headers = { ...request.headers, "x-forwarded-proto": "https" };
       if (isPortal) {

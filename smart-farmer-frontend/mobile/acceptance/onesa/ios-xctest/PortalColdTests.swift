@@ -463,10 +463,20 @@ final class PortalColdTests: XCTestCase {
             let destination = URL(fileURLWithPath: base).appendingPathComponent("ios-cancel-live-consent.png")
             if (try? png.write(to: destination, options: .atomic)) != nil { retainedCancelFrame = true }
         }
-        let owners = [app, authSheet, safari, springboard].filter { $0.state == .runningForeground }
+        // The simulator may still render Farmer underneath the opening
+        // authentication sheet. That frame has no browser action, and taking
+        // accessibility snapshots of transitioning processes can abort XCTest.
+        let hasSystemPrompt = labels.contains("systemConsentTitle") || labels.contains("Save Password?")
+        guard screen.titleBottom != nil || hasSystemPrompt else {
+            renderObserved(.landmarksMissing)
+            return nil
+        }
+        let browserCandidates = [app, authSheet, safari]
+        let candidates = hasSystemPrompt ? [springboard] + browserCandidates : browserCandidates
+        let owners = candidates.filter { $0.state == .runningForeground }
         guard !owners.isEmpty else { renderObserved(.noForegroundOwner); return nil }
         let pixels = CGSize(width: screen.width, height: screen.height)
-        guard let display = owners.map({ $0.frame }).first(where: { frame in
+        guard let display = owners.lazy.map({ $0.frame }).first(where: { frame in
             guard frame.origin == .zero, !frame.isEmpty, !frame.isInfinite else { return false }
             let scale = (pixels.width / frame.width).rounded()
             return scale >= 1 && abs(pixels.width - scale * frame.width) <= 1 &&
