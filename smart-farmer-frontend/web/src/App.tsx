@@ -140,6 +140,20 @@ export function App() {
   }
   function lock() {setVault(null); setNotice(''); setRecordProject(null);}
   if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(v.snapshot().language); showPage(destination(location).page); setNotice('');}}/>;
+  const joinFarmForm = <form className="form-grid" aria-label={t.join} onSubmit={async e => {
+    e.preventDefault();
+    if (busy || !online) return;
+    const form = e.currentTarget;
+    const token = String(new FormData(form).get('token') ?? '').trim();
+    await run(async () => {
+      await call('/v1/invitations/accept', jsonBody({token}));
+      form.reset();
+      await refresh();
+    }, t.saved);
+  }}>
+    <Field label={t.invitationToken}><input name="token" required autoComplete="off" spellCheck={false}/></Field>
+    <button className="primary" disabled={!online || busy}>{t.join}</button>
+  </form>;
   const navigation = viewer ? [] : ['today', 'farm', 'market', 'services', 'forum', 'more'] as const;
   const navPage = ['stock', 'tasks', 'equipment', 'people', 'reports', 'accounting', 'incidents', 'sync', 'security', 'notifications', 'weather', 'maintenance', 'locations', 'settings'].includes(page) ? 'more' : page;
   return <div className="app-shell"><header className="app-header"><div className="brand"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></div><div className="header-actions"><span className="current-user"><Icon name="people" size={16}/>{snapshot.identity.username}</span><select className="language-select" aria-label={t.language} value={lang} onChange={e => void changeLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select><button className="icon-button" title={t.lock} aria-label={t.lock} onClick={lock}><Icon name="lock" size={18}/></button></div></header>
@@ -150,27 +164,14 @@ export function App() {
       {snapshot.requiresAuth && <div className="notice warning"><span>{t.sessionExpired}</span><button className="text-button" onClick={lock}>{t.signIn}</button></div>}
       {notice && <div className="notice" role="status"><span>{notice}</span><button className="icon-button" aria-label={t.close} onClick={() => setNotice('')}><Icon name="close" size={16}/></button></div>}
       {busy && <div className="working-line" role="status">{t.working}</div>}
-      {page === 'account-deletion' ? <AccountDeletion key={snapshot.identity.userId} call={call} t={t} online={online} onBack={() => setPage('more')}/> : viewer ? <ViewerOverview key={`${snapshot.identity.userId}:${farm.id}`} farm={farm} lang={lang} t={t} call={call} online={online} accountDeletion={() => setPage('account-deletion')} logout={() => void logout()}/> : farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: (nextPage, options) => {setAccountingTarget(options?.invoiceId ? {farmId: farm.id, userId: snapshot.identity.userId, invoiceId: options.invoiceId} : null); setPage(nextPage);}, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
+      {page === 'account-deletion' ? <AccountDeletion key={snapshot.identity.userId} call={call} t={t} online={online} onBack={() => setPage('more')}/> : viewer ? <ViewerOverview key={`${snapshot.identity.userId}:${farm.id}`} farm={farm} lang={lang} t={t} call={call} online={online} accountDeletion={() => setPage('account-deletion')} logout={() => void logout()}>{joinFarmForm}</ViewerOverview> : farm ? <Context.Provider key={`${farm.id}:${farm.role}`} value={{snapshot, vault, farm, data: farmData, t, lang, online, uploadProgress, busy, manager, call, run, refresh, enqueue, sync, navigate: (nextPage, options) => {setAccountingTarget(options?.invoiceId ? {farmId: farm.id, userId: snapshot.identity.userId, invoiceId: options.invoiceId} : null); setPage(nextPage);}, record: id => setRecordProject(id ?? ''), notify: setNotice}}>
         {page === 'today' && <Today/>}{page === 'farm' && <Projects/>}{page === 'tasks' && <Tasks/>}{page === 'incidents' && <Incidents/>}{page === 'stock' && <StockPage/>}{page === 'reports' && <FinancialReports/>}{page === 'accounting' && <Suspense fallback={<p role="status">{t.loading}</p>}><Accounting initialInvoiceId={accountingTarget?.farmId === farm.id && accountingTarget.userId === snapshot.identity.userId ? accountingTarget.invoiceId : undefined}/></Suspense>}{page === 'equipment' && <Equipment/>}{page === 'security' && <Security/>}{page === 'market' && <Market/>}{page === 'services' && <Services/>}{page === 'people' && <People/>}{page === 'locations' && <Locations/>}{page === 'weather' && <Weather/>}{page === 'notifications' && <Notifications/>}{page === 'maintenance' && <Maintenance/>}{page === 'settings' && <FarmSettings/>}{page === 'more' && <More onLogout={() => void logout()} onLock={lock}/>} {page === 'sync' && <SyncPage/>}
         {page === 'forum' && <Forum/>}
         {recordProject !== null && <RecordActivity initialProject={recordProject} onClose={() => setRecordProject(null)}/>}
         {farmData.projects.length > 0 && recordProject === null && page !== 'market' && page !== 'services' && page !== 'accounting' && page !== 'forum' && <button className="record-fab" onClick={() => setRecordProject('')}><Icon name="plus" size={21}/><span>{t.record}</span></button>}
       </Context.Provider> : snapshot.membershipsChecked && !snapshot.requiresAuth ? <section className="panel">
         <h1>{t.join}</h1><p>{t.noFarmMembership}</p>
-        <form className="form-grid" aria-label={t.join} onSubmit={async e => {
-          e.preventDefault();
-          if (busy || !online) return;
-          const form = e.currentTarget;
-          const token = String(new FormData(form).get('token') ?? '').trim();
-          await run(async () => {
-            await call('/v1/invitations/accept', jsonBody({token}));
-            form.reset();
-            await refresh();
-          }, t.saved);
-        }}>
-          <Field label={t.invitationToken}><input name="token" required autoComplete="off" spellCheck={false}/></Field>
-          <button className="primary" disabled={!online || busy}>{t.join}</button>
-        </form>
+        {joinFarmForm}
         <form className="form-grid first-farm" aria-label={t.createFirstFarm} noValidate onSubmit={e => {
           e.preventDefault();
           if (!online || busy) return;

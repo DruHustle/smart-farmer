@@ -1,9 +1,9 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type ReactNode} from 'react';
 import {displayTime} from '../lib/time';
 import {errorLabel, label, type Words} from '../locales';
 import type {Farm, Lang} from '../types';
 import type {FarmContext} from '../context';
-import {PageHead, Section} from '../components/ui';
+import {ExpandForm, PageHead, Section} from '../components/ui';
 
 type Overview = {
   projects: {id: string; name: string; enterprise_type: string; status: string}[];
@@ -12,9 +12,9 @@ type Overview = {
   incidents: {id: string; title: string; severity: string; status: string}[];
 };
 
-export function ViewerOverview({farm, lang, t, call, online, accountDeletion, logout}: {
+export function ViewerOverview({farm, lang, t, call, online, accountDeletion, logout, children}: {
   farm: Farm; lang: Lang; t: Words; call: FarmContext['call']; online: boolean;
-  accountDeletion: () => void; logout: () => void;
+  accountDeletion: () => void; logout: () => void; children: ReactNode;
 }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -45,6 +45,7 @@ export function ViewerOverview({farm, lang, t, call, online, accountDeletion, lo
     {sections.map(({title, items}) => <Section key={title} title={title}>
       {items.length ? <ul>{items.map(item => <li key={item.id}><strong>{item.title}</strong> · {item.summary}</li>)}</ul> : <p>{t.noData}</p>}
     </Section>)}
+    <ExpandForm title={t.join}>{children}</ExpandForm>
     <div className="header-actions">
       <button type="button" className="text-button" onClick={accountDeletion}>{t.deletionTitle}</button>
       <button type="button" className="text-button" onClick={logout}>{t.logout}</button>

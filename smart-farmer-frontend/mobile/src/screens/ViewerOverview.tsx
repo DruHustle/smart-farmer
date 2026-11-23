@@ -11,8 +11,8 @@ import { AccountDeletion } from './AccountDeletion';
 
 type Overview = Record<'projects' | 'tasks' | 'stock' | 'incidents', Row[]>;
 
-export function ViewerOverview({ work, language, logout, lock }: {
-  work: Workspace; language: Language; logout: () => void; lock: () => void;
+export function ViewerOverview({ work, language, logout, lock, children }: {
+  work: Workspace; language: Language; logout: () => void; lock: () => void; children: React.ReactNode;
 }) {
   const t = textFor(language);
   const {value, loading, reload} = usePanel(work, 'viewer-overview', () =>
@@ -31,6 +31,7 @@ export function ViewerOverview({ work, language, logout, lock }: {
     {value && !unavailable && sections.map(section => <Card key={section.key} title={section.title}>
       <Records items={value[section.key]} titleKey={section.titleKey} fields={[...section.fields]} language={language} timezone={timezone}/>
     </Card>)}
+    {children}
     <AccountDeletion work={work} language={language}/>
     <Button secondary title={t.lock} onPress={lock}/>
     <Button secondary title={t.logout} onPress={logout}/>
