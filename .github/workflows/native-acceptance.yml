@@ -12,9 +12,9 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'smart-farmer-frontend/web/vercel.json', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
   pull_request:
-    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
+    paths: ['smart-farmer-frontend/mobile/**', 'smart-farmer-backend/**', 'smart-farmer-frontend/web/src/Auth.tsx', 'smart-farmer-frontend/web/src/lib/native-return.ts', 'smart-farmer-frontend/web/vercel.json', 'scripts/portal-device-fixture.mjs', 'scripts/device-fixture/**', '.github/workflows/native-acceptance.yml', '!smart-farmer-backend/docs/**', '!smart-farmer-backend/*.md', '!smart-farmer-backend/edge/*.md', '!smart-farmer-frontend/mobile/*.md']
 permissions:
   contents: read
 env:
@@ -115,7 +115,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DruHustle/onesa-portal
-          ref: 5732299004dccef89df144e0ff8362d2342b3a94
+          ref: 58c87dd2288c6935a3b20e53090351e2e6b988ce
           path: qualification-portal
           persist-credentials: false
       - name: Install real Portal and browser callback dependencies
@@ -180,7 +180,7 @@ jobs:
         # spending three simulator jobs on code unrelated to the failure.
         # Remove [ios-onesa-only] and requalify all suites before merging.
         suite: ${{ fromJSON((contains(github.event.pull_request.body, '[ios-onesa-only]') || (github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics)) && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: ${{ matrix.suite == 'onesa' && 105 || 75 }}
     concurrency:
       group: native-ios-${{ matrix.suite }}-${{ github.ref }}
@@ -189,6 +189,7 @@ jobs:
       DATABASE_URL: postgresql://native_ci@127.0.0.1:5432/smart_farmer_test
       IOS_CONFIGURATION: ${{ matrix.suite == 'onesa' && 'Release' || 'Debug' }}
       EXPO_PUBLIC_API_URL: ${{ matrix.suite == 'onesa' && 'https://127.0.0.1:46502' || 'http://127.0.0.1:3001' }}
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: '60000'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -267,7 +268,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DruHustle/onesa-portal
-          ref: 5732299004dccef89df144e0ff8362d2342b3a94
+          ref: 58c87dd2288c6935a3b20e53090351e2e6b988ce
           path: qualification-portal
           persist-credentials: false
       - name: Install real Portal and browser callback dependencies
@@ -292,7 +293,7 @@ jobs:
         # the 240s deadline (observed late server boot with zero UI commands).
         # Allow the actual driver to finish booting; retain all real journey asserts.
         env:
-          MAESTRO_DRIVER_STARTUP_TIMEOUT: ${{ matrix.suite == 'tablet' && '360000' || '240000' }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '600000'
           NATIVE_SUITE: ${{ matrix.suite }}
           NATIVE_TABLET_SEPARATE: '1'
         run: |

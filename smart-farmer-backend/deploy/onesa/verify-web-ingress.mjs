@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 const [origin, revision, expectedIssuer = 'https://portal.onesa.eu/api/v1/identity'] = process.argv.slice(2);
 if (!origin || !/^[0-9a-f]{40}$/.test(revision ?? '')) {
-  throw new Error('Usage: node verify-web-ingress.mjs <public-origin> <full-reviewed-git-sha> [expected-portal-issuer]');
+  throw new Error('Usage: node verify-web-ingress.mjs <public-origin> <full-reviewed-git-sha> [expected-issuer]');
 }
 const base = new URL(origin);
 assert.equal(base.origin, origin, 'use an origin without credentials or a path');
@@ -26,7 +26,15 @@ for (const path of ['/version', '/release.json']) {
   console.log(path + ' matched ' + revision);
 }
 const identity = await json('/v1/onesa/config');
-assert.ok(typeof identity.clientId === 'string' && identity.clientId.length > 0, 'Farmer Portal client is unavailable');
-assert.equal(identity.issuer, expectedIssuer, 'Farmer reported an unexpected Portal issuer');
-assert.equal(identity.callback, new URL('/auth/onesa/callback', base).href, 'Farmer Portal callback differs from this origin');
-console.log('Farmer reported its Portal client and the callback on this origin');
+assert.ok(typeof identity.clientId === 'string' && identity.clientId.length > 0, 'Farmer Onesa client is unavailable');
+assert.equal(identity.issuer, expectedIssuer, 'Farmer reported an unexpected Onesa issuer');
+assert.equal(identity.callback, new URL('/auth/onesa/callback', base).href, 'Farmer Onesa callback differs from this origin');
+if (expectedIssuer === 'https://auth.onesa.eu/') {
+  assert.ok(typeof identity.audience === 'string' && identity.audience.length > 0 &&
+    identity.audience !== identity.clientId, 'Managed Farmer API audience is unavailable');
+  assert.ok(typeof identity.nativeClientId === 'string' && identity.nativeClientId.length > 0 &&
+    identity.nativeClientId !== identity.clientId && identity.nativeClientId !== identity.audience,
+    'Managed Farmer native client must be distinct from the web client and API audience');
+  console.log('Managed Farmer Auth0 audience and distinct public native client are configured');
+}
+console.log('Farmer reported its Onesa client and the callback on this origin');

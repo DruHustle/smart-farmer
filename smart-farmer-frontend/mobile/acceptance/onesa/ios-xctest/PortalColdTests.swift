@@ -11,6 +11,7 @@ final class PortalColdTests: XCTestCase {
 
     private var currentCheckpoint: Checkpoint = .fixture
     private var retainedCancelFrame = false
+    private var cancelRevealAttempted = false
 
     // Only these fixed names leave the runner. Never print a field, URL or assertion payload.
     private func checkpoint(_ value: Checkpoint) {
@@ -636,6 +637,29 @@ final class PortalColdTests: XCTestCase {
         return renderedAction(labels: ["rememberedAccount"], landmarks: ["Sign in to Onesa"])
     }
 
+    // A real iOS Safari browser-toolbar overlay can obscure the issuer's
+    // genuine Cancel sign-in button at the bottom of the scrollable page.
+    // One verified gesture may expose it, but never submits credentials,
+    // fabricates a callback, or relaxes the denied-session assertions.
+    @MainActor private func revealObscuredCancel(_ element: XCUIElement, owner: XCUIApplication) {
+        guard currentCheckpoint == .consent,
+              ProcessInfo.processInfo.environment["FARMER_ROLE"] == "cancel",
+              !cancelRevealAttempted, element.exists, element.isEnabled,
+              !element.isHittable else { return }
+        let display = app.state == .runningForeground ? app : owner
+        guard display.state == .runningForeground else { return }
+        let frame = element.frame, bounds = display.frame
+        guard !frame.isEmpty, !frame.isInfinite, bounds.contains(frame),
+              frame.minY > bounds.minY + bounds.height * 0.75 else { return }
+        let title = owner.descendants(matching: .any)["Sign in to Onesa"].firstMatch
+        let remember = owner.descendants(matching: .any)["Remember this browser"].firstMatch
+        guard title.exists, remember.exists, owner.webViews.firstMatch.exists else { return }
+        cancelRevealAttempted = true
+        let start = display.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: 0.73))
+        let finish = display.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: 0.39))
+        start.press(forDuration: 0.15, thenDragTo: finish)
+    }
+
     @MainActor private func portalCancel() -> BrowserAction? {
         // The localized issuer is real WebKit UI, not a synthetic callback.
         // XCUITest may expose it under SafariViewService or the foreground app.
@@ -652,8 +676,12 @@ final class PortalColdTests: XCTestCase {
             ]
             for (query, kind) in candidates {
                 let element = query.firstMatch
-                guard controlReady(element, phase: .cancel, owner: ownerName, control: kind),
-                      query.count == 1, element.isEnabled else { continue }
+                let hittable = controlReady(element, phase: .cancel, owner: ownerName, control: kind)
+                guard query.count == 1, element.exists, element.isEnabled else { continue }
+                if !hittable {
+                    revealObscuredCancel(element, owner: owner)
+                    continue
+                }
                 // The remote WebKit button can be hittable while element.tap()
                 // fails resolving its activation point. Tap its verified live
                 // bounds through the foreground window, as for WebKit fields.

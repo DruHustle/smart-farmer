@@ -59,6 +59,24 @@ run_native_login() {
   if maestro --device "$device" test --format junit --output "$report" --debug-output "$EVIDENCE/$label" --flatten-debug-output --test-output-dir "$EVIDENCE/$label" "$NATIVE_DIR/acceptance/$flow.yaml"; then
     return 0
   fi
+  # Observed iPhone initial sign-in, iPhone reconciliation and clean iPad
+  # initial sign-in can lose the same username character before password entry.
+  # Require the exact original UI receipt; never replay an auth submission.
+  if { [[ "$layout" == iphone && "$label" == ios-login && "$flow" == login ]] ||
+       [[ "$layout" == iphone && "$label" == ios-reconcile-login && "$flow" == reconcile-signin ]] ||
+       [[ "$layout" == ipad && "$label" == ipad-large-font && "$flow" == login ]]; } &&
+     python3 "$NATIVE_DIR/acceptance/ios-reconcile-username.py" "$report" \
+       "$EVIDENCE/$label/$flow/commands.json" "$EVIDENCE/$label/$flow/screen-hierarchy"; then
+    mv "$report" "$EVIDENCE/$label-before-username-retry.xml" || return 1
+    maestro --device "$device" test --no-reinstall-driver --format junit \
+      --output "$EVIDENCE/$label-username-retry.xml" \
+      --test-output-dir "$EVIDENCE/$label-username-retry" \
+      "$NATIVE_DIR/acceptance/credentials.yaml" || return 1
+    maestro --device "$device" test --no-reinstall-driver --format junit \
+      --output "$report" --test-output-dir "$EVIDENCE/$label-recovered-session" \
+      "$NATIVE_DIR/acceptance/record-after-login.yaml"
+    return $?
+  fi
   if [[ "$flow" == login ]] &&
      python3 "$NATIVE_DIR/acceptance/ios-driver-startup.py" "$EVIDENCE" "$label" "$device"; then
     # Before credentials, retry the complete startup once with its original evidence.
@@ -226,6 +244,13 @@ printf '%s\n' 'Apple Simulator imported the synthetic invoice into Photos before
 xcrun simctl install "$NATIVE_PHONE" "$NATIVE_APP"
 start_native_log "$NATIVE_PHONE" ios-phone
 run_native_login "$NATIVE_PHONE" iphone ios-login
+if [[ "$NATIVE_SUITE" == farm ]]; then
+  # CI run 44905808303 demonstrated a native Apple Save Password? sheet
+  # covering the Forum tab after login. Maestro could not see the overlay.
+  # XCTest dismisses ONLY the exact Apple sheet, then verifies the existing
+  # authenticated tab-record before any offline/private mutation occurs.
+  bash "$NATIVE_DIR/acceptance/ios-dismiss-native-password-sheet.sh" "$NATIVE_PHONE" iphone
+fi
 if [[ "$NATIVE_SUITE" == invoice ]]; then
   # Independent clean install and seeded API. The full farm suite below keeps
   # its original order, including all product and accounting assertions.

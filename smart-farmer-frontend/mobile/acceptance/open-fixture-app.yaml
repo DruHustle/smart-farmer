@@ -37,6 +37,22 @@ appId: eu.onesa.smartfarmer
     visible: Close
     timeout: 20000
 - tapOn: Close
+# iPad iOS 26.4 receipt: after Expo's initial Continue/Close, a second
+# *developer-only* tutorial covered the genuine signed-out Farmer form.
+# Only dismiss that exact observed tutorial; never touch auth/session controls.
+- runFlow:
+    label: Dismiss the observed Expo developer-menu tutorial on iOS
+    when:
+      platform: iOS
+      visible: '^This is the developer menu\. It gives you access to useful tools in development builds\.$'
+    commands:
+      - tapOn:
+          text: '^Continue$'
+      - runFlow:
+          when:
+            visible: '^Close$'
+          commands:
+            - tapOn: '^Close$'
 - extendedWaitUntil:
     visible:
       id: auth-username
