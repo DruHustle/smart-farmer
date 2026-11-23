@@ -181,9 +181,9 @@ jobs:
         # Remove [ios-onesa-only] and requalify all suites before merging.
         suite: ${{ fromJSON((contains(github.event.pull_request.body, '[ios-onesa-only]') || (github.event_name == 'workflow_dispatch' && inputs.ios_onesa_diagnostics)) && '["onesa"]' || ((inputs.ios_invoice || contains(github.event.pull_request.body, '[ios-invoice-replay]')) && '["farm","onesa","invoice","tablet"]' || '["farm","onesa","tablet"]')) }}
     runs-on: macos-26-intel
-    # The full iPad journey can spend time resolving the genuine OS Passwords
-    # sheet. Keep its product assertions within the same budget as iPhone SSO.
-    timeout-minutes: ${{ (matrix.suite == 'onesa' || matrix.suite == 'tablet') && 105 || 75 }}
+    # Full product journeys can spend time resolving the genuine OS Passwords
+    # sheet before continuing through offline restart and the remaining checks.
+    timeout-minutes: ${{ matrix.suite == 'invoice' && 75 || 105 }}
     concurrency:
       group: native-ios-${{ matrix.suite }}-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
