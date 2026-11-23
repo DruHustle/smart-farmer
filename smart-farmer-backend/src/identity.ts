@@ -137,7 +137,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context, localCredenti
   app.get('/v1/farms/:farmId/members',async(req,reply)=>{const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id))throw new ApiError('not_found',404);const r=await db.query('SELECT u.id,u.username,m.role FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.farm_id=$1 ORDER BY u.username',[farmId]);return {items:r.rows};});
   app.post('/v1/farms/:farmId/invitations',async(req,reply)=>{
     const id=await user(req,reply);if(!id)return;const {farmId}=farmParams.parse(req.params);if(!await member(farmId,id,manageRoles))throw new ApiError('not_found',404);
-    const b=z.object({role:z.enum(['manager','worker','adviser']),expiresInHours:z.number().int().min(1).max(168).default(72)}).strict().parse(req.body);
+    const b=z.object({role:z.enum(['manager','worker','adviser','viewer']),expiresInHours:z.number().int().min(1).max(168).default(72)}).strict().parse(req.body);
     if(b.role==='manager'&&!await member(farmId,id,['owner']))throw new ApiError('owner_required',403);
     const invitationId=randomUUID(),value=token(),expiresAt=new Date(Date.now()+b.expiresInHours*3_600_000).toISOString();
     await db.query('INSERT INTO invitations(id,farm_id,token_hash,role,created_by,expires_at) VALUES($1,$2,$3,$4,$5,$6)',[invitationId,farmId,sha256(value),b.role,id,expiresAt]);
@@ -184,7 +184,7 @@ export function registerIdentity(app:FastifyInstance, ctx:Context, localCredenti
   });
   app.patch('/v1/farms/:farmId/members/:userId',async(req,reply)=>{
     const id=await user(req,reply,true);if(!id)return;const {farmId,userId}=z.object({farmId:uuid,userId:uuid}).parse(req.params);if(!await member(farmId,id,['owner']))throw new ApiError('not_found',404);
-    const b=z.object({role:z.enum(['owner','manager','worker','adviser'])}).strict().parse(req.body);
+    const b=z.object({role:z.enum(['owner','manager','worker','adviser','viewer'])}).strict().parse(req.body);
     await transaction(async c=>{
       const previous=await lockMembershipChange(c,farmId,id,userId,b.role);
       await c.query('UPDATE memberships SET role=$3 WHERE farm_id=$1 AND user_id=$2',[farmId,userId,b.role]);

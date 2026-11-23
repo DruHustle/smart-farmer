@@ -39,3 +39,81 @@ test('farm isolation, unknown crop facts and idempotent field records', async()=
  } finally {await app.close();await db.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}
 });
 
+test('a viewer invitation grants only the selected farm overview, including after an active role changes', async () => {
+ const schema = `viewer_${randomUUID().replaceAll('-', '')}`;
+ const admin = new pg.Pool({connectionString: url});
+ await admin.query(`CREATE SCHEMA ${schema}`);
+ const db = new pg.Pool({connectionString: url, options: `-c search_path=${schema}`});
+ const app = buildApp(db, 'http://localhost:5173');
+ try {
+  for (const name of (await readdir(new URL('../migrations/', import.meta.url))).filter(name => name.endsWith('.sql')).sort()) {
+   await db.query(await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
+  }
+  async function register(username: string) {
+   const password = 'viewer-fixture-password';
+   const registration = await app.inject({method: 'POST', url: '/v1/register',
+    payload: {username, password, language: 'sn', farmName: username}});
+   assert.equal(registration.statusCode, 201, registration.body);
+   const signIn = await app.inject({method: 'POST', url: '/v1/sessions', payload: {username, password}});
+   assert.equal(signIn.statusCode, 200, signIn.body);
+   return {userId: registration.json().userId, farmId: registration.json().farmId,
+    headers: {authorization: `Bearer ${signIn.json().token}`}};
+  }
+  const owner = await register('viewer_test_owner');
+  const viewer = await register('viewer_test_member');
+  const unrelated = await register('viewer_test_unrelated');
+  const farm = `/v1/farms/${owner.farmId}`;
+  const project = await app.inject({method: 'POST', url: farm + '/projects', headers: owner.headers,
+   payload: {name: 'Maize trial', crop: 'maize', objective: 'Internal notes'}});
+  assert.equal(project.statusCode, 201, project.body);
+  const stock = await app.inject({method: 'POST', url: farm + '/stock', headers: owner.headers,
+   payload: {id: randomUUID(), name: 'Seed store', unit: 'kg', quantity: 12.5, unitCost: 16, currency: 'USD'}});
+  assert.equal(stock.statusCode, 201, stock.body);
+  const invite = await app.inject({method: 'POST', url: farm + '/invitations', headers: owner.headers, payload: {role: 'viewer'}});
+  assert.equal(invite.statusCode, 201, invite.body);
+  const accept = await app.inject({method: 'POST', url: '/v1/invitations/accept', headers: viewer.headers, payload: {token: invite.json().token}});
+  assert.equal(accept.statusCode, 201, accept.body);
+  const farms = await app.inject({url: '/v1/farms', headers: viewer.headers});
+  assert.equal(farms.json().items.find((item: {id: string}) => item.id === owner.farmId).role, 'viewer');
+
+  const overview = farm + '/viewer-overview';
+  const response = await app.inject({url: overview, headers: viewer.headers});
+  assert.equal(response.statusCode, 200, response.body);
+  const {projects, stock: stockSummary, incidents, tasks} = response.json();
+  assert.deepEqual(projects, [{id: project.json().id, name: 'Maize trial', enterprise_type: 'crop', status: 'active'}]);
+  assert.equal(stockSummary[0].name, 'Seed store');
+  assert.equal(Number(stockSummary[0].quantity), 12.5);
+  assert.deepEqual(Object.keys(stockSummary[0]).sort(), ['id', 'name', 'quantity', 'unit']);
+  assert.deepEqual(incidents, []);
+  assert.deepEqual(tasks, []);
+  assert.equal((await app.inject({url: overview})).statusCode, 401);
+  assert.equal((await app.inject({url: overview, headers: unrelated.headers})).statusCode, 404);
+  assert.equal((await app.inject({url: overview, headers: owner.headers})).statusCode, 404);
+  for (const route of ['/projects', '/members', '/assets', '/notifications', '/forum/discussions']) {
+   assert.equal((await app.inject({url: farm + route, headers: viewer.headers})).statusCode, 404, route);
+  }
+  const observation = {
+   id: randomUUID(), projectId: project.json().id, kind: 'observation',
+   observedAt: '2026-11-03T10:00:00Z', note: 'Recorded by an adviser',
+  };
+  const read = (path: string) => app.inject({url: path, headers: viewer.headers});
+  const write = () => app.inject({method: 'POST', url: farm + '/activities', headers: viewer.headers, payload: observation});
+  assert.equal((await write()).statusCode, 404);
+  const changeRole = (role: string) => app.inject({method: 'PATCH', url: farm + '/members/' + viewer.userId, headers: owner.headers, payload: {role}});
+  assert.equal((await changeRole('adviser')).statusCode, 200);
+  assert.equal((await read(overview)).statusCode, 404);
+  assert.equal((await write()).statusCode, 201);
+  assert.equal((await changeRole('viewer')).statusCode, 200);
+  assert.equal((await write()).statusCode, 404);
+  assert.equal((await read(overview)).statusCode, 200);
+  const removal = await app.inject({method: 'DELETE', url: farm + '/members/' + viewer.userId, headers: owner.headers});
+  assert.equal(removal.statusCode, 204, removal.body);
+  assert.equal((await read(overview)).statusCode, 404);
+ } finally {
+  await app.close();
+  await db.end();
+  await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+  await admin.end();
+ }
+});
+

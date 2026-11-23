@@ -28,7 +28,7 @@ type Entry = {
   mine:boolean; source_member:boolean; can_moderate:boolean; reply_count?:string; cursor_time:string;
 };
 const projection = `e.*,to_char(e.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time,e.author_id=$1 AS mine,
- EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id) AS source_member,
+ EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id AND m.role<>'viewer') AS source_member,
  (e.farm_id=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=$1 AND m.farm_id=e.farm_id AND m.role='owner')) AS can_moderate`;
 // Ordinary reads and interactions respect the block in both directions, across farm memberships.
 function mayInteract(author: 'e.author_id' | 'r.author_id', viewer = '$1') {
@@ -72,12 +72,13 @@ export function registerForum(app:FastifyInstance,ctx:Context) {
     const session=await c.query('SELECT user_id FROM sessions WHERE token_hash=$1 AND user_id=$2 AND expires_at>now() FOR SHARE',[sha256(req.headers.authorization!.slice(7)),actor]);
     if(!session.rowCount)throw new ApiError('unauthorized',401);
     const membership=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2 FOR SHARE',[farmId,actor]);
-    if(!membership.rowCount||(owner&&membership.rows[0].role!=='owner'))throw new ApiError('not_found',404);
+    const role=membership.rows[0]?.role;
+    if(!role||role==='viewer'||(owner&&role!=='owner'))throw new ApiError('not_found',404);
   }
   async function authorAccess(c:pg.PoolClient,e:Entry,actor:string) {
     if(e.author_id!==actor)throw new ApiError('not_found',404);
     const membership=await c.query('SELECT role FROM memberships WHERE farm_id=$1 AND user_id=$2 FOR SHARE',[e.farm_id,actor]);
-    if(!membership.rowCount)throw new ApiError('not_found',404);
+    if(!membership.rowCount||membership.rows[0].role==='viewer')throw new ApiError('not_found',404);
     if(e.status==='deleted')throw new ApiError('forum_content_removed',409);
   }
   const base='/v1/farms/:farmId/forum';

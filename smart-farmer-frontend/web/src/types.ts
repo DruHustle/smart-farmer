@@ -1,5 +1,5 @@
 export type Lang = 'sn' | 'nd';
-export type Role = 'owner' | 'manager' | 'worker' | 'adviser';
+export type Role = 'owner' | 'manager' | 'worker' | 'adviser' | 'viewer';
 export type Enterprise = 'crop' | 'broiler' | 'layer' | 'breeder' | 'hatchery' | 'rabbit_breeding' | 'rabbit_growout' | 'fish' | 'fish_nursery' | 'fish_breeder' | 'fish_hatchery';
 export type Farm = {id: string; name: string; timezone: string; role: Role};
 export type Member = {id: string; username: string; role: Role};
