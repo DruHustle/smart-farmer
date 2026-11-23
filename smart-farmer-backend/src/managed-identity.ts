@@ -56,10 +56,12 @@ export async function managedAccount(config:Config, token:string, expectedId?:st
   const stable = z.uuid().safeParse(payload[claim+'user_id']);
   const products = z.array(z.string()).safeParse(payload[claim+'products']);
   const roles = z.array(z.string()).safeParse(payload[claim+'roles']);
-  const mfaTime = payload[claim+'mfa_time'];
   const now = Math.floor(Date.now()/1000);
+  const factor = payload[claim+'mfa_time'];
+  const mfaTime = typeof factor === 'number' && Number.isSafeInteger(factor) &&
+    factor > 0 && factor <= now && factor <= payload.iat! ? factor : undefined;
   if (roles.success && roles.data.some(role => role === 'admin' || role === 'administrator') &&
-      (typeof mfaTime !== 'number' || !Number.isSafeInteger(mfaTime) || mfaTime > now || now-mfaTime >= 300)) {
+      (mfaTime === undefined || now-mfaTime >= 300)) {
     throw new ApiError('unauthorized',401);
   }
   if (!stable.success || !products.success || !products.data.includes('farmer') || !roles.success ||

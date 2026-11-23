@@ -4,9 +4,10 @@ import {completionPhrases} from './completion-locales.ts';
 import {nodeRedPhrases} from './node-red-locales.ts';
 import {accountingPhrases} from './accounting-locales.ts';
 import {trackingMarketPhrases} from './tracking-market-locales.ts';
+import {previewPhrases} from './preview-locales.ts';
 /** Preliminary translations; agricultural terminology requires native-speaker review. */
 export const phrases = {
-  ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases, ...trackingMarketPhrases,
+  ...validationPhrases, ...completionPhrases, ...accountingPhrases, ...nodeRedPhrases, ...trackingMarketPhrases, ...previewPhrases,
   language: ['Mutauro', 'Ulimi'],
   farmerApps: ['Maapp eSmart Farmer', 'Ama-app eSmart Farmer'],
   notPublished: ['Haisati yaburitswa', 'Ayikakhitshwa'],

@@ -15,6 +15,7 @@ import {trackingJourneys} from './browser-tracking.mjs';
 import {nodeRedJourneys} from './browser-node-red.mjs';
 import {catalog} from '../src/locales.ts';
 import { registrationJourney } from './browser-registration.mjs';
+import {guestJourney, previewJourney} from './browser-preview.mjs';
 import {appStoreListings} from '../src/components/app-store-listings.ts';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -126,6 +127,9 @@ try {
   pass('Localized return links have a 44px touch target and open the native callback on phones');
   await registrationJourney(browser, ui, api, sn.createOnesaAccount,'user');
   await registrationJourney(browser, ui, api, sn.requestOnesaAdmin,'admin');
+  checkpoint('Signed-out feature preview returns to the chosen feature');
+  await previewJourney(browser, ui, api, catalog);
+  pass('Signed-out visitors see six labelled feature samples without credentials or errors; a feature action signs in and returns to it (sn desktop, nd 320px)');
   const context = await browser.newContext({viewport: {width: 390, height: 844}, timezoneId: 'America/Los_Angeles'});
   watchContext(context); page = await context.newPage(); page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
   checkpoint('Register owner and acknowledge recovery code');
@@ -254,6 +258,9 @@ try {
   await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
   await trackingJourneys({page,context,api,apiCall,farm,token,sn,nd,unique,navigate,more,checkpoint,pass,artifacts});
+  checkpoint('Guests browse public market and service offers, then sign in to buy');
+  await guestJourney(browser, ui, api, catalog);
+  pass('Guests browse real market listings (shared link, search) and service offers without credentials or errors; buying signs in and returns to the same listing (nd desktop, sn 320px)');
 
   checkpoint('Phone and desktop notifications evidence');
   await more('notifications');

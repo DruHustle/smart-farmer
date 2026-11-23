@@ -428,10 +428,11 @@ try {
     owner.token,
   );
   const title = "Morning irrigation inspection";
+  const discussionId = randomUUID();
   await publicApi(
     base + "/forum/discussions",
     {
-      id: randomUUID(),
+      id: discussionId,
       displayName: "Fixture owner",
       topic: "irrigation",
       title,
@@ -465,6 +466,7 @@ try {
         FARM_ID: account.farmId,
         FARM_NAME: "Device Qualification Farm",
         FORUM_TITLE: title,
+        FORUM_DISCUSSION_ID: discussionId,
       },
       null,
       2,

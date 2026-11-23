@@ -45,7 +45,7 @@ appId: eu.onesa.smartfarmer
       - runFlow: ../forum-open.yaml
       - scrollUntilVisible:
           element:
-            id: '^forum-open-.*$'
+            id: '^forum-open-${FORUM_DISCUSSION_ID}$'
             text: '^${FORUM_TITLE}$'
           direction: DOWN
 - runFlow:
@@ -68,16 +68,17 @@ appId: eu.onesa.smartfarmer
           element: {id: forum-new, enabled: true}
           direction: DOWN
           timeout: 30000
-      # The discussion is below the topic and search controls. Scroll the
-      # compact viewport in short increments and require its exact title and ID.
+      # The discussion can enter the compact viewport below the filter controls.
+      # Avoid another centering swipe after the exact item enters the viewport.
       - scrollUntilVisible:
           element:
-            id: '^forum-open-.*$'
+            id: '^forum-open-${FORUM_DISCUSSION_ID}$'
             text: '^${FORUM_TITLE}$'
           direction: DOWN
           timeout: 45000
           speed: 35
-          centerElement: true
+          visibilityPercentage: 50
+          centerElement: false
       - assertVisible:
-          id: '^forum-open-.*$'
+          id: '^forum-open-${FORUM_DISCUSSION_ID}$'
           text: '^${FORUM_TITLE}$'

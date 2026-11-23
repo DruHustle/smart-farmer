@@ -132,7 +132,7 @@ for role in cancel member admin; do
     states=(cold active)
     if [[ "$platform" == android ]]; then
       prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
-      opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+      opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)" -e FORUM_DISCUSSION_ID="$(read_fixture FORUM_DISCUSSION_ID)")
     fi
   fi
   reference=''

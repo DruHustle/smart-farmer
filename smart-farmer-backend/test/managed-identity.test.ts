@@ -7,6 +7,34 @@ import {test} from 'node:test';
 import {exportJWK,generateKeyPair,SignJWT} from 'jose';
 import pg from 'pg';
 import {buildApp} from '../src/app.js';
+import {managedAccount,managedIdentity} from '../src/managed-identity.js';
+
+test('managed MFA evidence cannot postdate the access token', async () => {
+  const issuedAt=Math.floor(Date.now()/1000)-10;
+  const issuer=new URL('https://auth.onesa.eu/');
+  const audience='https://farmer.example.test/api', clientId='web-fixture';
+  const {privateKey,publicKey}=await generateKeyPair('RS256',{extractable:true});
+  const managed=managedIdentity({
+    ONESA_IDENTITY_AUDIENCE:audience,
+    ONESA_IDENTITY_CLIENT_ID:clientId,
+    ONESA_IDENTITY_NATIVE_CLIENT_ID:'native-fixture',
+    ONESA_IDENTITY_JWKS:JSON.stringify({keys:[{...await exportJWK(publicKey),kid:'test'}]}),
+    ONESA_IDENTITY_JWKS_EXPIRES_AT:String(issuedAt+3600),
+  },issuer,false);
+  const sign=(role:string,mfaTime:number)=>new SignJWT({
+    'https://onesa.eu/claims/user_id':randomUUID(),
+    'https://onesa.eu/claims/products':['farmer'],
+    'https://onesa.eu/claims/roles':[role],
+    'https://onesa.eu/claims/mfa_time':mfaTime,
+    azp:clientId,
+  }).setProtectedHeader({alg:'RS256',kid:'test'})
+    .setIssuer(issuer.href).setAudience(audience).setSubject('synthetic-user')
+    .setIssuedAt(issuedAt).setExpirationTime(issuedAt+180).sign(privateKey);
+  const config={issuer:issuer.href,clientId,managed};
+  assert.equal((await managedAccount(config,await sign('administrator',issuedAt))).mfaTime,issuedAt);
+  await assert.rejects(managedAccount(config,await sign('administrator',issuedAt+1)),/unauthorized/);
+  assert.equal((await managedAccount(config,await sign('user',issuedAt+1))).mfaTime,undefined);
+});
 
 test('managed browser and native sessions retain legacy records and survive an issuer outage until expiry', async t => {
   const now=()=>Math.floor(Date.now()/1000);
@@ -18,7 +46,7 @@ test('managed browser and native sessions retain legacy records and survive an i
   const clientId='web-pilot', nativeId='native-pilot', audience='https://api.farmer.onesa.eu';
   const origin='http://127.0.0.1:5173';
   const codes=new Set<string>();
-  let online=true, remaining=180, products=['farmer'], targetAudience=audience, idNonce=nonce;
+  let online=true, remaining=180, issuedAgo=0, products=['farmer'], targetAudience=audience, idNonce=nonce;
   let issuer='', role='user', mfaTime:number | undefined;
   const server=createServer(async(req,res)=>{
     const send=(status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
@@ -32,9 +60,10 @@ test('managed browser and native sessions retain legacy records and survive an i
         form.get('code_verifier')!==verifier || !codes.delete(form.get('code')??'') ||
         form.get('redirect_uri')!==origin+'/auth/onesa/callback') return send(400,{});
     const client=native ? nativeId : clientId;
+    const issuedAt=now()-issuedAgo;
     const issue=(claims:Record<string,unknown>,aud:string,expiry:number)=>new SignJWT(claims)
       .setProtectedHeader({alg:'RS256',kid:jwk.kid}).setIssuer(issuer).setSubject(providerSubject)
-      .setAudience(aud).setIssuedAt().setExpirationTime(now()+expiry).sign(privateKey);
+      .setAudience(aud).setIssuedAt(issuedAt).setExpirationTime(issuedAt+expiry).sign(privateKey);
     const access=await issue({
       'https://onesa.eu/claims/user_id':stableId,'https://onesa.eu/claims/products':products,
       'https://onesa.eu/claims/roles':[role],'https://onesa.eu/claims/mfa_time':mfaTime,azp:client,
@@ -102,6 +131,13 @@ test('managed browser and native sessions retain legacy records and survive an i
   mfaTime=now();const recent=await signin();
   // Fresh MFA permits the check to reach local Farmer ownership, which still rejects an adviser.
   assert.equal((await change(app,recent.json().token)).statusCode,404);
+  issuedAgo=10; mfaTime=now();
+  const mismatchedMfa=await signin();
+  assert.equal(mismatchedMfa.statusCode,200);
+  assert.equal((await change(app,mismatchedMfa.json().token)).json().error,'fresh_mfa_required');
+  role='administrator';
+  assert.equal((await signin()).statusCode,401);
+  issuedAgo=0;
   role='admin';mfaTime=undefined;
   assert.equal((await signin()).statusCode,401);
   role='administrator';

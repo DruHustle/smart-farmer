@@ -36,3 +36,14 @@ test('Cancellation tests complete translated denial text and remains signed out'
   assert.ok(flow.includes("id: first-farm-invitation"));
   assert.ok(flow.includes("id: tab-forum, selected: true"));
 });
+
+test('remembered sign-in verifies the exact seeded discussion without another centering swipe', () => {
+  const active = flow.split("true: ${FLOW_STATE === 'active'}")[1];
+  assert.ok(active);
+  const item = "id: '^forum-open-${FORUM_DISCUSSION_ID}$'";
+  const title = "text: '^${FORUM_TITLE}$'";
+  assert.equal(active.split(item).length - 1, 2);
+  assert.equal(active.split(title).length - 1, 2);
+  assert.match(active, /visibilityPercentage: 50\s+centerElement: false/);
+  assert.ok(active.indexOf('id: tab-forum, selected: true') < active.indexOf(item));
+});
