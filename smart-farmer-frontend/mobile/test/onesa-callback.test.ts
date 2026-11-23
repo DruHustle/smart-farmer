@@ -1,6 +1,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {PendingOnesaTransactions, nativeCode,type PendingOnesa} from '../src/onesa-callback';
+import {PendingOnesaTransactions, nativeCode, ownsRegistration, type PendingOnesa} from '../src/onesa-callback';
+
+test('a late registration return can restart sign-in only for its original Farmer API', () => {
+  const origin = 'https://farmer.example.test';
+  const receipt = JSON.stringify({origin, expires: 1000});
+  assert.equal(ownsRegistration(receipt, origin, 999), true);
+  assert.equal(ownsRegistration(receipt, origin, 1000), false);
+  assert.equal(ownsRegistration(receipt, 'https://other.example.test', 999), false);
+  assert.equal(ownsRegistration('{', origin, 999), false);
+  assert.equal(ownsRegistration(origin, origin, 999), true); // Existing SecureStore receipt.
+});
 
 test('an app return requires the original pending transaction, issuer, exact route and API',()=>{
   const origin='https://farmer-api.example.test', issuer='https://portal.example.test/api/v1/identity';
