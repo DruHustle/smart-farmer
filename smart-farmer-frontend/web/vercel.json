@@ -1,12 +1,20 @@
 {
   "framework": "vite",
   "rewrites": [
+    {"source": "/v1/:path*", "destination": "https://farmer-api.onesa.eu/v1/:path*"},
+    {"source": "/health", "destination": "https://farmer-api.onesa.eu/health"},
+    {"source": "/ready", "destination": "https://farmer-api.onesa.eu/ready"},
+    {"source": "/version", "destination": "https://farmer-api.onesa.eu/version"},
     {"source": "/auth/onesa/callback", "destination": "/index.html"},
     {"source": "/auth/registration/complete", "destination": "/index.html"},
     {"source": "/account-deletion", "destination": "/index.html"}
   ],
-  "headers": [{"source": "/auth/onesa/callback", "headers": [
-    {"key": "Referrer-Policy", "value": "no-referrer"},
-    {"key": "Cache-Control", "value": "no-store"}
-  ]}]
+  "headers": [
+    {"source": "/auth/onesa/callback", "headers": [
+      {"key": "Referrer-Policy", "value": "no-referrer"},
+      {"key": "Cache-Control", "value": "no-store"}
+    ]},
+    {"source": "/v1/:path*", "headers": [{"key": "x-vercel-enable-rewrite-caching", "value": "0"}]},
+    {"source": "/(health|ready|version)", "headers": [{"key": "x-vercel-enable-rewrite-caching", "value": "0"}]}
+  ]
 }

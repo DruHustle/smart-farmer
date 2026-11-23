@@ -42,7 +42,7 @@ Serve `dist/` using HTTPS in production. Localhost is supported for development.
 
 ### Private camera deployment
 
-Chrome/Firefox use a lazily loaded HLS player with short-lived, camera-session-scoped Bearer credentials. Requests outside the same API origin and session path are rejected by the player. Safari native HLS uses the backend's HttpOnly session cookie and therefore requires the website and API under the same HTTPS origin, normally through a reverse proxy for `/v1/`. The server rechecks membership and camera grants on every playlist and segment request. Private stream tokens, snapshots, and clips are never put into a public URL or browser cache. Switching farm or role unmounts the private viewers and revokes local blob URLs.
+Chrome/Firefox use a lazily loaded HLS player with short-lived, camera-session-scoped Bearer credentials. Requests outside the same API origin and session path are rejected by the player. Safari native HLS uses the backend's HttpOnly session cookie and therefore requires the website and API under the same HTTPS origin, normally through a reverse proxy for `/v1/`. The hosted Vercel site does this in `vercel.json`: it rewrites `/v1/*`, `/health`, `/ready` and `/version` to the API at `https://farmer-api.onesa.eu` (the dedicated Farmer tunnel) with rewrite caching disabled, so build it with `VITE_API_URL=https://farmer.onesa.eu`. `/release.json`, `/healthz` and application routes stay on the static deployment. The server rechecks membership and camera grants on every playlist and segment request. Private stream tokens, snapshots, and clips are never put into a public URL or browser cache. Switching farm or role unmounts the private viewers and revokes local blob URLs.
 
 ### Optional static container
 
