@@ -1,0 +1,6 @@
+appId: eu.onesa.smartfarmer
+---
+- runFlow: activate-ios.yaml
+- runFlow: product-market.yaml
+- runFlow: product-services.yaml
+- runFlow: product-security.yaml
