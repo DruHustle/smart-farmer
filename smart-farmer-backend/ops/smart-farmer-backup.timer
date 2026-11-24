@@ -1,8 +1,8 @@
 [Unit]
-Description=Daily encrypted Smart Farmer backup and isolated restore drill
+Description=Monthly encrypted Smart Farmer backup and isolated restore drill
 [Timer]
-OnCalendar=*-*-* 02:30:00 UTC
-RandomizedDelaySec=30m
+OnCalendar=*-*-08 02:15:00 UTC
+AccuracySec=1min
 Persistent=true
 Unit=smart-farmer-backup.service
 [Install]
