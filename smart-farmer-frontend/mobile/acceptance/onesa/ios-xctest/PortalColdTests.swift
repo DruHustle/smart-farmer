@@ -876,10 +876,10 @@ final class PortalColdTests: XCTestCase {
             self.app.state == .runningForeground && record.exists && record.isHittable
         }, seconds: 45), "Previously authenticated Farmer workspace must be usable")
         if !record.isSelected { record.tap() }
-        let project = app.descendants(matching: .any)["record-project"].firstMatch
+        // Maestro verifies the Record form after this native session.
         XCTAssertTrue(waitFor({
-            record.isSelected && project.exists && project.isHittable
-        }, seconds: 20), "Record must open with the authenticated farm's project selector")
+            record.isSelected
+        }, seconds: 20), "Record must be selected after the system password dialog closes")
     }
 
 }
