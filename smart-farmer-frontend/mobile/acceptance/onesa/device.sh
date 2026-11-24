@@ -62,8 +62,10 @@ ios_services_ready() {
   local endpoint family
   local families
   # A clean boot or runner handoff can temporarily starve either local API.
-  # Probe both real TLS routes before starting an authorization transaction.
-  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
+  # The account config can respond when the Portal database is unavailable.
+  # Also require the real database-backed readiness before authorization.
+  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/ready" \
+                  "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
                   "${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}/v1/onesa/config"; do
     families=(--ipv4)
     if [[ "$endpoint" == https://localhost:* ]]; then families+=(--ipv6); fi
@@ -176,6 +178,7 @@ for role in cancel member admin; do
     if [[ "$platform" == ios ]]; then
       # Raw logs, data, credentials and callbacks stay private to the runner.
       awk -v from="$portal_log_start" 'NR>from && NF==4 && $1=="ONESA_DEVICE_HTTP" && $2~/^(config|authorize|callback-page|session)$/ && $3~/^[1-5][0-9][0-9]$/ && $4~/^[0-9]+$/ && length($4)==13 { print }' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
+      awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_AUTHORIZE_ERROR (connection-reset|connection-refused|connection-timeout|database-capacity|database-statement-cancelled|database-shutdown|database-connect-timeout|unexpected)$/ {print}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
       awk -v from="$portal_log_start" 'NR>from && /^ONESA_DEVICE_PORTAL (login|continue|cancel) [1-5][0-9][0-9]$/ {print; seen=1} END {if (!seen) print "No Portal interaction submission response observed for this attempt."}' "$RUNNER_TEMP/onesa-device/fixture.log" | tee -a "$evidence/$platform-results.txt"
     fi
     if [[ "$passed" == false ]]; then break; fi

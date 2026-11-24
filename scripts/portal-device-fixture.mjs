@@ -362,7 +362,25 @@ try {
       "tsx",
       "--input-type=module",
       "-e",
-      "import {buildApp} from './src/app.ts';const app=await buildApp({logging:false});await app.listen({host:'127.0.0.1',port:46506})",
+      `import {buildApp} from './src/app.ts';
+       const app = await buildApp({logging:false});
+       const categories = new Map([
+         ['ECONNRESET', 'connection-reset'],
+         ['ECONNREFUSED', 'connection-refused'],
+         ['ETIMEDOUT', 'connection-timeout'],
+         ['53300', 'database-capacity'],
+         ['57014', 'database-statement-cancelled'],
+         ['57P01', 'database-shutdown'],
+       ]);
+       app.addHook('onError', async (request, reply, error) => {
+         if (request.method !== 'GET' || request.url.split('?')[0] !== '/api/v1/identity/auth') return;
+         const status = error.statusCode ?? error.status;
+         if (status >= 400 && status < 500) return;
+         const category = categories.get(error.code) ??
+           (error.message === 'timeout exceeded when trying to connect' ? 'database-connect-timeout' : 'unexpected');
+         console.log('ONESA_DEVICE_AUTHORIZE_ERROR ' + category);
+       });
+       await app.listen({host:'127.0.0.1',port:46506});`,
     ],
     true,
   );
