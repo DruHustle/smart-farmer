@@ -114,16 +114,23 @@ appId: eu.onesa.smartfarmer
 - eraseText
 - inputText: '12.25'
 - runFlow: dismiss-keyboard.yaml
-# iOS can expose the Review control below the sheet's clipped viewport.
-# Scroll it into the sheet before exercising the unchanged tax-review guard.
+- assertVisible:
+    id: invoice-line-0-price
+    text: '^12[.]25$'
+# Wait for the iOS editor to settle after scrolling. The recorded tap used
+# a stale frame after the button disappeared from the refreshed hierarchy.
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
+      enabled: true
     direction: DOWN
     timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: invoice-review-draft
+    enabled: true
+    waitToSettleTimeoutMs: 1500
 - scrollUntilVisible:
     element:
       text: Ongorora mutero nemaoko.
@@ -142,13 +149,17 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: invoice-line-0-tax-option-0
 - scrollUntilVisible:
-    centerElement: true
     element:
       id: invoice-review-draft
+      enabled: true
     direction: DOWN
     timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: invoice-review-draft
+    enabled: true
+    waitToSettleTimeoutMs: 1500
 - scrollUntilVisible:
     element:
       id: invoice-total

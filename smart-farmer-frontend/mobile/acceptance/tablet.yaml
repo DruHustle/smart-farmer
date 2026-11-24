@@ -33,9 +33,22 @@ appId: eu.onesa.smartfarmer
 - takeScreenshot: ipad-large-font-farm-overview
 - tapOn:
     id: project-open-${PROJECT_ID}
-# A successful project tap initiates the modal animation. Require the
-# real enabled workspace selector to appear before scrolling or interacting;
-# never replay the navigation while the modal is mounting.
+    enabled: true
+    waitToSettleTimeoutMs: 1500
+# The large-font iPad driver acknowledged the tap but left the same project
+# button active. Only retry this read-only action from that original screen.
+- runFlow:
+    when:
+      visible:
+        id: project-open-${PROJECT_ID}
+        enabled: true
+      notVisible:
+        id: sheet-close
+    commands:
+      - tapOn:
+          id: project-open-${PROJECT_ID}
+          enabled: true
+          waitToSettleTimeoutMs: 1500
 - extendedWaitUntil:
     visible:
       id: project-workspace
