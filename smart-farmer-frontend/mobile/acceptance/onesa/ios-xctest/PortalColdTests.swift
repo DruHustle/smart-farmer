@@ -570,22 +570,25 @@ final class PortalColdTests: XCTestCase {
         }
     }
 
+    @MainActor private func tapVisiblePasswordDecline(in owner: XCUIApplication) -> Bool {
+        let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
+        let decline = owner.buttons["Not Now"].firstMatch
+        guard app.state == .runningForeground, notice.exists, decline.exists, decline.isEnabled else { return false }
+        let screen = app.frame
+        let frame = decline.frame
+        // Apple's remote AutoFill alert can report a hittable button with an
+        // invalid activation point. Touch the exact control's live frame.
+        guard !frame.isEmpty, frame.intersection(screen) == frame,
+              notice.frame.intersects(screen) else { return false }
+        let point = CGVector(dx: frame.midX - screen.minX, dy: frame.midY - screen.minY)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+        return true
+    }
+
     @MainActor private func returnLink(checkPasswordSheet: Bool = true) -> XCUIElement? {
         let names = NSPredicate(format: "label IN %@", ["Dzokera muSmart Farmer", "Buyela ku-Smart Farmer"])
         for owner in browserOwners + [springboard] {
-            let notice = owner.staticTexts["Securely store your password so it’s filled automatically the next time you need it."].firstMatch
-            let notNow = owner.buttons["Not Now"].firstMatch
-            if checkPasswordSheet && app.state == .runningForeground && notice.exists && notNow.exists && notNow.isEnabled {
-                let frame = notNow.frame
-                // Apple's remote AutoFill alert can report a hittable button
-                // with an invalid activation point. Use the exact identified
-                // button's live, fully visible frame in the foreground app.
-                if !frame.isEmpty && frame.intersection(app.frame) == frame && notice.frame.intersects(app.frame) {
-                    let point = CGVector(dx: frame.midX - app.frame.minX, dy: frame.midY - app.frame.minY)
-                    app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
-                    return nil
-                }
-            }
+            if checkPasswordSheet && tapVisiblePasswordDecline(in: owner) { return nil }
             // SafariViewService can expose the real callback link beneath a
             // secondary web view or directly in its embedded accessibility
             // hierarchy. Requiring the first web view to own it produced a
@@ -860,13 +863,20 @@ final class PortalColdTests: XCTestCase {
         let record = app.descendants(matching: .any)["tab-record"].firstMatch
         for owner in [springboard, app] {
             let title = owner.staticTexts["Save Password?"].firstMatch
+            guard title.exists else { continue }
             let decline = owner.buttons["Not Now"].firstMatch
-            if title.exists && decline.exists && decline.isEnabled && decline.isHittable {
+            if !tapVisiblePasswordDecline(in: owner) {
+                // The app can be behind a SpringBoard-owned alert. Use the
+                // native control when there is no verified foreground frame.
+                guard decline.exists, decline.isEnabled, decline.isHittable else { continue }
                 decline.tap()
-                XCTAssertTrue(title.waitForNonExistence(timeout: 15),
-                              "The observed Apple system password dialog must close")
-                break
             }
+            if !title.waitForNonExistence(timeout: 6), title.exists {
+                _ = tapVisiblePasswordDecline(in: owner)
+            }
+            XCTAssertTrue(title.waitForNonExistence(timeout: 15),
+                          "The observed Apple system password dialog must close")
+            break
         }
         // Starting a separate XCTest runner can itself put Farmer in the
         // background or dismiss the transient OS sheet. Restore only the

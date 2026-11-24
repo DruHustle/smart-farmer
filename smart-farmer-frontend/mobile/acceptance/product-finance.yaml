@@ -54,12 +54,26 @@ appId: eu.onesa.smartfarmer
 - tapOn:
     id: "form-category"
 - scrollUntilVisible:
+    centerElement: true
     element:
       id: "form-category-option-labour"
     direction: DOWN
     timeout: 30000
-- tapOn:
-    id: "form-category-option-labour"
+# The iOS driver can acknowledge a tap while the picker still covers the form.
+# Repeat only the local selection while that exact option remains visible.
+- repeat:
+    times: 2
+    while:
+      visible:
+        id: "form-category-option-labour"
+    commands:
+      - tapOn:
+          id: "form-category-option-labour"
+          enabled: true
+- extendedWaitUntil:
+    notVisible:
+      id: "form-category-option-labour"
+    timeout: 7500
 - scrollUntilVisible:
     centerElement: true
     element:
