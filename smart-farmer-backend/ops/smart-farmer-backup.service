@@ -1,13 +1,22 @@
 [Unit]
 Description=Smart Farmer encrypted independent backup and restore verification
-After=network-online.target
+After=network-online.target systemd-tmpfiles-setup.service
 Wants=network-online.target
 [Service]
 Type=oneshot
 User=smart-farmer-backup
 WorkingDirectory=/opt/smart-farmer/smart-farmer-backend
 EnvironmentFile=/etc/smart-farmer/backup.env
-ExecStart=/usr/bin/node scripts/offhost-backup.mjs --drill
+ExecStart=/usr/bin/flock --no-fork --exclusive --wait 600 --conflict-exit-code 75 /run/onesa-backup/backup.lock /usr/bin/node scripts/offhost-backup.mjs --drill
+TimeoutStartSec=30min
+Slice=onesa-backup.slice
+Nice=15
+CPUQuota=20%
+CPUWeight=25
+IOSchedulingClass=idle
+IOWeight=25
+MemoryHigh=512M
+MemoryMax=768M
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
