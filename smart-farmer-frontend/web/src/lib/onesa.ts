@@ -3,12 +3,13 @@ import {apiOrigin, jsonBody, request} from './api';
 import {Vault} from './vault';
 import {destination} from './destination';
 
-export type OnesaConfig = {audience?: string; issuer: string; clientId: string; callback: string};
+export type OnesaConfig = {audience?: string; issuer: string; clientId: string; callback: string; signup?: boolean};
 const key = 'smart-farmer:onesa:login';
 const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 
-export async function beginOnesa(config: OnesaConfig, language: Lang) {
+export async function beginOnesa(config: OnesaConfig, language: Lang, signup = false) {
   if (config.callback !== location.origin + '/auth/onesa/callback') throw new Error('onesa_unavailable');
+  if (signup && (!config.audience || config.signup !== true)) throw new Error('onesa_unavailable');
   const random = () => encode(crypto.getRandomValues(new Uint8Array(32)));
   const state = random(), verifier = random(), nonce = random();
   const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
@@ -16,6 +17,7 @@ export async function beginOnesa(config: OnesaConfig, language: Lang) {
   target.search = new URLSearchParams({
     response_type:'code', scope:config.audience ? 'openid profile email' : 'openid email profile onesa', ...(config.audience && {audience:config.audience}), client_id:config.clientId,
     redirect_uri:config.callback, state, nonce, code_challenge:challenge, code_challenge_method:'S256',
+    ...(signup ? {screen_hint:'signup'} : {}),
   }).toString();
   sessionStorage.setItem(key, JSON.stringify({state,verifier,nonce:config.audience ? nonce : undefined,issuer:config.issuer,language,returnTo:destination(location).path,expires:Date.now()+300_000}));
   location.assign(target.href);

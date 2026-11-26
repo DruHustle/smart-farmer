@@ -156,7 +156,13 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
         {mode !== 'offlineUnlock' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
           setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
         }}>{t.signIn}</button>}
-        {!localCredentials && mode !== 'offlineUnlock' && (['user','admin'] as const).map(audience=><a key={audience} href={registrationUrl(audience)} onClick={() => rememberRegistration(sessionStorage, new URL(location.href))}>{audience==='admin'?t.requestOnesaAdmin:t.createOnesaAccount}</a>)}
+        {!localCredentials && mode !== 'offlineUnlock' && (['user','admin'] as const).map(audience=>
+          audience === 'user' && onesa?.signup === true
+            ? <button key={audience} type="button" className="text-button" disabled={busy} onClick={() => {
+                setBusy(true);
+                void beginOnesa(onesa,language,true).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
+              }}>{t.createOnesaAccount}</button>
+            : <a key={audience} href={registrationUrl(audience)} onClick={() => rememberRegistration(sessionStorage, new URL(location.href))}>{audience==='admin'?t.requestOnesaAdmin:t.createOnesaAccount}</a>)}
         {!localCredentials && mode !== 'offlineUnlock' && message && <p className="notice error" role="alert">{message}</p>}
         {(localCredentials || mode === 'offlineUnlock') && <form noValidate onSubmit={submit} className="form-grid" aria-label={t[mode]}><Field label={t.username}><input name="username" required minLength={3} maxLength={80} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" spellCheck={false}/></Field>
           {mode === 'join' && <Field label={t.invitationToken}><input name="invitationToken" required autoComplete="off" spellCheck={false}/></Field>}

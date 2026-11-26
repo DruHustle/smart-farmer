@@ -6,7 +6,7 @@ import { sha256, token } from './security.js';
 
 import { managedAccount, managedIdentity, checkIdentityToken, type ManagedIdentity } from './managed-identity.js';
 
-type Config = { issuer: string; clientId: string; secret: string; callback: string; accountIssuer:string; managed?:ManagedIdentity };
+type Config = { issuer: string; clientId: string; secret: string; callback: string; accountIssuer:string; managed?:ManagedIdentity; signup?: boolean };
 
 export function identityConfig(origin: string, env = process.env): Config | null {
   if (env.ONESA_IDENTITY_ENABLED !== 'true') return null;
@@ -25,7 +25,8 @@ export function identityConfig(origin: string, env = process.env): Config | null
     || !clientId || clientId.length > 200 || secret.length < 32) {
     throw new Error('Invalid Onesa Identity configuration');
   }
-  return { issuer, clientId, secret, managed, accountIssuer:managed?.accountIssuer ?? issuer, callback: origin + '/auth/onesa/callback' };
+  return { issuer, clientId, secret, managed, accountIssuer:managed?.accountIssuer ?? issuer, callback: origin + '/auth/onesa/callback',
+    signup: Boolean(managed && env.ONESA_IDENTITY_DIRECT_SIGNUP === 'true') };
 }
 
 async function provider(config: Config, path: string, body: URLSearchParams | { token: string }, publicClient = false) {
@@ -97,7 +98,8 @@ export function openGrant(value: string, bearer: string) {
 
 export function registerOnesa(app: FastifyInstance, ctx: Context, config: Config | null, localCredentials: boolean) {
   app.get('/v1/onesa/config', async () => ({
-    ...(config ? {issuer:config.issuer, clientId:config.clientId, callback:config.callback, ...(config.managed && {audience:config.managed.audience,nativeClientId:config.managed.nativeClientId})} : {enabled:false}),
+    ...(config ? {issuer:config.issuer, clientId:config.clientId, callback:config.callback, ...(config.managed && {audience:config.managed.audience,nativeClientId:config.managed.nativeClientId}),
+      ...(config.signup ? {signup:true} : {})} : {enabled:false}),
     ...(localCredentials ? {local_credentials:true} : {}),
   }));
   app.post('/v1/onesa/sessions', {config:{rateLimit:{max:12,timeWindow:'1 minute'}}}, async req => {
