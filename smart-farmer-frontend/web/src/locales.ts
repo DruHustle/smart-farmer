@@ -1,5 +1,6 @@
 import {validationPhrases} from './validation-locales.ts';
 import type {Lang} from './types';
+import {english} from './english.ts';
 import {completionPhrases} from './completion-locales.ts';
 import {nodeRedPhrases} from './node-red-locales.ts';
 import {accountingPhrases} from './accounting-locales.ts';
@@ -103,7 +104,18 @@ export const phrases = {
 } as const;
 export type Key = keyof typeof phrases;
 export type Words = Record<Key, string>;
-export const catalog = Object.fromEntries((['sn', 'nd'] as const).map((lang, index) => [lang, Object.fromEntries(Object.entries(phrases).map(([key, values]) => [key, values[index]]))])) as Record<Lang, Words>;
+function localCatalog(index: 0 | 1): Words {
+  return Object.fromEntries(Object.entries(phrases).map(([key, values]) => [key, values[index]])) as Words;
+}
+export const catalog: Record<Lang, Words> = {sn: localCatalog(0), nd: localCatalog(1), en: english};
+export const languageOptions = [
+  {value: 'sn', name: 'Shona'},
+  {value: 'nd', name: 'isiNdebele'},
+  {value: 'en', name: 'English'},
+] as const;
+export function readLanguage(value: string | null): Lang {
+  return languageOptions.find(option => option.value === value)?.value ?? 'sn';
+}
 export function label(words: Words, key: string): string {return words[key as Key] ?? (/^(kg|g|l|ml|mm|cm|m|m2|m3|ha|h|s|bar|kPa|V|A|kW|kWh|rpm|pH|°C|C|%|l\/min|m3\/h|km\/h)$/.test(key) ? key : words.unknown);}
 export function errorLabel(words: Words, error: unknown): string {const code = error instanceof Error ? error.message : String(error); if (code === 'Failed to fetch' || code === 'Load failed' || code === 'TimeoutError' || code.includes('aborted')) return words.network_error; return words[code as Key] ?? words.error;}
 

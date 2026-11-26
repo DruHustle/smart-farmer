@@ -2,7 +2,7 @@ import {lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExterna
 import {Auth} from './Auth';
 import {destination, pagePath} from './lib/destination';
 import {AccountDeletion} from './pages/AccountDeletion';
-import {catalog, errorLabel, label, translatedNotice} from './locales';
+import {catalog, errorLabel, label, languageOptions, readLanguage, translatedNotice} from './locales';
 import {ApiError, request, jsonBody, uploadRecord} from './lib/api';
 import {displayTime} from './lib/time';
 import {accountingDataAfterRoleChange} from './lib/accounting-intent';
@@ -33,7 +33,7 @@ export function App() {
   const [accountingTarget, setAccountingTarget] = useState<{farmId: string; userId: string; invoiceId: string} | null>(null);
   const snapshot = useSyncExternalStore(vault?.subscribe ?? emptySubscribe, vault?.snapshot ?? noSnapshot);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [language, setLanguage] = useState<Lang>(() => localStorage.getItem('smart-farmer-language') === 'nd' ? 'nd' : 'sn');
+  const [language, setLanguage] = useState<Lang>(() => readLanguage(localStorage.getItem('smart-farmer-language')));
   const [online, setOnline] = useState(navigator.onLine); const [page, showPage] = useState<Page>(() => destination(location).page); const [recordProject, setRecordProject] = useState<string | null>(null); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const synchronising = useRef(false); const pendingSync = useRef({requested:false,includeMedia:false});
   function setPage(next: Page) {
     const path = pagePath(next);
@@ -46,7 +46,7 @@ export function App() {
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
   }, []);
-  const lang = snapshot?.language ?? language, t = catalog[lang];
+  const lang = language === 'en' ? 'en' : snapshot?.language ?? language, t = catalog[lang];
   const farm = snapshot?.farms.find(f => f.id === snapshot.currentFarmId) ?? snapshot?.farms[0];
   const farmId = farm?.id ?? '';
   const farmData = snapshot?.data[farmId] ?? emptyFarmData();
@@ -126,7 +126,8 @@ export function App() {
   async function changeLanguage(value: Lang) {
     setNotice(current => translatedNotice(current, lang, value));
     setLanguage(value);
-    if (!vault) return;
+    // English is a browser preference. Keep the account's language for existing clients and server documents.
+    if (!vault || value === 'en') return;
     await vault.mutate(next => {next.language = value;});
     if (navigator.onLine) {try {await call('/v1/me', jsonBody({language: value}, 'PATCH'));} catch (error) {setNotice(errorLabel(catalog[value], error));}}
   }
@@ -137,10 +138,10 @@ export function App() {
     setVault(null); setNotice(''); setPage('today'); setRecordProject(null);
   }
   function lock() {setVault(null); setNotice(''); setRecordProject(null);}
-  if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(v.snapshot().language); showPage(destination(location).page); setNotice('');}}/>;
+  if (!vault || !snapshot) return <Auth language={language} onLanguage={setLanguage} onLogin={v => {setVault(v); setLanguage(current => current === 'en' ? current : v.snapshot().language); showPage(destination(location).page); setNotice('');}}/>;
   const navigation = ['today', 'farm', 'market', 'services', 'forum', 'more'] as const;
   const navPage = ['stock', 'tasks', 'equipment', 'people', 'reports', 'accounting', 'incidents', 'sync', 'security', 'notifications', 'weather', 'maintenance', 'locations', 'settings'].includes(page) ? 'more' : page;
-  return <div className="app-shell"><header className="app-header"><div className="brand"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></div><div className="header-actions"><span className="current-user"><Icon name="people" size={16}/>{snapshot.identity.username}</span><select className="language-select" aria-label={t.language} value={lang} onChange={e => void changeLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select><button className="icon-button" title={t.lock} aria-label={t.lock} onClick={lock}><Icon name="lock" size={18}/></button></div></header>
+  return <div className="app-shell"><header className="app-header"><div className="brand"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></div><div className="header-actions"><span className="current-user"><Icon name="people" size={16}/>{snapshot.identity.username}</span><select className="language-select" aria-label={t.language} value={lang} onChange={e => void changeLanguage(e.target.value as Lang)}>{languageOptions.map(({value, name}) => <option key={value} value={value}>{name}</option>)}</select><button className="icon-button" title={t.lock} aria-label={t.lock} onClick={lock}><Icon name="lock" size={18}/></button></div></header>
     <aside className="desktop-nav"><div className="farm-identity"><span className="eyebrow">{t.farm}</span><strong>{farm?.name ?? (snapshot.membershipsChecked ? t.join : t.loading)}</strong><small>{farm ? label(t, farm.role) : ''}</small></div><nav aria-label={t.more}>{navigation.map(item => <button key={item} className={navPage === item ? 'selected' : ''} aria-current={navPage === item ? 'page' : undefined} onClick={() => setPage(item)}><Icon name={item}/>{t[item]}<Icon name="chevron" size={15}/></button>)}</nav><div className="sidebar-bottom"><Icon name="lock" size={16}/><small>{t.privacy}</small></div></aside>
     <main className="workspace"><div className="workspace-toolbar"><div className="farm-switch"><Icon name="farm" size={18}/><select aria-label={t.farm} value={farmId} disabled={busy || !snapshot.farms.length} onChange={e => {const id = e.target.value; void run(async () => {await vault.mutate(next => {next.currentFarmId = id;}); await refresh();});}}>{snapshot.farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div><button className={`sync-pill ${online ? '' : 'offline'}`} onClick={() => setPage('sync')}><span className={`status-dot ${online ? 'on' : ''}`}/>{online ? t.connected : t.offline}{snapshot.outbox.length > 0 && <strong>{snapshot.outbox.length}</strong>}</button></div>
       <div className="sync-caption"><span>{farmData.syncedAt ? `${t.synced}: ${displayTime(farmData.syncedAt, lang, farm?.timezone ?? 'Africa/Harare')}` : t.neverSynced}</span><button className="text-button" disabled={!online || busy} onClick={() => void run(refresh)}><Icon name="sync" size={14}/>{t.refresh}</button></div>

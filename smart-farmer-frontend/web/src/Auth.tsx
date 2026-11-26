@@ -1,7 +1,7 @@
 import {AppAvailability} from "./components/AppAvailability";
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import type {Lang, SessionIdentity, Snapshot} from './types';
-import {catalog, errorLabel} from './locales';
+import {catalog, errorLabel, languageOptions} from './locales';
 import {apiOrigin, request, jsonBody} from './lib/api';
 import {Vault} from './lib/vault';
 import {nativeReturnLink} from './lib/native-return';
@@ -14,6 +14,7 @@ import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
   const [mode, setMode] = useState<Mode>('signIn'); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const t = catalog[language];
+  const accountLanguage = language === 'en' ? 'sn' : language;
   const [createdAccount, setCreatedAccount] = useState<{username: string; password: string; recoveryCode: string} | null>(null);
   const [challenge, setChallenge] = useState<{username: string; password: string; initial: Snapshot} | null>(null);
 
@@ -67,11 +68,11 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     history.replaceState(null, '', path || '/');
     if (!path) return;
     setBusy(true);
-    void beginOnesa(onesa, language).catch(error => {
+    void beginOnesa(onesa, accountLanguage).catch(error => {
       setBusy(false);
       setMessage(errorLabel(words.current, error));
     });
-  }, [onesa, language]);
+  }, [onesa, accountLanguage]);
 
   useEffect(() => {
     if (!guestTab || !guestSection.current) return;
@@ -94,7 +95,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
     setMessage('');
     if (onesa && mode !== 'offlineUnlock') {
       setBusy(true);
-      void beginOnesa(onesa, language).catch(error => {setBusy(false); setMessage(errorLabel(t, error));});
+      void beginOnesa(onesa, accountLanguage).catch(error => {setBusy(false); setMessage(errorLabel(t, error));});
       return;
     }
     signInCard.current?.scrollIntoView({block: 'center', behavior: 'smooth'});
@@ -137,8 +138,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
       if (mode === 'recover') {await request('/v1/recover', '', jsonBody({username, password, recoveryCode: String(form.get('recoveryCode'))})); setMessage(t.recovered); setMode('signIn'); return;}
       if (mode === 'register' || mode === 'join') {
         const created = mode === 'register'
-          ? await request<{recoveryCode: string}>('/v1/register', '', jsonBody({username, password, language, farmName: String(form.get('farmName'))}))
-          : await request<{recoveryCode: string}>('/v1/invitations/accept', '', jsonBody({username, password, language, token: String(form.get('invitationToken')).trim()}));
+          ? await request<{recoveryCode: string}>('/v1/register', '', jsonBody({username, password, language: accountLanguage, farmName: String(form.get('farmName'))}))
+          : await request<{recoveryCode: string}>('/v1/invitations/accept', '', jsonBody({username, password, language: accountLanguage, token: String(form.get('invitationToken')).trim()}));
         setCreatedAccount({username, password, recoveryCode: created.recoveryCode});
         return;
       }
@@ -148,13 +149,13 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   if (nativeLink) return <main className="auth-screen"><section className="auth-card"><h1>Smart Farmer</h1><a className="primary" href={nativeLink}>{t.returnToApp}</a></section></main>;
   if (createdAccount) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoveryCode}</h1><p>{t.keepCode}</p><div className="secret-result"><code>{createdAccount.recoveryCode}</code></div><p className="muted small">{t.recoveryHint}</p>{message && <p className="notice error" role="alert">{message}</p>}<button className="primary" disabled={busy} onClick={() => void continueAfterRegistration()}>{busy ? t.working : t.savedCode}</button></section></main></div>;
   if (challenge) return <div className="auth-screen"><main className="recovery-screen"><div className="brand"><span className="brand-mark"><Icon name="lock"/></span><strong>Smart Farmer</strong></div><section className="auth-card"><h1>{t.recoverDrafts}</h1><p className="muted">{t.recoveryArchiveHint}</p><form className="form-grid" onSubmit={async e => {e.preventDefault(); const previous = String(new FormData(e.currentTarget).get('previousPassword')); setBusy(true); setMessage(''); try {const v = await Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial, previous); onLogin(v);} catch (error) {setMessage(errorLabel(t, error));} finally {setBusy(false);}}}><Field label={t.previousPassword}><input name="previousPassword" type="password" required autoComplete="current-password"/></Field><button className="primary" disabled={busy}>{t.recoverDrafts}</button><button type="button" className="secondary" disabled={busy} onClick={() => {setBusy(true); void Vault.recover(apiOrigin, challenge.username, challenge.password, challenge.initial).then(onLogin).catch(error => setMessage(errorLabel(t, error))).finally(() => setBusy(false));}}>{t.freshCache}</button>{message && <p className="notice error" role="alert">{message}</p>}</form></section></main></div>;
-  return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}><option value="sn">Shona</option><option value="nd">isiNdebele</option></select></Field></header>
+  return <div className="auth-screen"><header className="auth-top"><a className="brand" href="/" aria-label="Smart Farmer"><span className="brand-mark"><Icon name="leaf" size={23}/></span><strong>Smart Farmer</strong></a><Field label={t.language}><select aria-label={t.language} value={language} onChange={e => onLanguage(e.target.value as Lang)}>{languageOptions.map(({value, name}) => <option key={value} value={value}>{name}</option>)}</select></Field></header>
     <main className="auth-main"><section className="auth-intro"><span className="eyebrow">SMART FARMER · ZIMBABWE</span><h1>{t.welcome}</h1><p>{t.intro}</p><div className="intro-items"><span><Icon name="leaf"/>{t.crop}</span><span><Icon name="animal"/>{t.animals}</span><span><Icon name="equipment"/>{t.equipment}</span></div><div className="privacy-note"><Icon name="lock"/><span>{t.privacy}</span></div><AppAvailability heading={t.farmerApps} unpublished={t.notPublished}/></section>
       <section className="auth-card" ref={signInCard}>{localCredentials && <div className="auth-tabs"><button type="button" className={mode === 'signIn' ? 'selected' : ''} onClick={() => {setMode('signIn'); setMessage('');}}>{t.signIn}</button><button type="button" className={mode === 'register' ? 'selected' : ''} onClick={() => {setMode('register'); setMessage('');}}>{t.register}</button></div>}
         <h2>{t[mode]}</h2>{destination(location).page === 'account-deletion' && <div className="notice"><strong>{t.deletionTitle}</strong><p>{t.deletionInfo}</p></div>}
         {mode !== 'offlineUnlock' && configFailure && <p role="status">{t.onesa_unavailable} <a href="https://account.onesa.eu/account">{t.onesaAccountEntry}</a> <button className="text-button" onClick={() => setConfigAttempt(n => n + 1)}>{t.retry}</button></p>}{mode === 'offlineUnlock' && <p className="muted">{t.offlineUnlockHint}</p>}{mode === 'recover' && <p className="muted">{t.recoveryHint}</p>}
         {mode !== 'offlineUnlock' && onesa && <button type="button" className="primary onesa-signin" disabled={busy} onClick={() => {
-          setBusy(true); void beginOnesa(onesa,language).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
+          setBusy(true); void beginOnesa(onesa,accountLanguage).catch(error => {setBusy(false);setMessage(errorLabel(t,error));});
         }}>{t.onesaSignIn}</button>}
         {!localCredentials && mode !== 'offlineUnlock' && (['user','admin'] as const).map(audience=><a key={audience} href={registrationUrl(audience)} onClick={() => rememberRegistration(sessionStorage, new URL(location.href))}>{audience==='admin'?t.requestOnesaAdmin:t.createOnesaAccount}</a>)}
         {!localCredentials && mode !== 'offlineUnlock' && message && <p className="notice error" role="alert">{message}</p>}

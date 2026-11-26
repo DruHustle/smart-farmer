@@ -40,6 +40,7 @@ async function syntheticOnesa(page, ui, api, language) {
     if (route.request().method() === 'OPTIONS') return route.fulfill({status: 204, headers});
     const body = route.request().postDataJSON();
     assert.equal(body.code, 'synthetic-preview');
+    assert.equal(body.language, language);
     assert.equal(body.nonce, nonce);
     assert.equal(createHash('sha256').update(body.verifier).digest('base64url'), challenge);
     return route.fulfill({headers, json: {token: 'synthetic-preview-token', userId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', username: 'synthetic-visitor',
@@ -54,20 +55,27 @@ async function accessible(page, selector) {
 
 async function openContext(browser, language, width) {
   const context = await browser.newContext({serviceWorkers: 'block', viewport: {width, height: 900}});
-  await context.addInitScript(lang => localStorage.setItem('smart-farmer-language', lang), language);
+  if (language) await context.addInitScript(lang => localStorage.setItem('smart-farmer-language', lang), language);
   return context;
 }
 
 // Signed-out visitors see Farmer's features first; a feature action signs in and returns to that feature.
 export async function previewJourney(browser, ui, api, catalog) {
-  for (const [language, width] of [['sn', 1280], ['nd', 320]]) {
+  for (const [language, width] of [['sn', 1280], ['nd', 320], ['en', 390]]) {
     const t = catalog[language];
-    const context = await openContext(browser, language, width);
+    const context = await openContext(browser, language === 'en' ? null : language, width);
     try {
       const page = await context.newPage();
       const signedOut = watchSignedOut(page);
-      await syntheticOnesa(page, ui, api, language);
+      // The existing account API uses Shona or Northern Ndebele.
+      await syntheticOnesa(page, ui, api, language === 'en' ? 'sn' : language);
       await page.goto(ui);
+      if (language === 'en') {
+        await page.getByRole('combobox', {name: catalog.sn.language}).selectOption('en');
+        await page.getByRole('heading', {name: t.welcome, exact: true}).waitFor();
+        await page.reload();
+        await page.getByRole('combobox', {name: t.language, exact: true}).waitFor();
+      }
       const preview = page.getByRole('region', {name: t.previewTitle});
       await preview.waitFor();
       assert.equal(await preview.getByRole('article').count(), 6);
@@ -90,6 +98,8 @@ export async function previewJourney(browser, ui, api, catalog) {
       const current = page.locator('nav [aria-current=page]:visible').first();
       await current.waitFor();
       assert.ok((await current.innerText()).includes(t.market), 'sign-in returns to the chosen feature');
+      assert.equal(await page.locator('html').getAttribute('lang'), language);
+      assert.equal(await page.evaluate(() => localStorage.getItem('smart-farmer-language')), language);
     } finally {
       await context.close();
     }

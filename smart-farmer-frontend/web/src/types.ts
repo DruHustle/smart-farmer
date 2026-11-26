@@ -1,4 +1,5 @@
-export type Lang = 'sn' | 'nd';
+export type AccountLanguage = 'sn' | 'nd';
+export type Lang = AccountLanguage | 'en';
 export type Role = 'owner' | 'manager' | 'worker' | 'adviser';
 export type Enterprise = 'crop' | 'broiler' | 'layer' | 'breeder' | 'hatchery' | 'rabbit_breeding' | 'rabbit_growout' | 'fish' | 'fish_nursery' | 'fish_breeder' | 'fish_hatchery';
 export type Farm = {id: string; name: string; timezone: string; role: Role};
@@ -17,7 +18,7 @@ export type Booking = {id: string; service_id: string; farm_id: string; project_
 export type Report = {totals: {currency: string; kind: string; amount: string | number}[]; stock: Stock[]; [key: string]: unknown};
 export type FarmData = {projects: Project[]; activities: Activity[]; tasks: Task[]; stock: Stock[]; incidents: Incident[]; members: Member[]; assets: Asset[]; bookings: Booking[]; events: Record<string, FarmEvent[]>; resources?: Record<string, {value: unknown; savedAt: string; role: Role}>; report?: Report; syncedAt?: string; partial?: string[]};
 export type OutboxItem = {id: string; farmId: string; path: string; method: 'POST' | 'PATCH'; payload: Record<string, unknown>; label: string; status: 'pending' | 'failed' | 'conflict'; attempts: number; createdAt: string; error?: string; mediaId?: string; nextAttemptAt?: string; conflictCurrent?: Record<string, unknown>};
-export type SessionIdentity = {token: string; userId: string; username: string; language: Lang; expiresAt: string};
-export type Snapshot = {version: 1; identity: SessionIdentity; farms: Farm[]; currentFarmId: string; membershipsChecked?: boolean; newFarmRequest?: {id: string; name: string}; data: Record<string, FarmData>; outbox: OutboxItem[]; language: Lang; requiresAuth?: boolean; listings?: Listing[]; orders?: Order[]; services?: Service[]; preferences?: {automaticMedia: boolean; compactPhotos: boolean}};
+export type SessionIdentity = {token: string; userId: string; username: string; language: AccountLanguage; expiresAt: string};
+export type Snapshot = {version: 1; identity: SessionIdentity; farms: Farm[]; currentFarmId: string; membershipsChecked?: boolean; newFarmRequest?: {id: string; name: string}; data: Record<string, FarmData>; outbox: OutboxItem[]; language: AccountLanguage; requiresAuth?: boolean; listings?: Listing[]; orders?: Order[]; services?: Service[]; preferences?: {automaticMedia: boolean; compactPhotos: boolean}};
 export const emptyFarmData = (): FarmData => ({projects: [], activities: [], tasks: [], stock: [], incidents: [], members: [], assets: [], bookings: [], events: {}});
 export const enterpriseTypes: Enterprise[] = ['crop', 'broiler', 'layer', 'breeder', 'hatchery', 'rabbit_breeding', 'rabbit_growout', 'fish', 'fish_nursery', 'fish_breeder', 'fish_hatchery'];

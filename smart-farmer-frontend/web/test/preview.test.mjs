@@ -16,13 +16,13 @@ test('the signed-out preview shows six distinct features, each returning to a re
   assert.deepEqual(previewFeatures.map(f => f.page), ['today', 'farm', 'services', 'market', 'forum', 'reports']);
 });
 
-test('every preview word exists in Shona and isiNdebele', () => {
+test('every preview word exists in English, Shona and isiNdebele', () => {
   const keys = new Set(['previewTitle', 'previewIntro', 'previewSample', 'previewSampleNote', 'previewOpen']);
   for (const feature of previewFeatures) {
     keys.add(feature.title); keys.add(feature.text);
     for (const row of feature.sample) keys.add(row.text);
   }
-  for (const lang of ['sn', 'nd']) for (const key of keys) {
+  for (const lang of ['sn', 'nd', 'en']) for (const key of keys) {
     assert.equal(typeof catalog[lang][key], 'string', `${lang}.${key}`);
     assert.ok(catalog[lang][key].trim().length > 0, `${lang}.${key}`);
   }
@@ -48,7 +48,7 @@ test('a preview or guest action stores its route before starting Onesa sign-in',
   assert.match(auth, /function openFeature\(page: Page\) \{signInFor\(pagePath\(page\)\);\}/);
   const action = auth.slice(auth.indexOf('function signInFor'), auth.indexOf('async function signIn('));
   assert.ok(action.indexOf("history.replaceState(null, '', path)") >= 0);
-  assert.ok(action.indexOf("history.replaceState(null, '', path)") < action.indexOf('beginOnesa(onesa, language)'));
+  assert.ok(action.indexOf("history.replaceState(null, '', path)") < action.indexOf('beginOnesa(onesa, accountLanguage)'));
 });
 
 test('guests browse only the offers the API publishes without a token, and every guest action signs in', async () => {
@@ -62,6 +62,6 @@ test('guests browse only the offers the API publishes without a token, and every
   assert.doesNotMatch(guest, /jsonBody|method:|Vault|token|localStorage|sessionStorage/);
   assert.match(guest, /onSignIn\(`\/\?listing=\$\{text\(row\.id\)\}`\)/);
   assert.match(guest, /onSignIn\('\/\?page=services'\)/);
-  for (const lang of ['sn', 'nd']) for (const key of ['guestBrowse', 'guestTitle', 'guestNote', 'guestBuy', 'guestBook', 'guestSeller', 'guestShared', 'guestUnavailable'])
+  for (const lang of ['sn', 'nd', 'en']) for (const key of ['guestBrowse', 'guestTitle', 'guestNote', 'guestBuy', 'guestBook', 'guestSeller', 'guestShared', 'guestUnavailable'])
     assert.ok(catalog[lang][key]?.trim(), `${lang}.${key}`);
 });
