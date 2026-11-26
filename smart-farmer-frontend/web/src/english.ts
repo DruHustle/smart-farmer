@@ -1244,7 +1244,7 @@ export const english: Words = {
   market: "Market",
   services: "Equipment and services",
   more: "More",
-  welcome: "Farm work, together.",
+  welcome: "Run your farm in one place",
   intro: "Plan the work, record what happens and keep track of what’s done.",
   returnToApp: "Return to Smart Farmer",
   signInCancelled: "Sign-in was cancelled. You can try again.",
