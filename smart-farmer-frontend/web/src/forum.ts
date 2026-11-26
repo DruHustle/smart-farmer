@@ -1,3 +1,5 @@
+import type {Lang} from './types';
+
 export const forumTopics = ['crops','livestock','soil','irrigation','equipment','markets','general'] as const;
 export type ForumTopic = typeof forumTopics[number];
 export const reportReasons = ['spam','abuse','unsafe_advice','privacy','other'] as const;
@@ -61,7 +63,43 @@ export const forumPhrases = {
   spam:['Kushambadza kunovhiringidza','Ukukhangisa okuphazamisayo'], abuse:['Kutuka kana kushungurudza','Ukuthuka kumbe ukuhlukuluza'],
   unsafe_advice:['Zano ringakuvadza','Iseluleko esingalimaza'], privacy:['Mashoko akavanzika','Ulwazi oluyimfihlo'], other:['Chimwe chikonzero','Esinye isizatho'],
 } as const;
-export function forumText(language:'sn'|'nd') {
+const english: Record<keyof typeof forumPhrases, string> = {
+  title: 'Farmers’ forum',
+  intro: 'Share farming questions, observations and experience.',
+  audience: 'All signed-in farmers can see your post and display name. Your username, farm name and files stay private.',
+  offline: 'Connect to the internet to use the forum. Send posts when you’re online.',
+  block: 'Block author', blockedAuthors: 'Blocked authors', unblock: 'Unblock author',
+  blockHint: 'You and this author will stop seeing each other’s posts.',
+  blockSaved: 'Author blocked.', nobodyBlocked: 'You haven’t blocked anyone.',
+  rules: 'Forum rules', agreeRules: 'I have read and agree to the forum rules.',
+  target: 'What are you reporting?', author: 'Author', newDiscussion: 'Start a discussion',
+  discussions: 'Discussions', mine: 'My posts', all: 'All topics', topic: 'Topic',
+  search: 'Search discussions', searchButton: 'Search', empty: 'No discussions found. You can start one.',
+  displayName: 'Display name', nameHint: 'Choose a name others will see (2–50 characters).',
+  heading: 'Discussion title', body: 'Your post', bodyHint: 'Enter up to 8,000 characters. Posts are text only.',
+  consent: 'I have reviewed this post and agree to share it with all signed-in farmers.',
+  share: 'Share with the community', save: 'Save changes', confirm: 'I agree', shared: 'Post shared.',
+  reply: 'Reply', replies: 'Replies', noReplies: 'No replies yet.', more: 'Show more', back: 'Back to discussions',
+  edit: 'Edit', remove: 'Remove',
+  removeHint: 'Permanently remove this post? Removing a discussion also hides its replies.',
+  removed: 'The author removed this post.', hidden: 'This post is hidden for review.', edited: 'Edited',
+  report: 'Report', reportTitle: 'Report this post',
+  reportHint: 'The owners of the farm that shared this post receive the reason. Your username stays private.',
+  reason: 'Reason', details: 'Details to help the review', reported: 'Report submitted.',
+  reports: 'Reports to review', hiddenEntries: 'Hidden posts',
+  moderationHint: 'Review posts shared by the selected farm. The decision and its reason are recorded.',
+  noReports: 'No reports awaiting review.', noHidden: 'This farm has no hidden posts.',
+  hide: 'Hide from the community', restore: 'Restore', dismiss: 'Dismiss report',
+  moderationReason: 'Reason for the decision (5–1,000 characters)', moderationSaved: 'Decision saved.',
+  changedSinceReport: 'The post changed after it was reported. Review the current version before deciding.',
+  crops: 'Crops', livestock: 'Livestock', soil: 'Soil', irrigation: 'Water and irrigation',
+  equipment: 'Equipment and machinery', markets: 'Markets', general: 'General farming',
+  spam: 'Spam', abuse: 'Abuse or harassment', unsafe_advice: 'Unsafe advice',
+  privacy: 'Private information', other: 'Other reason',
+};
+
+export function forumText(language:Lang) {
+  if (language === 'en') return english;
   const index=language==='sn'?0:1;
   return Object.fromEntries(Object.entries(forumPhrases).map(([key,value])=>[key,value[index]])) as Record<keyof typeof forumPhrases,string>;
 }

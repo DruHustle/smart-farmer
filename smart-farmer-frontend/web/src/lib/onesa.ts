@@ -1,4 +1,4 @@
-import type {Lang, SessionIdentity, Snapshot} from '../types';
+import type {AccountLanguage, SessionIdentity, Snapshot} from '../types';
 import {apiOrigin, jsonBody, request} from './api';
 import {Vault} from './vault';
 import {destination} from './destination';
@@ -7,7 +7,7 @@ export type OnesaConfig = {audience?: string; issuer: string; clientId: string; 
 const key = 'smart-farmer:onesa:login';
 const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 
-export async function beginOnesa(config: OnesaConfig, language: Lang) {
+export async function beginOnesa(config: OnesaConfig, language: AccountLanguage) {
   if (config.callback !== location.origin + '/auth/onesa/callback') throw new Error('onesa_unavailable');
   const random = () => encode(crypto.getRandomValues(new Uint8Array(32)));
   const state = random(), verifier = random(), nonce = random();

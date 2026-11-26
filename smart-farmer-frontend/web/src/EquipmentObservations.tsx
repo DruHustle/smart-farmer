@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import type {Lang} from './types';
 
 type Observation = {
   gatewayId:string; sourceId:string; eventId:string; kind:'measurement'|'equipment_status';
@@ -8,7 +9,7 @@ type Observation = {
 type Result = {items:Observation[];evidence:string;commandCapability:boolean};
 
 export function EquipmentObservations({farmId,session,lang}:{
-  farmId:string;session:string;lang:'sn'|'nd'
+  farmId:string;session:string;lang:Lang
 }){
   const [state,setState]=useState<{
     farmId:string;status:'loading'|'ready'|'error';items:Observation[]
@@ -32,7 +33,13 @@ export function EquipmentObservations({farmId,session,lang}:{
     return ()=>controller.abort();
   },[farmId,session]);
   const current=state.farmId===farmId?state:{farmId,status:'loading',items:[]};
-  const text=lang==='sn'?{
+  const text=lang==='en'?{
+    title:'Equipment and sensors',
+    loading:'Loading observations…',
+    error:'Could not load observations.',
+    empty:'No observations from equipment yet.',
+    caution:'These readings have not been verified by an authorised person.'
+  }:lang==='sn'?{
     title:'Midziyo nemasensa',
     loading:'Kumirira zvakaonekwa…',
     error:'Hatina kukwanisa kutora zvakaonekwa.',
@@ -58,7 +65,7 @@ export function EquipmentObservations({farmId,session,lang}:{
         <p>{item.kind==='measurement'
           ? [item.payload.data.metric, item.payload.data.value, item.payload.data.unit].join(' ')
           : item.payload.data.state}</p>
-        <small>{new Intl.DateTimeFormat(lang==='sn'?'sn-ZW':'nd-ZW',{
+        <small>{new Intl.DateTimeFormat(`${lang}-ZW`,{
           dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Harare'
         }).format(new Date(item.observedAt))}</small>
       </li>)}

@@ -1,6 +1,6 @@
 # Smart Farmer
 
-Smart Farmer supports crop and livestock work, offline field records, connected farm equipment, private security cameras, agricultural trading and machinery services. The initial user languages are Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`). Unknown farm facts remain unknown until an authorised person supplies them.
+Smart Farmer supports crop and livestock work, offline field records, connected farm equipment, private security cameras, agricultural trading and machinery services. The web interface is available in English (`en`), Shona (`sn`) and Zimbabwean Northern Ndebele (`nd`). The native apps offer Shona and Zimbabwean Northern Ndebele. Unknown farm facts remain unknown until an authorised person supplies them.
 
 ## Independent applications
 

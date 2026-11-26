@@ -2,11 +2,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {catalog, phrases, translatedNotice} from '../src/locales.ts';
 
-test('Shona and Northern Ndebele catalogs cover the same complete application keys', () => {
-  assert.deepEqual(Object.keys(catalog).sort(), ['nd', 'sn']);
+test('All three language catalogs cover the same complete application keys', () => {
+  assert.deepEqual(Object.keys(catalog).sort(), ['en', 'nd', 'sn']);
   assert.equal(Object.keys(phrases).length > 250, true);
   assert.deepEqual(Object.keys(catalog.sn).sort(), Object.keys(catalog.nd).sort());
+  assert.deepEqual(Object.keys(catalog.en).sort(), Object.keys(catalog.sn).sort());
   for (const [key, pair] of Object.entries(phrases)) {
+    assert.ok(catalog.en[key].trim().length > 0, key);
     assert.equal(pair.length, 2, key);
     assert.ok(pair.every(value => typeof value === 'string' && value.trim().length > 0), key);
   }
@@ -19,6 +21,7 @@ test('switching language keeps visible save and validation feedback understandab
   for (const key of ['saved', 'queued', 'invalid_input']) {
     assert.equal(translatedNotice(catalog.nd[key], 'nd', 'sn'), catalog.sn[key]);
     assert.equal(translatedNotice(catalog.sn[key], 'sn', 'nd'), catalog.nd[key]);
+    assert.equal(translatedNotice(catalog.sn[key], 'sn', 'en'), catalog.en[key]);
   }
   assert.equal(translatedNotice('Field 12', 'nd', 'sn'), 'Field 12');
 });
