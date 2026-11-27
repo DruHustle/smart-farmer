@@ -19,13 +19,13 @@ export const previewFeatures: PreviewFeature[] = [
     {text: 'sampleBooking', value: '4 h'},
   ]},
   {page: 'market', icon: 'market', title: 'market', text: 'previewMarket', guest: true, sample: [
-    {text: 'sampleListing', value: 'US$ 4.50'},
+    {text: 'sampleListing', value: 'USD 4.50'},
   ]},
   {page: 'forum', icon: 'forum', title: 'forum', text: 'previewForum', sample: [
     {text: 'sampleQuestion', value: '3'},
   ]},
   {page: 'reports', icon: 'reports', title: 'reports', text: 'previewReports', sample: [
-    {text: 'revenue', value: 'US$ 1 240', meter: 100}, {text: 'expense', value: 'US$ 860', meter: 69},
+    {text: 'revenue', value: 'USD 1,240', meter: 100}, {text: 'expense', value: 'USD 860', meter: 69},
   ]},
 ];
 

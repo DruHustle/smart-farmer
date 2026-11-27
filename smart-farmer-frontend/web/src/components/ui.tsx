@@ -26,6 +26,11 @@ export function Icon({name, size = 20}: {name: string; size?: number}) {
     water: <path d="M12 2C9 7 4 12 4 16a8 8 0 0 0 16 0c0-4-5-9-8-14Z"/>,
     camera: <><path d="M3 7h4l2-3h6l2 3h4v14H3Z"/><circle cx="12" cy="14" r="4"/></>,
     mic: <><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/></>,
+    weather: <><path d="M8 2v2M2 8h2m.8-4.2 1.4 1.4m7-1.4-1.4 1.4M5.2 11.5A4 4 0 1 1 11.8 7"/><path d="M9 21h9a4 4 0 0 0 .4-8 5.5 5.5 0 0 0-10.6 1.6A3.2 3.2 0 0 0 9 21Z"/></>,
+    notifications: <><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4Z"/><path d="M10 21h4"/></>,
+    maintenance: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4m-7 7 2 2 4-4"/></>,
+    locations: <><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></>,
+    settings: <><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.leaf}</svg>;
 }
@@ -58,10 +63,19 @@ export function StockSelect({name = 'stockItemId', required = false, value, onCh
   return <Field label={t.stockItem}><select name={name} required={required} {...(value === undefined ? {} : {value, onChange: e => onChange?.(e.target.value)})}><option value="">{t.none}</option>{data.stock.map(s => <option key={s.id} value={s.id}>{s.name} · {s.quantity} {s.unit}</option>)}</select></Field>;
 }
 export function MemberSelect({name = 'assigneeId'}: {name?: string}) {const {data, t} = useFarm(); return <Field label={t.assignee}><select name={name}><option value="">{t.unassigned}</option>{data.members.map(m => <option key={m.id} value={m.id}>{m.username} · {label(t, m.role)}</option>)}</select></Field>;}
+type FormControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+const isFormControl = (element: unknown): element is FormControl => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement;
+// The message is rendered inside the form, so it stays visible when the form is
+// in a modal dialog that covers the workspace notice area.
+function markInvalid(control: FormControl, invalid: boolean, errorId: string) {
+  if (invalid) {control.setAttribute('aria-invalid', 'true'); control.setAttribute('aria-errormessage', errorId);}
+  else {control.removeAttribute('aria-invalid'); control.removeAttribute('aria-errormessage');}
+}
 export function Form({onSubmit, children, className = ''}: {onSubmit: (data: FormData, form: HTMLFormElement) => void | Promise<void>; children: ReactNode; className?: string}) {
-  const {t, notify} = useFarm(); const submitting = useRef(false); const [pending, setPending] = useState(false);
-  const submit = async (e: FormEvent<HTMLFormElement>) => {e.preventDefault(); if (submitting.current) return; const form = e.currentTarget; const invalid = [...form.elements].find(element => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? !element.validity.valid : false) as HTMLElement | undefined; if (invalid) {notify(t.invalid_input); invalid.focus(); return;} submitting.current=true; setPending(true); try {await onSubmit(new FormData(form),form);} finally {submitting.current=false; setPending(false);}};
-  return <form noValidate className={`form-grid ${className}`} aria-busy={pending} inert={pending} onSubmit={submit}>{children}</form>;
+  const {t} = useFarm(); const submitting = useRef(false); const [pending, setPending] = useState(false); const [invalid, setInvalid] = useState(false); const errorId = useId();
+  const submit = async (e: FormEvent<HTMLFormElement>) => {e.preventDefault(); if (submitting.current) return; const form = e.currentTarget; const controls = [...form.elements].filter(isFormControl); for (const control of controls) markInvalid(control, !control.validity.valid, errorId); const first = controls.find(control => !control.validity.valid); if (first) {setInvalid(true); first.focus(); return;} setInvalid(false); submitting.current=true; setPending(true); try {await onSubmit(new FormData(form),form);} finally {submitting.current=false; setPending(false);}};
+  const recheck = (e: FormEvent<HTMLFormElement>) => {const control = e.target; if (!isFormControl(control) || control.getAttribute('aria-invalid') !== 'true' || !control.validity.valid) return; markInvalid(control, false, errorId); if (!e.currentTarget.querySelector('[aria-invalid="true"]')) setInvalid(false);};
+  return <form noValidate className={`form-grid ${className}`} aria-busy={pending} inert={pending} onSubmit={submit} onInput={recheck} onChange={recheck}>{children}{invalid && <p id={errorId} className="notice error form-error" role="alert">{t.invalid_input}</p>}</form>;
 }
 export function Submit({children, disabled = false}: {children?: ReactNode; disabled?: boolean}) {const {busy, t} = useFarm(); return <button type="submit" className="primary" disabled={busy || disabled}>{children ?? t.save}</button>;}
 export function CurrencyFields({required = false}: {required?: boolean}) {const {t} = useFarm(); return <div className="field-row"><Field label={t.amount}><input name="amount" type="number" min="0" step="0.01" required={required}/></Field><Field label={t.currency}><input name="currency" maxLength={3} minLength={3} pattern="[A-Za-z]{3}" placeholder="USD" required={required} autoCapitalize="characters"/></Field></div>;}

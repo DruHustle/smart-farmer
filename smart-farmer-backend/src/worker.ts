@@ -15,8 +15,24 @@ import {
 import { expireCommands } from "./integrations/equipment.js";
 import { processAccountingDocument } from "./accounting/documents.js";
 
+type StepFailure = { step: string; error: string; code?: string };
+
+// Failure logs carry the step and error class only: messages and row payloads
+// can contain farm records, which do not belong in worker logs.
+function recordFailure(failures: StepFailure[], step: string, error: unknown) {
+  const e = error as { name?: unknown; code?: unknown } | null;
+  const failure: StepFailure = {
+    step,
+    error: typeof e?.name === "string" ? e.name : "Error",
+    ...(typeof e?.code === "string" && /^[A-Za-z0-9_]{1,40}$/.test(e.code) ? { code: e.code } : {}),
+  };
+  failures.push(failure);
+  console.error(JSON.stringify({ event: "maintenance_step_failed", ...failure }));
+}
+
 export async function runMaintenance(db: Pool) {
   const client = await db.connect();
+  const failures: StepFailure[] = [];
   let details;
   try {
     await client.query("BEGIN");
@@ -27,22 +43,35 @@ export async function runMaintenance(db: Pool) {
       await client.query("ROLLBACK");
       return { skipped: true };
     }
-    const commands = await expireCommands(client);
-    const commerce = await runProductMaintenance(client);
-    await queueNotifications(client);
-    const retention = await retireExpiredObjects(client);
-    const cameras =
-      (await client.query("DELETE FROM camera_events WHERE expires_at<=now()"))
-        .rowCount ?? 0;
-    const sessions =
-      (await client.query("DELETE FROM sessions WHERE expires_at<=now()"))
-        .rowCount ?? 0;
+    // Each step runs in its own savepoint, so one failing step is rolled back
+    // and reported without blocking the others or the heartbeat.
+    const step = async <T>(name: string, action: () => Promise<T>): Promise<T | null> => {
+      await client.query("SAVEPOINT maintenance_step");
+      try {
+        const value = await action();
+        await client.query("RELEASE SAVEPOINT maintenance_step");
+        return value;
+      } catch (error) {
+        await client.query("ROLLBACK TO SAVEPOINT maintenance_step");
+        recordFailure(failures, name, error);
+        return null;
+      }
+    };
+    const commands = await step("expire_commands", () => expireCommands(client));
+    const commerce = await step("product_maintenance", () => runProductMaintenance(client));
+    await step("queue_notifications", () => queueNotifications(client));
+    const retention = await step("retire_expired_objects", () => retireExpiredObjects(client));
+    const cameras = await step("expire_camera_events", async () =>
+      (await client.query("DELETE FROM camera_events WHERE expires_at<=now()")).rowCount ?? 0);
+    const sessions = await step("expire_sessions", async () =>
+      (await client.query("DELETE FROM sessions WHERE expires_at<=now()")).rowCount ?? 0);
     details = {
       commerce,
       retention,
       expiredCommands: commands,
       expiredCameraEvents: cameras,
       expiredSessions: sessions,
+      ...(failures.length ? { failedSteps: failures.map((f) => f.step) } : {}),
     };
     await client.query(
       "INSERT INTO worker_heartbeats(name,last_seen_at,details) VALUES('maintenance',now(),$1) ON CONFLICT(name) DO UPDATE SET last_seen_at=excluded.last_seen_at,details=excluded.details",
@@ -55,11 +84,26 @@ export async function runMaintenance(db: Pool) {
   } finally {
     client.release();
   }
-  const notifications = await deliverNotifications(db);
-  const orphanObjects = await reconcileOrphanObjects(db);
-  const removedObjects = await collectGarbage(db);
-  const accountingScan = await processAccountingDocument(db);
-  return { ...details, notifications, orphanObjects, removedObjects, accountingScan };
+  const outside = async <T>(name: string, action: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await action();
+    } catch (error) {
+      recordFailure(failures, name, error);
+      return null;
+    }
+  };
+  const notifications = await outside("deliver_notifications", () => deliverNotifications(db));
+  const orphanObjects = await outside("reconcile_orphan_objects", () => reconcileOrphanObjects(db));
+  const removedObjects = await outside("collect_garbage", () => collectGarbage(db));
+  const accountingScan = await outside("process_accounting_document", () => processAccountingDocument(db));
+  return {
+    ...details,
+    notifications,
+    orphanObjects,
+    removedObjects,
+    accountingScan,
+    ...(failures.length ? { failedSteps: failures.map((f) => f.step) } : {}),
+  };
 }
 
 if (
@@ -86,8 +130,13 @@ if (
             ...(await runMaintenance(pool)),
           }),
         );
-      } catch {
-        console.error(JSON.stringify({ event: "maintenance_failed" }));
+      } catch (error) {
+        const e = error as { name?: unknown; code?: unknown } | null;
+        console.error(JSON.stringify({
+          event: "maintenance_failed",
+          error: typeof e?.name === "string" ? e.name : "Error",
+          ...(typeof e?.code === "string" && /^[A-Za-z0-9_]{1,40}$/.test(e.code) ? { code: e.code } : {}),
+        }));
       }
       if (!stopping)
         await delay(15000, undefined, { signal: shutdown.signal }).catch(

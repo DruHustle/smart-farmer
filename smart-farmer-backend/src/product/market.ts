@@ -78,6 +78,9 @@ const globalModerator = (id: string) =>
     .map((s) => s.trim())
     .filter(Boolean)
     .includes(id);
+// Search text is matched literally: '%' and '_' typed by a visitor are not
+// wildcards, so a public search cannot be turned into an arbitrary pattern scan.
+const literalPattern = (value: string) => value.replace(/[\\%_]/g, "\\$&");
 export function registerMarket(app: FastifyInstance, ctx: Context) {
   app.get("/v1/farms/:farmId/listings", async (req, reply) => {
     const a = await auth(ctx, req, reply, manageRoles);
@@ -110,15 +113,15 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
     return page(
       (
         await ctx.db.query(
-          `${publicSelect} WHERE ${publicWhere} AND l.title ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR l.id<$2)
+          `${publicSelect} WHERE ${publicWhere} AND l.title ILIKE '%'||$1||'%' ESCAPE '\\' AND ($2::uuid IS NULL OR l.id<$2)
             AND ($3::text IS NULL OR l.category=$3)
-            AND ($4::text='' OR l.collection_area ILIKE '%'||$4||'%')
-            AND ($5::text='' OR l.condition ILIKE '%'||$5||'%')
+            AND ($4::text='' OR l.collection_area ILIKE '%'||$4||'%' ESCAPE '\\')
+            AND ($5::text='' OR l.condition ILIKE '%'||$5||'%' ESCAPE '\\')
             AND ($6::text IS NULL OR l.currency=$6)
             AND ($7::numeric IS NULL OR l.price>=$7)
             AND ($8::numeric IS NULL OR l.price<=$8)
             ORDER BY l.id DESC LIMIT $9`,
-          [q.q, q.cursor ?? null, q.category ?? null, q.area, q.condition, q.currency??null, q.minPrice??null, q.maxPrice??null, q.limit + 1],
+          [literalPattern(q.q), q.cursor ?? null, q.category ?? null, literalPattern(q.area), literalPattern(q.condition), q.currency??null, q.minPrice??null, q.maxPrice??null, q.limit + 1],
         )
       ).rows,
       q.limit,
@@ -853,8 +856,8 @@ export function registerMarket(app: FastifyInstance, ctx: Context) {
     return page(
       (
         await ctx.db.query(
-          "SELECT id,title,category,quantity,unit,area,details,expires_at,status,version,created_at FROM buying_requests WHERE status='open' AND expires_at>clock_timestamp() AND title ILIKE '%'||$1||'%' AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
-          [q.q, q.cursor ?? null, q.limit + 1],
+          "SELECT id,title,category,quantity,unit,area,details,expires_at,status,version,created_at FROM buying_requests WHERE status='open' AND expires_at>clock_timestamp() AND title ILIKE '%'||$1||'%' ESCAPE '\\' AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3",
+          [literalPattern(q.q), q.cursor ?? null, q.limit + 1],
         )
       ).rows,
       q.limit,

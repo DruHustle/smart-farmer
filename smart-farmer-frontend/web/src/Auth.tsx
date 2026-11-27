@@ -12,6 +12,8 @@ import {GuestMarket} from './components/GuestMarket';
 import {isGuestTab, type GuestTab} from './lib/preview';
 import {Field, Icon} from './components/ui';
 type Mode = 'signIn' | 'register' | 'join' | 'recover' | 'offlineUnlock';
+// Script-driven scrolling must honour the reduced-motion preference like CSS does.
+const scrollMotion = (): ScrollBehavior => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguage: (lang: Lang) => void; onLogin: (vault: Vault) => void}) {
   const [mode, setMode] = useState<Mode>('signIn'); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const t = catalog[language];
   const accountLanguage = language === 'en' ? 'sn' : language;
@@ -28,7 +30,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   // Guests may browse public market and service offers; a shared listing link opens straight into it.
   const [guestTab, setGuestTab] = useState<GuestTab | null>(() => {const page = destination(location).page; return isGuestTab(page) ? page : null;});
   const [sharedListing] = useState(() => new URLSearchParams(location.search).get('listing'));
-  const guestSection = useRef(Boolean(new URLSearchParams(location.search).get('listing')));
+  // A shared listing or a market/services link opens with the public offers in view.
+  const guestSection = useRef(Boolean(new URLSearchParams(location.search).get('listing')) || isGuestTab(destination(location).page));
   const signInCard = useRef<HTMLElement>(null);
   const afterLogin = useRef(onLogin);
   const words = useRef(t);
@@ -77,7 +80,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
   useEffect(() => {
     if (!guestTab || !guestSection.current) return;
     guestSection.current = false;
-    document.getElementById('guest-market')?.scrollIntoView({block: 'start', behavior: 'smooth'});
+    document.getElementById('guest-market')?.scrollIntoView({block: 'start', behavior: scrollMotion()});
   }, [guestTab]);
   function browse(tab: GuestTab) {
     history.replaceState(null, '', pagePath(tab));
@@ -98,7 +101,7 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
       void beginOnesa(onesa, accountLanguage).catch(error => {setBusy(false); setMessage(errorLabel(t, error));});
       return;
     }
-    signInCard.current?.scrollIntoView({block: 'center', behavior: 'smooth'});
+    signInCard.current?.scrollIntoView({block: 'center', behavior: scrollMotion()});
     signInCard.current?.querySelector<HTMLElement>('input, button.onesa-signin, a, button')?.focus();
   }
 
