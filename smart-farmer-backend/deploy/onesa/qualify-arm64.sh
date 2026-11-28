@@ -5,6 +5,12 @@ umask 077
 receipt=${1:?Usage: qualify-arm64.sh /private/new-image-receipt.env}
 if [[ -e "$receipt" || -L "$receipt" ]]; then echo 'Choose a new image receipt path' >&2; exit 2; fi
 case "$(docker info --format '{{.Architecture}}')" in aarch64|arm64) ;; *) echo 'A native ARM64 Docker server is required' >&2; exit 2;; esac
+# Hosts whose Docker default address pools are exhausted can place the disposable network in an
+# explicit, otherwise unused IPv4 block (for example FARMER_QUALIFY_SUBNET=10.245.250.0/27).
+subnet=${FARMER_QUALIFY_SUBNET:-}
+if [[ -n "$subnet" && ! "$subnet" =~ ^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])/(2[4-9])$ ]]; then
+  echo 'FARMER_QUALIFY_SUBNET must be an IPv4 block from /24 to /29' >&2; exit 2
+fi
 repo=$(git rev-parse --show-toplevel)
 revision=$(git -C "$repo" rev-parse HEAD)
 temp=$(mktemp -d)
@@ -48,7 +54,7 @@ build_image web "$web" "$web/Dockerfile" --build-arg "APP_REVISION=$revision" --
 build_image db "$backend" "$backend/Dockerfile.database"
 build_image backup "$backend" "$backend/Dockerfile.backup"
 
-network=$(docker network create --internal "$run")
+network=$(docker network create --internal ${subnet:+--subnet "$subnet"} "$run")
 media=$(docker volume create "${run}-media")
 export POSTGRES_PASSWORD
 POSTGRES_PASSWORD=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')

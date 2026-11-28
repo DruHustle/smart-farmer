@@ -12,6 +12,8 @@ From a checkout of the reviewed release commit, run the following command with a
 bash smart-farmer-backend/deploy/onesa/qualify-arm64.sh /private/receipts/farmer-arm64.env
 ```
 
+If Docker reports that all predefined address pools are exhausted, set `FARMER_QUALIFY_SUBNET` to an unused IPv4 block from /24 to /29 (for example `10.245.250.0/27`); the disposable qualification network is then created there.
+
 The script builds API, web, database and backup images sequentially from a Git archive of the current commit. It uses a disposable internal Docker network, dedicated test database and media volume. It checks the API and web revisions, worker heartbeat, account registration and login, private attachment upload, encrypted backup and restore into an empty database. Each successful run retains four locally tagged images and writes their immutable image IDs to the receipt. The qualification removes its test containers, network and volume. On a shared host, set `FARMER_BUILDER` to the name of a resource-limited Buildx builder. The script publishes no host ports or registry images.
 
 GitHub runs the same check on its standard Linux ARM64 runner. The Oracle operator must qualify the images on the target daemon and use its own receipt for the production Compose configuration. Independent builds may have different image IDs. Keep the target receipt and images for rollback.
