@@ -160,7 +160,7 @@ export function buildApp(
     const localCredentials = loopback && testRuntime;
     const ctx = createContext(db, central, localCredentials);
     registerOnesa(app, ctx, central, localCredentials);
-    registerIdentity(app, ctx, localCredentials);
+    registerIdentity(app, ctx, localCredentials, central?.browserLogout);
     registerAccountDeletion(app, ctx);
     registerFarmEdgeRoutes(app, db, ctx.user, ctx.member);
     registerNodeRedPackages(app, ctx, nodeRed);

@@ -2,9 +2,9 @@ import type {AccountLanguage, SessionIdentity, Snapshot} from '../types';
 import {apiOrigin, jsonBody, request} from './api';
 import {Vault} from './vault';
 import {destination} from './destination';
+import {consumeOnesaTransaction, onesaTransactionKey} from './browser-transaction';
 
 export type OnesaConfig = {audience?: string; issuer: string; clientId: string; callback: string};
-const key = 'smart-farmer:onesa:login';
 const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 
 export async function beginOnesa(config: OnesaConfig, language: AccountLanguage) {
@@ -17,19 +17,14 @@ export async function beginOnesa(config: OnesaConfig, language: AccountLanguage)
     response_type:'code', scope:config.audience ? 'openid profile email' : 'openid email profile onesa', ...(config.audience && {audience:config.audience}), client_id:config.clientId,
     redirect_uri:config.callback, state, nonce, code_challenge:challenge, code_challenge_method:'S256',
   }).toString();
-  sessionStorage.setItem(key, JSON.stringify({state,verifier,nonce:config.audience ? nonce : undefined,issuer:config.issuer,language,returnTo:destination(location).path,expires:Date.now()+300_000}));
+  sessionStorage.setItem(onesaTransactionKey, JSON.stringify({state,verifier,nonce:config.audience ? nonce : undefined,issuer:config.issuer,language,returnTo:destination(location).path,expires:Date.now()+300_000}));
   location.assign(target.href);
 }
 
 export async function finishOnesa(url: URL): Promise<Vault> {
-  const transaction = sessionStorage.getItem(key);
-  sessionStorage.removeItem(key);
-  if (!transaction) throw new Error('unauthorized');
-  const saved = JSON.parse(transaction);
+  const saved = consumeOnesaTransaction(sessionStorage,url,location.origin);
   const singleton = (name: string) => url.searchParams.getAll(name).length === 1 ? url.searchParams.get(name) : null;
   const code = singleton('code');
-  if (singleton('state') !== saved.state || saved.expires <= Date.now()
-    || (url.searchParams.has('iss') && singleton('iss') !== saved.issuer)) throw new Error('unauthorized');
   if (typeof saved.returnTo === 'string') {
     const target = new URL(saved.returnTo, location.origin);
     if (target.origin === location.origin) history.replaceState(null, '', destination(target).path);

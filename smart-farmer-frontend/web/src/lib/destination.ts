@@ -37,3 +37,17 @@ export function takeRegistration(storage: Storage): string | null {
     return target.origin === base ? destination(target).path : '/';
   } catch { return '/'; }
 }
+export function centralLogoutDestination(value: unknown, origin: string): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url=new URL(value);
+    const client=url.searchParams.get('client_id');
+    return url.origin==='https://auth.onesa.eu' && url.pathname==='/oidc/logout' &&
+      !url.username && !url.password && !url.hash &&
+      Array.from(url.searchParams.keys()).length===2 &&
+      client && /^[\w-]{1,200}$/.test(client) &&
+      url.searchParams.get('post_logout_redirect_uri')===origin+'/' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
