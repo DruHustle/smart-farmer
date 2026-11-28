@@ -32,6 +32,13 @@ In Xcode Organizer, validate and upload the device archive to App Store Connect.
 
 ## Google Play App Bundle
 
+For an owner who signs on a separate machine, run **Android preview APK** on
+`main` with **Retain a verified unsigned Play App Bundle for owner signing**
+selected. Download `smart-farmer-play-upload-input` and verify its
+`SHA256SUMS` and `manifest.json` before signing `SmartFarmer-unsigned.aab`
+with the registered Play upload key. The workflow embeds the production policy
+links and checks the payload against the bundle built for emulator verification.
+
 From the repository root, install the locked mobile dependencies. On a build machine with the SDK/NDK versions used in the Android preview workflow, set `BUNDLETOOL_JAR` to the official bundletool JAR. Set `ANDROID_RELEASE_KEYSTORE`, `ANDROID_RELEASE_ALIAS`, `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_PASSWORD`, and `ANDROID_RELEASE_CERT_SHA256` in the protected signing environment. For this bundle, the expected certificate is the **upload certificate** registered in Play Console. The Android app-signing certificate can be different.
 
 ```sh
