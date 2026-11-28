@@ -67,9 +67,8 @@ export function Auth({language, onLanguage, onLogin}: {language: Lang; onLanguag
 
   useEffect(() => {
     if (!onesa || location.pathname !== registrationReturn) return;
-    const path = takeRegistration(sessionStorage);
-    history.replaceState(null, '', path || '/');
-    if (!path) return;
+    const path = takeRegistration(sessionStorage) ?? '/';
+    history.replaceState(null, '', path);
     setBusy(true);
     void beginOnesa(onesa, accountLanguage).catch(error => {
       setBusy(false);

@@ -854,7 +854,7 @@ final class PortalColdTests: XCTestCase {
     // Only used after the isolated iPad Maestro run captured and identified
     // Apple's exact Save Password? sheet. The system owns this overlay, so a
     // Maestro tap sent to Farmer cannot dismiss it. XCTest can target its owner.
-    // Never replay credentials or treat a hidden tab as an authenticated pass.
+    // Open Record in the same native session that dismisses the overlay.
     @MainActor func testDismissSystemPasswordSheet() throws {
         continueAfterFailure = false
         let record = app.descendants(matching: .any)["tab-record"].firstMatch
@@ -875,6 +875,11 @@ final class PortalColdTests: XCTestCase {
         XCTAssertTrue(waitFor({
             self.app.state == .runningForeground && record.exists && record.isHittable
         }, seconds: 45), "Previously authenticated Farmer workspace must be usable")
+        if !record.isSelected { record.tap() }
+        let project = app.descendants(matching: .any)["record-project"].firstMatch
+        XCTAssertTrue(waitFor({
+            record.isSelected && project.exists && project.isHittable
+        }, seconds: 20), "Record must open with the authenticated farm's project selector")
     }
 
 }

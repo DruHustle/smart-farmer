@@ -16,6 +16,15 @@ export function nativeCode(incoming: string, pending: PendingOnesa, origin: stri
   return code;
 }
 
+export function ownsRegistration(stored: string, origin: string, now = Date.now()): boolean {
+  if (stored === origin) return true;
+  try {
+    const attempt = JSON.parse(stored) as {origin?: unknown; expires?: unknown} | null;
+    return attempt?.origin === origin && typeof attempt.expires === 'number'
+      && Number.isSafeInteger(attempt.expires) && attempt.expires > now;
+  } catch {return false;}
+}
+
 type PendingStore = {
   read(): Promise<string | null>;
   write(value: string): Promise<void>;

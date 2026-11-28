@@ -26,6 +26,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
   const allowLocal = localOrigin === origin;
   const [configFailed, setConfigFailed] = useState(false);
   const [configAttempt, setConfigAttempt] = useState(0);
+  const [registrationReturned, setRegistrationReturned] = useState(false);
   const onSessionRef = useRef(onSession);
   onSessionRef.current = onSession;
   useEffect(() => {
@@ -38,30 +39,45 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       if (local) setLocalOrigin(origin);
       if ('issuer' in config && typeof config.issuer === 'string' && config.clientId && config.callback) {
         setPortal({origin, config});
-        void Linking.getInitialURL().then(async url => {
-          if (!mounted || submitting.current || url !== registrationReturn) return;
-          submitting.current = true;
-          setBusy(true);
-          try {
-            if (!await resumeRegistration(origin)) return;
-            const session = await openOnesa(origin,config,language);
-            if (mounted && session) await onSessionRef.current(session);
-          } finally { submitting.current = false; if (mounted) setBusy(false); }
-        }).catch(err => { if (mounted) setError(err); });
       } else if (!local) setConfigFailed(true);
     }).catch(() => { if (mounted) setConfigFailed(true); });
     const handle = async (url: string | null | undefined) => {
-      if (!mounted || !url?.startsWith('smartfarmer://onesa/callback?') || returning) return;
+      if (!mounted) return;
+      if (url === registrationReturn) {
+        setRegistrationReturned(true);
+        return;
+      }
+      if (!url?.startsWith('smartfarmer://onesa/callback?') || returning) return;
       returning = true;
       setBusy(true);
       try {const session = await redeemOnesa(url,origin); if (mounted && session) await onSessionRef.current(session);}
       catch (err) {if (mounted) setError(err);}
       finally {returning=false;if (mounted) setBusy(false);}
     };
-    // The system authentication session handles live redirects. Recover a callback after process death.
+    // The authentication session owns login callbacks. Verification can reopen
+    // the registration link from outside that session.
+    const subscription = Linking.addEventListener('url', ({url}) => {
+      if (url === registrationReturn) void handle(url);
+    });
     void Linking.getInitialURL().then(handle).catch(() => {});
-    return () => {mounted=false;};
+    return () => { mounted = false; subscription.remove(); };
   }, [origin, configAttempt]);
+
+  useEffect(() => {
+    if (!registrationReturned || !onesa || busy || submitting.current) return;
+    setRegistrationReturned(false);
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    void (async () => {
+      try {
+        if (!await resumeRegistration(origin)) return;
+        const session = await openOnesa(origin, onesa, language);
+        if (session) await onSessionRef.current(session);
+      } catch (err) { setError(err); }
+      finally { submitting.current = false; setBusy(false); }
+    })();
+  }, [registrationReturned, onesa, busy, origin, language]);
 
   useEffect(() => {
     if (!receipt) return;
@@ -121,9 +137,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       if (submitting.current) return;
       submitting.current = true; setBusy(true); setError(null);
       try {
-        if (!await registerOnesa(origin,audience) || !onesa || !await resumeRegistration(origin)) return;
-        const session = await openOnesa(origin,onesa,language);
-        if (session) await onSessionRef.current(session);
+        if (await registerOnesa(origin,audience)) setRegistrationReturned(true);
       } catch (err) { setError(err); }
       finally { submitting.current = false; setBusy(false); }
     }}/>)}

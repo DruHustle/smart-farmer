@@ -127,6 +127,7 @@ try {
   pass('Localized return links have a 44px touch target and open the native callback on phones');
   await registrationJourney(browser, ui, api, sn.createOnesaAccount,'user');
   await registrationJourney(browser, ui, api, sn.requestOnesaAdmin,'admin');
+  await registrationJourney(browser, ui, api, sn.createOnesaAccount,'user',true);
   checkpoint('Signed-out feature preview returns to the chosen feature');
   await previewJourney(browser, ui, api, catalog);
   pass('Signed-out visitors see six labelled feature samples without credentials or errors; a feature action signs in and returns to it (sn desktop, nd 320px)');
