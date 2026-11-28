@@ -112,7 +112,7 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
         void Linking.openURL('https://account.onesa.eu/account').catch(setError);
       }}/>
     </Card>}
-    {onesa && <Button testID="auth-onesa" accent title={t.onesaSignIn} disabled={busy} onPress={() => {
+    {onesa && <Button testID="auth-onesa" title={t.onesaSignIn} disabled={busy} onPress={() => {
       if (submitting.current) return;
       submitting.current=true; setBusy(true); setError(null);
       void openOnesa(origin,onesa,language).then(async session => { if (session) await onSessionRef.current(session); }).catch(setError).finally(() => {submitting.current=false;setBusy(false);});

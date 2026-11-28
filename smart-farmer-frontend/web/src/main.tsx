@@ -1,7 +1,7 @@
 import {createRoot} from 'react-dom/client';
 import {App} from './App';
 import {StorePolicies} from './pages/StorePolicies';
-import '@fontsource/staatliches/latin-400.css';
+import '@fontsource/league-spartan/latin-700.css';
 import './style.css';
 import './theme.css';
 const pathname = location.pathname.replace(/\/$/, '');

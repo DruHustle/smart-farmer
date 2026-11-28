@@ -2,12 +2,12 @@ import React, { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Shared with the web theme (web/src/theme.css): field green, a magenta accent for the main
-// call to action, crisp white surfaces and 3:1 field borders.
-export const colors = { ink: '#1B2A21', green: '#007A3D', greenDark: '#005C2E', pale: '#E2F3E8', paper: '#F3F5F2', white: '#FFFFFF', muted: '#4B5A50', line: '#C9D2CB', fieldBorder: '#7D8B80', accent: '#E5006F', accentDark: '#B80059', orange: '#8C4B0D', red: '#9B302A', blue: '#0A6F8F' };
-// Staatliches is embedded by the expo-font config plugin (app.json); the file name matches its
-// PostScript name, so Android and iOS resolve the same family. It draws capitals itself.
-export const displayFont = 'Staatliches-Regular';
+// Shared with the web theme (web/src/theme.css): deep green actions, leaf-green headings, a calm
+// blue for small accents, sage-white pages and 3:1 field borders.
+export const colors = { ink: '#14263A', green: '#00703C', greenDark: '#005A30', pale: '#E3F1E7', paper: '#F3F6EF', white: '#FFFFFF', muted: '#4A5866', line: '#D3DBCF', fieldBorder: '#7D8B80', leaf: '#3F6512', orange: '#8C4B0D', red: '#9B302A', blue: '#2F6DA8' };
+// League Spartan Bold is embedded by the expo-font config plugin (app.json); the file name matches
+// its PostScript name, so Android and iOS resolve the same family.
+export const displayFont = 'LeagueSpartan-Bold';
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.paper },
   content: { width: '100%', maxWidth: 1100, alignSelf: 'center', padding: 16, gap: 14, paddingBottom: 28 },
@@ -15,7 +15,7 @@ export const styles = StyleSheet.create({
   between: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 14 },
   card: { padding: 16, backgroundColor: colors.white, borderColor: colors.line, borderWidth: 1, borderRadius: 12, gap: 12 },
-  title: { fontFamily: displayFont, fontSize: 34, lineHeight: 36, fontWeight: '400', letterSpacing: 0.3, color: colors.ink },
+  title: { fontFamily: displayFont, fontSize: 30, lineHeight: 34, fontWeight: '400', letterSpacing: -0.2, color: colors.leaf },
   heading: { fontSize: 20, fontWeight: '700', color: colors.ink, lineHeight: 28 },
   text: { color: colors.ink, fontSize: 16, lineHeight: 23 },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 21 },
@@ -24,7 +24,6 @@ export const styles = StyleSheet.create({
   input: { minHeight: 48, borderColor: colors.fieldBorder, borderWidth: 1, backgroundColor: colors.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, fontSize: 16, color: colors.ink },
   button: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.green, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   secondary: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.green },
-  accent: { backgroundColor: colors.accent },
   danger: { backgroundColor: '#FCEAE7' },
   disabled: { opacity: 0.45 },
   buttonText: { color: colors.white, fontSize: 15, fontWeight: '700', lineHeight: 22, textAlign: 'center' },
@@ -37,11 +36,11 @@ export const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: '#0B271B99', justifyContent: 'center', padding: 12 },
   modal: { width: '100%', maxWidth: 740, maxHeight: '94%', alignSelf: 'center', backgroundColor: colors.paper, borderRadius: 20, overflow: 'hidden' },
   modalHeader: { padding: 16, borderBottomWidth: 1, borderColor: colors.line, gap: 12 },
-  brand: { fontFamily: displayFont, color: colors.green, fontWeight: '400', fontSize: 26, letterSpacing: 0.5 },
+  brand: { fontFamily: displayFont, color: colors.greenDark, fontWeight: '400', fontSize: 22, letterSpacing: -0.2 },
 });
 
-export function Button({ title, onPress, secondary = false, danger = false, accent = false, disabled = false, busy = false, testID }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; accent?: boolean; disabled?: boolean; busy?: boolean; testID?: string }) {
-  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [styles.button, accent && styles.accent, secondary && styles.secondary, danger && styles.danger, (disabled || busy) && styles.disabled, pressed && (accent ? { backgroundColor: colors.accentDark } : { opacity: 0.75 })]}>
+export function Button({ title, onPress, secondary = false, danger = false, disabled = false, busy = false, testID }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; busy?: boolean; testID?: string }) {
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, (disabled || busy) && styles.disabled, pressed && (secondary || danger ? { opacity: 0.75 } : { backgroundColor: colors.greenDark })]}>
     {busy ? <ActivityIndicator color={secondary ? colors.green : colors.white} /> : <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{title}</Text>}
   </Pressable>;
 }
