@@ -67,6 +67,19 @@ a,.text-button{color:var(--green)}
 /* Light bands span the full width behind each section without changing the markup. */
 .public-preview,.guest-market,.auth-footer{background:var(--page);box-shadow:0 0 0 100vmax var(--page);clip-path:inset(-14px -100vmax -32px)}
 .auth-footer{clip-path:inset(-32px -100vmax -100vmax);color:var(--muted)}
+.store-policy {
+  width: min(100% - 2rem, 48rem);
+  margin: clamp(1rem, 4vw, 3rem) auto;
+}
+.store-policy h1 {
+  margin: 0 0 1rem;
+}
+.store-policy h2 {
+  margin: 1.5rem 0 0.5rem;
+}
+.store-policy li + li {
+  margin-top: 0.5rem;
+}
 .public-preview{padding-top:34px}
 
 /* Feature cards lead with a photograph, edge to edge. */

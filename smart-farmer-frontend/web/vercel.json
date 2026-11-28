@@ -7,7 +7,9 @@
     {"source": "/version", "destination": "https://farmer-api.onesa.eu/version"},
     {"source": "/auth/onesa/callback", "destination": "/index.html"},
     {"source": "/auth/registration/complete", "destination": "/index.html"},
-    {"source": "/account-deletion", "destination": "/index.html"}
+    {"source": "/account-deletion", "destination": "/index.html"},
+    {"source": "/privacy", "destination": "/index.html"},
+    {"source": "/community-guidelines", "destination": "/index.html"}
   ],
   "headers": [
     {"source": "/auth/onesa/callback", "headers": [
