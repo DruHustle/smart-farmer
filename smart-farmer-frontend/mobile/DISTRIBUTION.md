@@ -53,6 +53,9 @@ The owner-approved production origin for both release scripts is `https://farmer
 
 Before signing for either store, set `EXPO_PUBLIC_PRIVACY_POLICY_URL` and `EXPO_PUBLIC_COMMUNITY_RULES_URL` to the public HTTPS pages approved for Smart Farmer. The upload-bundle and iPhoneOS archive commands require both values. Verify the content of each page and open both links in the installed release. Store Console metadata and the in-app link must point to the approved privacy policy. The Android CI job uses `--qualification` with a disposable key for its private build check.
 
+Use `https://farmer.onesa.eu/privacy` and
+`https://farmer.onesa.eu/community-guidelines` for the production application.
+
 ## Privacy disclosures and reviewer access
 
 Use the following inventory when completing App Privacy and Play Data safety for the deployed service. Both stores require the publisher to account for its own processing and its included SDKs. Select the categories, purposes and sharing answers after checking the production configuration, processors and retention policy.
