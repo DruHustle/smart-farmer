@@ -174,6 +174,51 @@ To reproduce in CI, dispatch the Native acceptance workflow for the review branc
 
 ## Physical release acceptance
 
+### Farm tools and calm field theme
+
+The native app uses the same deep green, leaf green, blue and pale sage palette
+as the web app. Sign-in and the Record tab use deep green. Titles and the wordmark
+use the bundled **League Spartan Bold** font, preserving sentence case. The
+static weight-700 file comes from `@expo-google-fonts/league-spartan` 0.4.2;
+its PostScript name is `LeagueSpartan-Bold` and its OFL is kept beside the font.
+`expo-font` embeds it for native builds, while runtime loading also supports
+existing development binaries. The measured text contrast ratios are 6.21:1
+for white on the deep green button, 6.24:1 for leaf headings on sage, 4.97:1 for
+blue on sage and 6.68:1 for secondary text on sage.
+
+**More → Farm tools** contains sourced market-price observations, support
+centres and reviewed guides, visit requests, control/treatment field trials,
+hydroponic/aquaponic systems and water-quality logs, a farm advisor, and basic
+phone setup. These are native forms connected to the farm-scoped API. Managers
+enter verified directory and guide sources; the app does not invent prices,
+extension officers, reviewed agronomy, or booked appointments. A visit request
+is a recorded request until a manager records external confirmation. External
+videos load only after a deliberate tap, with their recorded size shown first.
+
+The advisor accepts English, Shona or Ndebele questions and optional camera or
+library photos. Photos are compacted to JPEG, limited to 1.5 MiB, and remain in
+memory until explicitly submitted with image consent; app-owned temporary files
+are removed. The response distinguishes a configured model from record-based
+context and says whether image analysis occurred. An unavailable model is not
+represented as a working disease diagnosis. Trial summaries can be deliberately
+shared through the operating system's share sheet. Selected trial image evidence
+must belong to the same project; financial and equipment/camera files are excluded.
+
+**More → Sensors** shows the latest reading, units, quality, observation and
+receipt times, short history, gateway connectivity and battery/data values when
+reported. Sensor and weather rules use farm-defined thresholds and the existing
+notification preferences/verified channels. They issue alerts only and do not
+operate equipment. Cached sensor/forecast readings become stale based on their
+timestamps and are never represented as current while offline. Full trial and
+water histories follow server pagination. All new writes require an online
+authorized session and do not expand the existing offline field-record queue.
+
+The new labels in `src/farm-tools-i18n.ts` remain draft Shona and Zimbabwean
+Northern Ndebele. Catalog checks do not establish fluent approval. Actual model,
+forecast, SMS/USSD and push activation still requires the configured service,
+consent and provider evidence. Native type checking, unit tests and JavaScript
+exports do not establish simulator, phone or store acceptance for this revision.
+
 Before distributing a signed farm release, use the approved API and isolated test accounts to verify physical Android/iPhone/iPad behavior: device unlock and account switching, airplane-mode recording/restart, low storage, camera/library/microphone permissions, audio, file/report sharing, local and remote notifications, large fonts, keyboard and screen readers. Exercise the checked livestock/trade/service/equipment workflows with actual supported hardware only after commissioning.
 
 The source includes the necessary provider/permission/configuration paths. Actual push credentials/device registration, HTTPS deployment, signing identities/distribution, hardware mappings and fluent language approval remain explicit external inputs. Speech recognition/text-to-speech are not claimed. No real farm device has been commissioned by these tests.

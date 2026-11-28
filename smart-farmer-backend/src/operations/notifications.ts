@@ -34,6 +34,8 @@ import {
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const messages: Record<string, Record<string, string>> = {
   sn: {
+    forecast_threshold: "Yambiro yemamiriro ekunze",
+    sensor_threshold: "Yambiro yechiyero chemuchina",
     task_assigned: "Basa rawapihwa",
     task_due: "Basa rasvika nguva",
     incident_attention: "Chiitiko chinoda kutariswa",
@@ -45,6 +47,8 @@ const messages: Record<string, Record<string, string>> = {
     verification: "Kodhi yekusimbisa",
   },
   nd: {
+    forecast_threshold: "Isixwayiso somumo womkhathi",
+    sensor_threshold: "Isixwayiso sesilinganiso somtshina",
     task_assigned: "Umsebenzi owuphiweyo",
     task_due: "Isikhathi somsebenzi sesifikile",
     incident_attention: "Isigameko esidinga ukunakwa",

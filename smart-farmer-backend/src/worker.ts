@@ -15,6 +15,9 @@ import {
 import { expireCommands } from "./integrations/equipment.js";
 import { processAccountingDocument } from "./accounting/documents.js";
 
+import { evaluateMonitoringRules } from "./monitoring/rules.js";
+import { refreshDueWeather } from "./monitoring/weather.js";
+
 type StepFailure = { step: string; error: string; code?: string };
 
 // Failure logs carry the step and error class only: messages and row payloads
@@ -59,6 +62,7 @@ export async function runMaintenance(db: Pool) {
     };
     const commands = await step("expire_commands", () => expireCommands(client));
     const commerce = await step("product_maintenance", () => runProductMaintenance(client));
+    const monitoring = await step("evaluate_monitoring", () => evaluateMonitoringRules(client));
     await step("queue_notifications", () => queueNotifications(client));
     const retention = await step("retire_expired_objects", () => retireExpiredObjects(client));
     const cameras = await step("expire_camera_events", async () =>
@@ -67,6 +71,7 @@ export async function runMaintenance(db: Pool) {
       (await client.query("DELETE FROM sessions WHERE expires_at<=now()")).rowCount ?? 0);
     details = {
       commerce,
+      monitoring,
       retention,
       expiredCommands: commands,
       expiredCameraEvents: cameras,
@@ -92,6 +97,7 @@ export async function runMaintenance(db: Pool) {
       return null;
     }
   };
+  const weather = await outside("refresh_weather", () => refreshDueWeather(db));
   const notifications = await outside("deliver_notifications", () => deliverNotifications(db));
   const orphanObjects = await outside("reconcile_orphan_objects", () => reconcileOrphanObjects(db));
   const removedObjects = await outside("collect_garbage", () => collectGarbage(db));
@@ -99,6 +105,7 @@ export async function runMaintenance(db: Pool) {
   return {
     ...details,
     notifications,
+    weather,
     orphanObjects,
     removedObjects,
     accountingScan,

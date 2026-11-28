@@ -182,7 +182,7 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#235f43"
+        "backgroundColor": "#145A32"
       }
     },
     "locales": {

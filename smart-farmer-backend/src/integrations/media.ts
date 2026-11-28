@@ -214,7 +214,10 @@ export function registerMedia(app: FastifyInstance, ctx: Context) {
     const canFinance = await ctx.member(auth.farmId, auth.userId, managers);
     const rows = (
       await ctx.db.query(
-        `SELECT m.id,m.activity_id,m.asset_id,m.financial,m.mime_type,m.size_bytes,m.filename,m.created_at
+        `SELECT m.id,m.activity_id,m.asset_id,m.financial,m.mime_type,m.size_bytes,m.filename,m.created_at,
+      (NOT m.financial AND a.id IS NOT NULL AND a.kind<>'cost'
+       AND NOT EXISTS(SELECT 1 FROM financial_entries f WHERE f.farm_id=a.farm_id AND f.receipt_activity_id=a.id)
+       AND m.mime_type IN ('image/jpeg','image/png','image/webp')) AS trial_eligible
       FROM private_media m LEFT JOIN activities a ON a.farm_id=m.farm_id AND a.id=m.activity_id LEFT JOIN assets s ON s.farm_id=m.farm_id AND s.id=m.asset_id
       WHERE m.farm_id=$1 AND ($2::uuid IS NULL OR m.activity_id=$2) AND ($6::uuid IS NULL OR m.asset_id=$6)
       AND ($3::boolean OR (NOT m.financial AND (a.id IS NULL OR (a.kind<>'cost' AND NOT EXISTS(SELECT 1 FROM financial_entries f WHERE f.farm_id=a.farm_id AND f.receipt_activity_id=a.id)))))

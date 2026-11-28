@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 14 },
   card: { padding: 16, backgroundColor: colors.white, borderColor: colors.line, borderWidth: 1, borderRadius: 12, gap: 12 },
   title: { fontFamily: displayFont, fontSize: 30, lineHeight: 34, fontWeight: '400', letterSpacing: -0.2, color: colors.leaf },
-  heading: { fontSize: 20, fontWeight: '700', color: colors.ink, lineHeight: 28 },
+  heading: { fontFamily: displayFont, fontSize: 20, fontWeight: '700', color: colors.ink, lineHeight: 28 },
   text: { color: colors.ink, fontSize: 16, lineHeight: 23 },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   label: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 21 },

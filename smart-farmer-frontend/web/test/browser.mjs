@@ -9,6 +9,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {completionJourneys} from './browser-completion.mjs';
+import {farmToolJourneys} from './browser-farm-tools.mjs';
 import {accountingJourneys} from './browser-accounting.mjs';
 import {forumJourneys} from './browser-forum.mjs';
 import {trackingJourneys} from './browser-tracking.mjs';
@@ -258,6 +259,7 @@ try {
   await accountingJourneys({page, context, browser, api, ui, apiCall, farm, project, token, sn, nd, unique, checkpoint, pass, artifacts, pace, watchContext, backend, startWorker: () => server(['dist/worker.js'], backend)});
   await forumJourneys({page,context,apiCall,farm,token,sn,nd,unique,checkpoint,pass,artifacts});
   await trackingJourneys({page,context,api,apiCall,farm,token,sn,nd,unique,navigate,more,checkpoint,pass,artifacts});
+  await farmToolJourneys({browser,ui,api,apiCall,farm,project,token,username,password,unique,checkpoint,pass,artifacts,watchContext,pace});
   checkpoint('Guests browse public market and service offers, then sign in to buy');
   await guestJourney(browser, ui, api, catalog);
   pass('Guests browse real market listings (shared link, search) and service offers without credentials or errors; buying signs in and returns to the same listing (nd desktop, sn 320px)');

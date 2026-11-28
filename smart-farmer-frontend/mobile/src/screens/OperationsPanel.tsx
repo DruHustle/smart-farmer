@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, Text, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Crypto from 'expo-crypto';
 import { Action, c, dateField, Facts, farmPath, Form, memberOptions, numericField, options, projectOptions, Records, selectField, textField, usePanel } from '../completion-ui';
@@ -10,6 +10,8 @@ import { rememberPushChannel } from '../reminders';
 import type { Language } from '../types';
 import { Button, Card, Choice, Notice, Sheet, styles } from '../ui';
 import type { Workspace } from '../use-workspace';
+import { forecastIsStale } from '../monitoring';
+import { WeatherRules } from './MonitoringPanel';
 
 type Props = { work: Workspace; language: Language };
 const zone = (work: Workspace) => work.snapshot?.farm.timezone || 'Africa/Harare';
@@ -37,8 +39,11 @@ export function WeatherPanel({ work, language }: Props) {
   return <><Notice text={c(language, 'forecastHint')} />
     <Button secondary title={textFor(language).refresh} busy={data.loading} onPress={() => { void data.reload(); }} />
     {work.canManage ? <Action work={work} language={language} title={c(language, 'forecast')} action={() => work.api.request(farmPath(work, '/weather/refresh'), 'POST', {})} onSaved={data.reload} /> : null}
-    {data.value?.weather.stale ? <Notice text={textFor(language).stale} /> : null}
-    <Card title={c(language, 'forecast')}><Facts value={forecast} fields={['provider', 'sourceUrl', 'fetchedAt', 'validFrom', 'timezone']} language={language} timezone={zone(work)} />{!times.length ? <Text style={styles.muted}>{c(language, 'unconfigured')}</Text> : times.map((time, i) => <View key={string(time)} style={styles.item}><Text style={styles.label}>{formatFarmTime(string(time), zone(work), language)}</Text>{[['temperature_2m', 'temperature'], ['relative_humidity_2m', 'humidity'], ['precipitation', 'rainfall'], ['wind_speed_10m', 'wind']].map(([key, title]) => <Text key={key} style={styles.text}>{c(language, title!)}: {numberText((hourly[key!] as unknown[] | undefined)?.[i], language)} {string(object(forecast.units)[key!])}</Text>)}</View>)}</Card>
+    {data.value && forecastIsStale(data.value.weather, work.online) ? <Notice text={textFor(language).stale} /> : null}
+    {data.value?.weather.configured === false ? <Notice text={c(language, 'weather_unconfigured')} /> : null}
+    <Card title={c(language, 'forecast')}><Facts value={forecast} fields={['provider', 'attribution', 'sourceUrl', 'fetchedAt', 'validFrom', 'validUntil', 'timezone']} language={language} timezone={zone(work)} /><Facts value={data.value?.weather || {}} fields={['locationMatched', 'nextRefreshAt', 'lastError']} language={language} timezone={zone(work)} />{!times.length ? <Text style={styles.muted}>{textFor(language).empty}</Text> : times.map((time, i) => ({ time, i })).filter(item => Date.parse(string(item.time)) >= Date.now() - 3600_000).slice(0, 24).map(({ time, i }) => <View key={string(time)} style={styles.item}><Text style={styles.label}>{formatFarmTime(string(time), zone(work), language)}</Text>{[['temperature_2m', 'temperature'], ['relative_humidity_2m', 'humidity'], ['precipitation', 'rainfall'], ['wind_speed_10m', 'wind']].map(([key, title]) => <Text key={key} style={styles.text}>{c(language, title!)}: {numberText((hourly[key!] as unknown[] | undefined)?.[i], language)} {string(object(forecast.units)[key!])}</Text>)}</View>)}</Card>
+    {forecast.licenseUrl ? <Button secondary title={c(language, 'forecastLicense')} onPress={() => { try { const target = new URL(string(forecast.licenseUrl)); if (target.protocol !== 'https:' || target.username || target.password) throw new Error('invalid_input'); void Linking.openURL(target.href).catch(work.setError); } catch (error) { work.setError(error); } }} /> : null}
+    <WeatherRules key={work.farmId} work={work} language={language} />
     {recorder(work) ? <Form work={work} language={language} title={c(language, 'fieldMeasurements')} offline confirmation={false} draftKey="weather" fields={[selectField('kind', options(language, ['rainfall', 'temperature', 'humidity', 'wind', 'soil_moisture', 'water_level']), true), numericField('value', true, { minimum: -1e9 }), textField('unit', true), dateField('observedAt'), selectField('locationId', (data.value?.locations || []).map(item => ({ value: string(item.id), label: string(item.name) }))), selectField('source', options(language, ['manual', 'gauge']), true), textField('instrument'), textField('calibration'), textField('note', false, { multiline: true })]} initial={{ observedAt: farmNow(zone(work)), source: 'manual' }} submit={async body => { await work.repository.enqueue({ id: string(body.id), farmId: work.farmId, kind: 'weather-observation', body, state: 'pending', attempts: 0, lastError: null, createdAt: new Date().toISOString() }); await work.reloadLocal(); work.setNotice('savedLocally'); if (work.online) await work.sync(); }} onSaved={data.reload} /> : null}
     <Records items={data.value?.observations || []} language={language} timezone={zone(work)} fields={['kind', 'value', 'unit', 'observed_at', 'received_at', 'source', 'instrument', 'calibration', 'note']} />
   </>;

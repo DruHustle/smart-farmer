@@ -16,6 +16,8 @@ import { FinancePanel } from './FinancePanel';
 import { IncidentsPanel, WeatherPanel, NotificationsPanel, FarmSettingsPanel } from './OperationsPanel';
 import { SecurityPanel } from './SecurityPanel';
 import { MediaPanel } from './MediaPanel';
+import { MonitoringPanel } from './MonitoringPanel';
+import { FarmToolsPanel } from './FarmToolsPanel';
 
 type DeviceSession = { id: string; label: string; created_at: string; expires_at: string; current: boolean };
 export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }: { work: Workspace; language: Language; onLogout: () => void; onLock: () => void; onNativePrompt: (active: boolean) => void }) {
@@ -84,6 +86,7 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
     <Text style={styles.title}>{t.more}</Text>
     <Card><Text style={styles.heading}>{work.session.username}</Text><Text style={styles.muted}>{label(language, work.selectedFarm?.role || '')} · {work.selectedFarm?.name}</Text><Text style={styles.caption}>{t.localPrivacy}</Text><View style={styles.row}><Button secondary title={t.lock} onPress={onLock} /><Button secondary title={t.logout} onPress={onLogout} /></View></Card>
     <AccountDeletion work={work} language={language}/>
+    <Card title={c(language, 'farmTools')}><Text style={styles.muted}>{c(language, 'farmToolsHint')}</Text><View style={styles.row}><Button testID="more-farm-tools" secondary title={c(language, 'farmTools')} onPress={() => open('farmTools')} /><Button testID="more-sensors" secondary title={c(language, 'sensorDashboard')} onPress={() => open('sensorDashboard')} /></View></Card>
     <View style={styles.grid}>
       {[['sync', `${t.outbox} (${pending.length})`], ['equipment', t.equipment], ['security', c(language, 'security')], ['incidents', c(language, 'incidents')], ['weather', c(language, 'weather')], ['market', t.market], ['services', t.services], ...(work.canManage ? [['finance', c(language, 'finance')], ['settings', c(language, 'settings')]] : []), ['media', c(language, 'media')], ['notifications', c(language, 'notifications')], ['team', t.team], ['sessions', t.sessions], ['recovery', t.recovery]].map(([value, title]) => <View key={value} style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}><Button testID={`more-${value}`} secondary title={title!} onPress={() => open(value!)} /></View>)}
     </View>
@@ -110,6 +113,8 @@ export function MoreScreen({ work, language, onLogout, onLock, onNativePrompt }:
         {work.mutations.filter(item => item.state === 'resolved').map(item => <Text key={item.id} style={styles.caption}>{t.resolved} · {item.id.slice(0, 8)}</Text>)}
       </> : null}
       {screen === 'equipment' ? <EquipmentPanel work={work} language={language} onNativePrompt={onNativePrompt} /> : null}
+      {screen === 'sensorDashboard' ? <MonitoringPanel key={work.farmId} work={work} language={language} /> : null}
+      {screen === 'farmTools' ? <FarmToolsPanel key={work.farmId} work={work} language={language} onNativePrompt={onNativePrompt} onNotifications={() => open('notifications')} /> : null}
       {screen === 'market' ? <MarketplacePanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
       {screen === 'services' ? <ServicesPanel work={work} language={language} onAccounting={openAccountingInvoice} /> : null}
       {screen === 'finance' && work.canManage ? <FinancePanel key={`${work.farmId}:${accountingLink?.invoiceId || ''}`} work={work} language={language} onNativePrompt={onNativePrompt} initialInvoiceId={accountingLink?.farmId === work.farmId ? accountingLink.invoiceId : undefined} /> : null}
