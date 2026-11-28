@@ -30,8 +30,14 @@ appId: eu.onesa.smartfarmer
     id: "accounting-tabs"
 - tapOn:
     id: "accounting-tabs-option-supplierBills"
+# iOS 26 receipt 44928925100: this exact authorized supplier invoice was
+# present at [45,724][357,772] inside the active [12,178][390,805] sheet.
+# Maestro's forced centerElement/100% visibility scroll still reported missing.
+# Accept a partially visible button without overscrolling the nested sheet,
+# then require the actual tap, posted invoice, exact payment and API readback.
 - scrollUntilVisible:
-    centerElement: true
+    centerElement: false
+    visibilityPercentage: 50
     element:
       id: "invoice-open-${PURCHASE_INVOICE_ID}"
     direction: DOWN
@@ -46,6 +52,12 @@ appId: eu.onesa.smartfarmer
     file: accounting-payment.yaml
     env:
       PAYMENT_AMOUNT: "7.50"
+      PAYMENT_AMOUNT_REGEX: "^7\\.50$"
+      PAYMENT_CHAR_1: "7"
+      PAYMENT_CHAR_2: "."
+      PAYMENT_CHAR_3: "5"
+      PAYMENT_CHAR_4: "0"
+      PAYMENT_CHAR_5: ""
       PAYMENT_REFERENCE: "Native supplier payment"
       OUTSTANDING_AMOUNT: "USD 12.50"
 - takeScreenshot: accounting-posted-bill-partial-payment
@@ -240,6 +252,12 @@ appId: eu.onesa.smartfarmer
     file: accounting-payment.yaml
     env:
       PAYMENT_AMOUNT: "10.00"
+      PAYMENT_AMOUNT_REGEX: "^10\\.00$"
+      PAYMENT_CHAR_1: "1"
+      PAYMENT_CHAR_2: "0"
+      PAYMENT_CHAR_3: "."
+      PAYMENT_CHAR_4: "0"
+      PAYMENT_CHAR_5: "0"
       PAYMENT_REFERENCE: "Native customer receipt"
       OUTSTANDING_AMOUNT: "USD 20.50"
 - takeScreenshot: accounting-issued-invoice-partial-receipt

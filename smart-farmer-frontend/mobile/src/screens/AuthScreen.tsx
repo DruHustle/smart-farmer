@@ -130,7 +130,15 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
     {error ? <Notice text={errorText(language, error)} error /> : null}
     {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
       <Choice label={t.choose} value={mode} onChange={value => { setMode(value); setError(null); setCode(''); setRecoveringUsername(''); }} closeLabel={t.close} options={(['signIn', 'register', 'join', 'recover'] as const).map(value => ({ value, label: t[value] }))} />
-      <Field testID="auth-username" label={t.username} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none" importantForAutofill="no" maxLength={80} />
+      {/* A rapid iOS simulator input event can race React's controlled-value
+          reconciliation and revert the native username to its first character.
+          The iOS-only disposable local-login field is uncontrolled after
+          mounting; onChangeText still captures the entered text for submit.
+          Managed Auth0 registration/sign-in never renders this field. */}
+      <Field testID="auth-username" label={t.username}
+        {...(Platform.OS === 'ios' ? {defaultValue: username} : {value: username})}
+        onChangeText={setUsername} autoCapitalize="none" autoCorrect={false}
+        autoComplete="off" textContentType="none" importantForAutofill="no" maxLength={80} />
       {/* The isolated iOS __DEV__ local-credentials fixture has no customer
           Keychain enrollment. iOS 26 AutoFill occasionally opens an untouchable
           system Save Password sheet after login on the iPad simulator. Mark the

@@ -62,9 +62,13 @@ ios_services_ready() {
   local endpoint family
   local families
   # A clean boot or runner handoff can temporarily starve either local API.
-  # Probe both real TLS routes before starting an authorization transaction.
-  for endpoint in "${PORTAL_TEST_ORIGIN:-https://localhost:46501}/api/v1/account/config" \
-                  "${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}/v1/onesa/config"; do
+  # Check each database-backed readiness route as well as the public config.
+  # That establishes real SQL readiness after simulator boot before the
+  # first issuer request writes to the database.
+  local portal="${PORTAL_TEST_ORIGIN:-https://localhost:46501}"
+  local farmer="${FARMER_TEST_ORIGIN:-https://127.0.0.1:46502}"
+  for endpoint in "$portal/api/v1/ready" "$portal/api/v1/account/config" \
+                  "$farmer/ready" "$farmer/v1/onesa/config"; do
     families=(--ipv4)
     if [[ "$endpoint" == https://localhost:* ]]; then families+=(--ipv6); fi
     for family in "${families[@]}"; do
@@ -132,7 +136,7 @@ for role in cancel member admin; do
     states=(cold active)
     if [[ "$platform" == android ]]; then
       prefix=$(echo "$role" | tr '[:lower:]' '[:upper:]')
-      opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)")
+      opts=(-e ROLE="$role" -e EMAIL="$(read_fixture "${prefix}_EMAIL")" -e PASSWORD="$(read_fixture PASSWORD)" -e MFA="$(read_fixture ADMIN_MFA)" -e INVITE="$(read_fixture "${prefix}_INVITE")" -e FARM_NAME="$(read_fixture FARM_NAME)" -e FORUM_TITLE="$(read_fixture FORUM_TITLE)" -e FORUM_DISCUSSION_ID="$(read_fixture FORUM_DISCUSSION_ID)")
     fi
   fi
   reference=''

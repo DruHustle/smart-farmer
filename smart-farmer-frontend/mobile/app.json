@@ -206,15 +206,15 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Tora mifananidzo yebasa repapurazi / Thatha izithombe zomsebenzi wepulazi.",
-          "photosPermission": "Sarudza mufananidzo webasa repapurazi / Khetha isithombe somsebenzi wepulazi.",
-          "microphonePermission": "Rekodha shoko rezwi repapurazi / Rekhoda izwi lomsebenzi wepulazi."
+          "cameraPermission": "Take a photo to attach to a farm record.",
+          "photosPermission": "Choose a photo to attach to a farm record.",
+          "microphonePermission": "Record a voice note to attach to a farm record."
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "Nyora shoko rezwi repapurazi / Rekhoda izwi lomsebenzi wepulazi.",
+          "microphonePermission": "Record a voice note to attach to a farm record.",
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false
         }
@@ -222,7 +222,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Vhura zvinyorwa zvako zvakakiyiwa / Vula imibhalo yakho ekhiyiweyo."
+          "faceIDPermission": "Unlock your Smart Farmer workspace on this device."
         }
       ],
       "expo-notifications",

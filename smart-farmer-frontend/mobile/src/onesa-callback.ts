@@ -16,11 +16,67 @@ export function nativeCode(incoming: string, pending: PendingOnesa, origin: stri
   return code;
 }
 
+// A successful browser return with no active, matching transaction is not
+// a successful login. Keep cold-start duplicate link deliveries ignorable in
+// PendingOnesaTransactions.claim(), but never silently dismiss the interactive
+// sign-in attempt when its transaction was lost or already consumed.
+export function requireOwnedOnesaSession<T>(session: T | null): T {
+  if (session === null) throw new Error('unauthorized');
+  return session;
+}
+
 type PendingStore = {
   read(): Promise<string | null>;
   write(value: string): Promise<void>;
   remove(): Promise<void>;
 };
+
+// An OS deep-link event may arrive while the system authentication promise is
+// still active (notably after the iOS native MFA browser handoff). This match
+// only selects an event for the active attempt: nativeCode() + the server
+// exchange still enforce issuer, PKCE, one-time code and account permissions.
+export function isOwnedNativeCallback(incoming:string, state:string):boolean {
+  try {
+    const url=new URL(incoming);
+    return url.protocol==='smartfarmer:' && url.host==='onesa' && url.pathname==='/callback' &&
+      !url.username && !url.password && !url.hash && url.searchParams.getAll('state').length===1 &&
+      url.searchParams.get('state')===state;
+  } catch { return false; }
+}
+
+// Two platform callbacks for the same attempt must share one redemption. A
+// duplicate event never replays the authorization code against the backend.
+export class SingleNativeRedemption<T> {
+  private pending:Promise<T>|null=null;
+  once(fn:()=>Promise<T>):Promise<T> {
+    if(this.pending===null) this.pending=fn();
+    return this.pending;
+  }
+  current():Promise<T>|null { return this.pending; }
+}
+
+export async function awaitNativeCallbackAfterDismissal<T>(
+  redemption: SingleNativeRedemption<T>,
+  osCallback: Promise<T>,
+  waitMs = 1000,
+): Promise<T> {
+  const started = redemption.current();
+  if (started) return started;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deliveryDeadline = new Promise<T>((resolve, reject) => {
+    timeout = setTimeout(() => {
+      const received = redemption.current();
+      if (received) resolve(received);
+      else reject(new Error('onesa_cancelled'));
+    }, waitMs);
+  });
+  try {
+    return await Promise.race([osCallback, deliveryDeadline]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 /** SecureStore has no atomic read-and-delete operation for a one-time callback. */
 export class PendingOnesaTransactions {
