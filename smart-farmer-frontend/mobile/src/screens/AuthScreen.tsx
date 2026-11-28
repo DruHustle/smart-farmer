@@ -117,16 +117,16 @@ export function AuthScreen({ origin, language, onLanguage, onSession }: { origin
       submitting.current=true; setBusy(true); setError(null);
       void openOnesa(origin,onesa,language).then(async session => { if (session) await onSessionRef.current(session); }).catch(setError).finally(() => {submitting.current=false;setBusy(false);});
     }}/>}
-    {!allowLocal && (['user','admin'] as const).map(audience=><Button key={audience} secondary title={audience==='admin'?t.requestOnesaAdmin:t.createOnesaAccount} disabled={busy} onPress={async () => {
+    {!allowLocal && <Button secondary title={t.createOnesaAccount} disabled={busy} onPress={async () => {
       if (submitting.current) return;
       submitting.current = true; setBusy(true); setError(null);
       try {
-        if (!await registerOnesa(origin,audience) || !onesa || !await resumeRegistration(origin)) return;
+        if (!await registerOnesa(origin,"user") || !onesa || !await resumeRegistration(origin)) return;
         const session = await openOnesa(origin,onesa,language);
         if (session) await onSessionRef.current(session);
       } catch (err) { setError(err); }
       finally { submitting.current = false; setBusy(false); }
-    }}/>)}
+    }}/>}
     {error ? <Notice text={errorText(language, error)} error /> : null}
     {allowLocal && (receipt ? <Card title={t.recoveryCode}><Text style={styles.text}>{t.recoveryCreated}</Text><Text selectable style={[styles.heading, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{receipt.code}</Text><Button testID="auth-continue" title={t.submit} busy={busy} onPress={() => { void submit(); }} /></Card> : <Card title={t[mode]}>
       <Choice label={t.choose} value={mode} onChange={value => { setMode(value); setError(null); setCode(''); setRecoveringUsername(''); }} closeLabel={t.close} options={(['signIn', 'register', 'join', 'recover'] as const).map(value => ({ value, label: t[value] }))} />
