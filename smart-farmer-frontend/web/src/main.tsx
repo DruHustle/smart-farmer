@@ -1,6 +1,8 @@
 import {createRoot} from 'react-dom/client';
 import {App} from './App';
+import '@fontsource/staatliches/latin-400.css';
 import './style.css';
+import './theme.css';
 createRoot(document.getElementById('root')!).render(<App/>);
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   const register = () => {void navigator.serviceWorker.register('/sw.js').catch(error => {console.warn('Smart Farmer offline shell registration failed', error);});};

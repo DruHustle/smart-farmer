@@ -3,7 +3,8 @@ import {createHash} from 'node:crypto';
 /** Precache the exact built app; authenticated API responses never enter Cache Storage. */
 function offlineShell(): Plugin {
   return {name: 'smart-farmer-offline-shell', apply: 'build', generateBundle(_options, bundle) {
-    const assets = Object.keys(bundle).filter(name => !name.endsWith('.map') && !/^assets\/hls-/.test(name)).map(name => `/${name}`);
+    // Photos and the legacy woff font load only where they are shown; the offline shell keeps the woff2 font.
+    const assets = Object.keys(bundle).filter(name => !name.endsWith('.map') && !/^assets\/hls-/.test(name) && !/\.(webp|jpe?g|woff)$/.test(name)).map(name => `/${name}`);
     const version = createHash('sha256').update(assets.join('|')).digest('hex').slice(0, 12);
     const files = [...new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', ...assets])];
     this.emitFile({type: 'asset', fileName: 'sw.js', source: `const CACHE='smart-farmer-shell-${version}';const FILES=${JSON.stringify(files)};

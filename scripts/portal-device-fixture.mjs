@@ -272,6 +272,20 @@ async function listen(origin, isPortal) {
       response.end(readFileSync(join(temp, "farmer.html")));
       return;
     }
+    // Farmer's photographs and display font are emitted by the bundle below as
+    // hashed files; only plain names in assets/ with these extensions are served.
+    const fileAsset = !isPortal && /^\/assets\/[A-Za-z0-9_-]+\.(webp|woff2?)$/.exec(path);
+    if (fileAsset) {
+      const file = join(temp, path.slice(1));
+      if (!existsSync(file)) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      response.setHeader("content-type", fileAsset[1] === "webp" ? "image/webp" : `font/${fileAsset[1]}`);
+      response.end(readFileSync(file));
+      return;
+    }
     const assets = isPortal
       ? ["/portal.js", "/portal.css"]
       : ["/farmer.js", "/farmer.css"];
@@ -328,6 +342,9 @@ try {
     format: "esm",
     jsx: "automatic",
     tsconfig: join(farmerWeb, "tsconfig.json"),
+    loader: { ".webp": "file", ".woff2": "file", ".woff": "file" },
+    assetNames: "assets/[name]-[hash]",
+    publicPath: "/",
     define: {
       "process.env.NODE_ENV": '"production"',
       "import.meta.env": JSON.stringify({

@@ -229,7 +229,15 @@
       "./plugins/with-private-storage.js",
       "expo-video",
       "expo-sharing",
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Staatliches-Regular.ttf"
+          ]
+        }
+      ]
     ],
     "icon": "./assets/icon.png"
   }

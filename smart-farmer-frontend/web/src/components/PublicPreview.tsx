@@ -3,6 +3,17 @@ import type {Page} from '../lib/destination';
 import type {GuestTab} from '../lib/preview';
 import {previewFeatures} from '../lib/preview';
 import {Icon} from './ui';
+import work from '../assets/photos/work.webp';
+import cattle from '../assets/photos/cattle.webp';
+import irrigation from '../assets/photos/irrigation.webp';
+import market from '../assets/photos/market.webp';
+import homestead from '../assets/photos/homestead.webp';
+import maize from '../assets/photos/maize.webp';
+
+// Decorative field photography for each feature card (credits in assets/photos/CREDITS.md).
+const photos: Partial<Record<Page, string>> = {today: work, farm: cattle, services: irrigation, market, forum: homestead, reports: maize};
+// Phones show no card photos: the photo source applies only above 780px, so phones never download it.
+const blank = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 
 /**
  * Signed-out feature tour. It is static and synthetic (no API calls, no farm data);
@@ -21,6 +32,7 @@ export function PublicPreview({t, busy, target, onOpen, onBrowse}: {t: Words; bu
         const title = words[feature.title];
         return <li key={feature.page}>
           <article className={`preview-card${feature.page === target ? ' targeted' : ''}`} aria-labelledby={`preview-${feature.page}`}>
+            {photos[feature.page] && <picture className="preview-photo"><source media="(min-width: 781px)" srcSet={photos[feature.page]}/><img src={blank} alt="" width={720} height={468} loading="lazy" decoding="async"/></picture>}
             <div className="preview-card-head">
               <span className="preview-icon"><Icon name={feature.icon} size={22}/></span>
               <h3 id={`preview-${feature.page}`}>{title}</h3>
