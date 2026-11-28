@@ -8,6 +8,8 @@ import { ApiError, createContext } from "./context.js";
 import { registerProduct } from "./product.js";
 import { registerOperations } from "./operations.js";
 import { identityConfig, registerOnesa } from "./onesa-identity.js";
+import { signingKeysExpireWithin } from "./managed-identity.js";
+import { sha256 } from "./security.js";
 import { registerAccountDeletion } from "./account-deletion.js";
 import { registerIdentity } from "./identity.js";
 import { registerCore } from "./core.js";
@@ -23,6 +25,18 @@ import {
   registerIntegrations,
   type IntegrationOptions,
 } from "./integrations.js";
+
+// Conflict responses return the stored row so clients can review the newer
+// version. Credential hashes and sealed grants in those rows never leave the API.
+const secretColumn = /(_hash|_grant|_secret)$/;
+export function withoutSecrets(details: object): object {
+  const current = (details as { current?: unknown }).current;
+  if (!current || typeof current !== "object" || Array.isArray(current)) return details;
+  return {
+    ...details,
+    current: Object.fromEntries(Object.entries(current).filter(([key]) => !secretColumn.test(key))),
+  };
+}
 
 export function buildApp(
   db: pg.Pool,
@@ -52,7 +66,33 @@ export function buildApp(
     credentials: true,
     exposedHeaders: ["X-Observed-At", "X-Media-Source", "Content-Disposition"],
   });
-  app.register(rateLimit, { max: 600, timeWindow: "1 minute" });
+  // Signed-in clients get their own limit bucket. Without a trusted proxy every
+  // request shares one peer address, so keying only on the address would let
+  // one anonymous client exhaust the limit for every signed-in user. Only a
+  // bearer that names a live session selects a session bucket; unknown or
+  // forged bearers stay in the address bucket and cannot mint fresh limits.
+  const verifiedSessions = new Map<string, number>();
+  const sessionBucket = async (bearer: string) => {
+    const hash = sha256(bearer);
+    if ((verifiedSessions.get(hash) ?? 0) > Date.now()) return "session:" + hash;
+    try {
+      const live = await db.query("SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()", [hash]);
+      if (!live.rowCount) return null;
+    } catch {
+      return null;
+    }
+    if (verifiedSessions.size >= 10_000) verifiedSessions.clear();
+    verifiedSessions.set(hash, Date.now() + 60_000);
+    return "session:" + hash;
+  };
+  app.register(rateLimit, {
+    max: 600,
+    timeWindow: "1 minute",
+    keyGenerator: async (req) => {
+      const bearer = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+      return (bearer && (await sessionBucket(bearer))) || req.ip;
+    },
+  });
   app.addHook("onSend", async (_req, reply, payload) => {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Cache-Control", "no-store");
@@ -63,7 +103,7 @@ export function buildApp(
       return reply.code(error.status).send({
         error: error.code,
         ...(error.details && typeof error.details === "object"
-          ? error.details
+          ? withoutSecrets(error.details)
           : {}),
       });
     if (error instanceof z.ZodError)
@@ -112,6 +152,9 @@ export function buildApp(
       }
     });
     const central = identityConfig(origin);
+    if (central?.managed && signingKeysExpireWithin(central.managed, 14 * 86400))
+      app.log.warn({ event: "identity_keys_expiring", expiresAt: new Date(central.managed.keysExpire * 1000).toISOString() },
+        "The pinned Onesa signing-key snapshot expires within 14 days; refresh ONESA_IDENTITY_JWKS");
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
     const testRuntime = process.env.NODE_ENV === "test" || (process.env.NODE_ENV !== "production" && Boolean(process.env.NODE_TEST_CONTEXT));
     const localCredentials = loopback && testRuntime;

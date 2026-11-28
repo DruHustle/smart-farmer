@@ -41,6 +41,16 @@ export function validDocumentSignature(type: DocumentMime, bytes: Buffer) {
   return /^%PDF-(1\.[0-9]|2\.0)/.test(bytes.toString("ascii", 0, 8)) && bytes.subarray(-1024).includes(Buffer.from("%%EOF"));
 }
 
+// Parsers of untrusted uploads receive only what they need to run, never the
+// database, identity-provider or storage credentials held by the API process.
+function parserEnvironment() {
+  const env: NodeJS.ProcessEnv = { OMP_THREAD_LIMIT: "1", LC_ALL: "C" };
+  for (const name of ["PATH", "TMPDIR", "TESSDATA_PREFIX", "FONTCONFIG_PATH", "FONTCONFIG_FILE"]) {
+    if (process.env[name]) env[name] = process.env[name];
+  }
+  return env;
+}
+
 // execFile receives a fixed binary and argument vector, never a shell command or
 // arguments taken from document text. Native parsers and output are bounded.
 async function command(binary: string, args: string[], deadline: number) {
@@ -50,7 +60,7 @@ async function command(binary: string, args: string[], deadline: number) {
     execFile(binary, args, {
       timeout, killSignal: "SIGKILL", maxBuffer: 2 * 1024 * 1024,
       encoding: "utf8", windowsHide: true,
-      env: { ...process.env, OMP_THREAD_LIMIT: "1", LC_ALL: "C" },
+      env: parserEnvironment(),
     }, (error, stdout) => {
       if (!error) return resolve(stdout);
       const e = error as NodeJS.ErrnoException & { killed?: boolean };

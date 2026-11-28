@@ -26,3 +26,18 @@ test('the hosted site never caches proxied API responses', () => {
   assert.ok(off('/v1/:path*'));
   assert.ok(off('/(health|ready|version)'));
 });
+
+test('every hosted page refuses framing and sniffing, matching the container web server', () => {
+  const all = Object.fromEntries(config.headers.find(rule => rule.source === '/(.*)').headers.map(h => [h.key, h.value]));
+  assert.equal(all['X-Frame-Options'], 'DENY');
+  assert.match(all['Content-Security-Policy'], /frame-ancestors 'none'/);
+  assert.equal(all['X-Content-Type-Options'], 'nosniff');
+  assert.equal(all['Referrer-Policy'], 'no-referrer');
+  // The voice recorder needs the microphone on this origin only.
+  assert.match(all['Permissions-Policy'], /microphone=\(self\)/);
+});
+
+test('only content-hashed build assets are cached long term', () => {
+  const cached = config.headers.filter(rule => rule.headers.some(h => h.key === 'Cache-Control' && /immutable/.test(h.value)));
+  assert.deepEqual(cached.map(rule => rule.source), ['/assets/(.*)']);
+});

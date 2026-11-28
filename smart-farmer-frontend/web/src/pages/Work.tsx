@@ -64,6 +64,6 @@ export function SyncPage() {
 }
 export function More({onLogout, onLock}: {onLogout: () => void; onLock: () => void}) {
   const {t, navigate, snapshot, farm, manager} = useFarm();
-  const links: Page[] = ['equipment', 'security', 'weather', 'notifications', 'maintenance', 'locations', 'stock', 'tasks', 'incidents', ...(manager ? ['accounting' as Page] : []), 'reports', 'people', 'sync', 'settings'];
+  const links: Page[] = ['tasks', 'stock', 'incidents', 'sync', 'equipment', 'security', 'weather', 'notifications', 'maintenance', 'locations', 'reports', ...(manager ? ['accounting' as Page] : []), 'people', 'settings'];
   return <><PageHead title={t.more}/><section className="menu-panel">{links.map(page => <button key={page} onClick={() => navigate(page)}><span className="menu-icon"><Icon name={page}/></span><span>{page === 'sync' ? t.syncPanel : label(t, page)}</span><Icon name="chevron" size={17}/></button>)}</section><Section title={t.settings}><div className="account-summary"><Icon name="people"/><div><strong>{snapshot.identity.username}</strong><small>{farm.name} · {label(t, farm.role)}</small></div></div><p className="muted small">{t.logoutHint}</p><div className="button-row"><button className="secondary" onClick={onLock}><Icon name="lock"/>{t.lock}</button><button className="text-button" onClick={() => navigate('account-deletion')}>{t.deletionTitle}</button><button className="text-button" onClick={onLogout}>{t.logout}</button></div></Section><p className="footnote">{t.translationNote}</p></>;
 }

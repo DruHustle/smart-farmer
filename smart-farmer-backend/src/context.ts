@@ -27,6 +27,11 @@ export function createContext(db: pg.Pool, central: ReturnType<typeof identityCo
           // A session minted by the other authority cannot cross a cutover or rollback.
           reply.code(401).send({error:'onesa_sign_in_required'}); return null;
         }
+        // Without local credentials there is no other authority to roll back to,
+        // so a missing identity configuration is an operator gap, not a
+        // rejection. Keep the session retryable so restoring the configuration
+        // restores access. A rollback to local credentials still retires it.
+        if (!central && !localCredentials) throw new ApiError('onesa_unavailable',503);
         if (!central || central.accountIssuer !== account.onesa_issuer || !account.onesa_grant) throw new ApiError('unauthorized',401);
         const claims = await currentFarmerAccount(central, openGrant(account.onesa_grant, value), account.onesa_subject);
         if (requireFreshMfa && central.managed) {

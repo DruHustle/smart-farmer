@@ -1,4 +1,4 @@
-import { createLocalJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createLocalJWKSet, errors, jwtVerify, type JWTPayload } from 'jose';
 import { z } from 'zod';
 import { ApiError } from './context.js';
 
@@ -27,8 +27,10 @@ export function managedIdentity(env: NodeJS.ProcessEnv, issuer: URL, local: bool
   const nativeClientId = env.ONESA_IDENTITY_NATIVE_CLIENT_ID;
   if (!nativeClientId || nativeClientId === env.ONESA_IDENTITY_CLIENT_ID) throw new Error('Missing distinct Farmer native public client');
   if (!audience || [env.ONESA_IDENTITY_CLIENT_ID,nativeClientId].includes(audience)) throw new Error('Missing dedicated Farmer API audience');
+  // A past expiry must not stop the API from starting: public routes stay
+  // available and verify() answers identity requests with a retryable 503.
   const keysExpire = Number(env.ONESA_IDENTITY_JWKS_EXPIRES_AT);
-  if (!Number.isSafeInteger(keysExpire) || keysExpire <= Math.floor(Date.now()/1000)) throw new Error('Invalid trusted signing-key expiry');
+  if (!Number.isSafeInteger(keysExpire) || keysExpire <= 0) throw new Error('Invalid trusted signing-key expiry');
   const jwks = z.object({keys:z.array(z.object({
     kid:z.string().min(1), kty:z.literal('RSA'), n:z.string().min(1), e:z.string().min(1),
     use:z.literal('sig').optional(), alg:z.literal('RS256').optional(), d:z.never().optional(),
@@ -48,7 +50,17 @@ async function verify(config:Config, raw:string, audience:string):Promise<JWTPay
     if (!protectedHeader.kid || !payload.sub || !Number.isSafeInteger(payload.iat) ||
         !Number.isSafeInteger(payload.exp) || payload.iat! > Date.now()/1000 + 5 || payload.exp! <= payload.iat!) throw Error();
     return payload;
-  } catch { throw new ApiError('unauthorized',401); }
+  } catch (error) {
+    // A key outside the pinned snapshot means the snapshot is stale (for
+    // example after provider key rotation). That is unavailability, so existing
+    // sessions are kept and sign-in reports a temporary failure.
+    if (error instanceof errors.JWKSNoMatchingKey) throw new ApiError('onesa_unavailable',503);
+    throw new ApiError('unauthorized',401);
+  }
+}
+
+export function signingKeysExpireWithin(managed: ManagedIdentity, seconds: number) {
+  return managed.keysExpire - Math.floor(Date.now()/1000) <= seconds;
 }
 
 export async function managedAccount(config:Config, token:string, expectedId?:string) {
