@@ -186,7 +186,8 @@ jobs:
           PY
           cp "$input" "$destination/SmartFarmer-unsigned.aab"
           jq '.signing = "unsigned" | del(.certificateSha256) |
-            .purpose = "Verified bundle payload for signing with the Smart Farmer Play upload key"' +            "$review/manifest.json" > "$destination/manifest.json"
+            .purpose = "Verified bundle payload for signing with the Smart Farmer Play upload key"' \
+            "$review/manifest.json" > "$destination/manifest.json"
           (cd "$destination" && sha256sum SmartFarmer-unsigned.aab > SHA256SUMS)
       - name: Retain the Smart Farmer Play signing input
         if: github.event_name == 'workflow_dispatch' && inputs.play_upload_input
