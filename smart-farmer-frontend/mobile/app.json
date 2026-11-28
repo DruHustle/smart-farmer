@@ -234,7 +234,7 @@
         "expo-font",
         {
           "fonts": [
-            "./assets/fonts/Staatliches-Regular.ttf"
+            "./assets/fonts/LeagueSpartan-Bold.ttf"
           ]
         }
       ]
