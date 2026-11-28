@@ -20,6 +20,10 @@ on:
         description: Publish the owner-signed 64-bit preview to GitHub Releases
         type: boolean
         default: false
+      play_upload_input:
+        description: Retain a verified unsigned Play App Bundle for owner signing
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -31,6 +35,8 @@ env:
   APP_ID: eu.onesa.smartfarmer
   APK_NAME: SmartFarmerPreview-64bit.apk
   MOBILE: smart-farmer-frontend/mobile
+  EXPO_PUBLIC_PRIVACY_POLICY_URL: ${{ inputs.play_upload_input && 'https://farmer.onesa.eu/privacy' || '' }}
+  EXPO_PUBLIC_COMMUNITY_RULES_URL: ${{ inputs.play_upload_input && 'https://farmer.onesa.eu/community-guidelines' || '' }}
 jobs:
   package:
     runs-on: ubuntu-24.04
@@ -58,6 +64,13 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
           test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
           test -e "$ANDROID_HOME/platforms/android-37" || ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+      - name: Verify the Play build policy URLs
+        if: github.event_name == 'workflow_dispatch' && inputs.play_upload_input
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          (cd "$MOBILE" && bash ../../scripts/check-store-policies.sh)
+          curl -fsS --retry 2 -o /dev/null "$EXPO_PUBLIC_PRIVACY_POLICY_URL"
+          curl -fsS --retry 2 -o /dev/null "$EXPO_PUBLIC_COMMUNITY_RULES_URL"
       - name: Build a standalone 64-bit release APK
         env:
           EXPO_PUBLIC_API_URL: https://farmer.onesa.eu
@@ -144,6 +157,44 @@ jobs:
         with:
           name: android-disposable-validation-bundle
           path: ${{ runner.temp }}/android-bundle-review
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+      - name: Prepare the validated input for Play upload signing
+        if: github.event_name == 'workflow_dispatch' && inputs.play_upload_input
+        run: |
+          set -euo pipefail
+          input="$MOBILE/android/app/build/outputs/bundle/release/app-release.aab"
+          review="$RUNNER_TEMP/android-bundle-review"
+          destination="$RUNNER_TEMP/play-upload-input"
+          mkdir -m 700 "$destination"
+          python3 - "$input" "$review/SmartFarmer-qualification.aab" <<'PY'
+          import re
+          import sys
+          import zipfile
+
+          signatures = re.compile(r'META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))', re.IGNORECASE)
+          with zipfile.ZipFile(sys.argv[1]) as original, zipfile.ZipFile(sys.argv[2]) as verified:
+              source_files = {entry.filename for entry in original.infolist() if not entry.is_dir()}
+              tested_files = {entry.filename for entry in verified.infolist()
+                              if not entry.is_dir() and not signatures.fullmatch(entry.filename)}
+              if source_files != tested_files:
+                  sys.exit('Unsigned bundle entries differ from the qualification build.')
+              for name in sorted(source_files):
+                  if original.read(name) != verified.read(name):
+                      sys.exit('Unsigned bundle payload differs from the qualification build.')
+          PY
+          cp "$input" "$destination/SmartFarmer-unsigned.aab"
+          jq '.signing = "unsigned" | del(.certificateSha256) |
+            .purpose = "Verified bundle payload for signing with the Smart Farmer Play upload key"' \
+            "$review/manifest.json" > "$destination/manifest.json"
+          (cd "$destination" && sha256sum SmartFarmer-unsigned.aab > SHA256SUMS)
+      - name: Retain the Smart Farmer Play signing input
+        if: github.event_name == 'workflow_dispatch' && inputs.play_upload_input
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: smart-farmer-play-upload-input
+          path: ${{ runner.temp }}/play-upload-input
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
