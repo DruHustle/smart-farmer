@@ -2,27 +2,34 @@ import React, { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export const colors = { ink: '#17382C', green: '#1D654B', pale: '#E8F1EA', paper: '#F7F8F3', white: '#FFFFFF', muted: '#55675E', line: '#D1DED3', orange: '#8C4B0D', red: '#9B302A', blue: '#245E7B' };
+// Shared with the web theme (web/src/theme.css): field green, a magenta accent for the main
+// call to action, crisp white surfaces and 3:1 field borders.
+export const colors = { ink: '#1B2A21', green: '#007A3D', greenDark: '#005C2E', pale: '#E2F3E8', paper: '#F3F5F2', white: '#FFFFFF', muted: '#4B5A50', line: '#C9D2CB', fieldBorder: '#7D8B80', accent: '#E5006F', accentDark: '#B80059', orange: '#8C4B0D', red: '#9B302A', blue: '#0A6F8F' };
+// Staatliches is embedded by the expo-font config plugin (app.json); the file name matches its
+// PostScript name, so Android and iOS resolve the same family. It draws capitals itself.
+export const displayFont = 'Staatliches-Regular';
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.paper },
   content: { width: '100%', maxWidth: 1100, alignSelf: 'center', padding: 16, gap: 14, paddingBottom: 28 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
   between: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 14 },
-  card: { padding: 16, backgroundColor: colors.white, borderColor: colors.line, borderWidth: 1, borderRadius: 18, gap: 12 },
-  title: { fontSize: 26, lineHeight: 34, fontWeight: '700', color: colors.ink },
+  card: { padding: 16, backgroundColor: colors.white, borderColor: colors.line, borderWidth: 1, borderRadius: 12, gap: 12 },
+  title: { fontFamily: displayFont, fontSize: 34, lineHeight: 36, fontWeight: '400', letterSpacing: 0.3, color: colors.ink },
   heading: { fontSize: 20, fontWeight: '700', color: colors.ink, lineHeight: 28 },
   text: { color: colors.ink, fontSize: 16, lineHeight: 23 },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   label: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 21 },
   caption: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-  input: { minHeight: 48, borderColor: colors.line, borderWidth: 1, backgroundColor: colors.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, fontSize: 16, color: colors.ink },
-  button: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.green, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  secondary: { backgroundColor: colors.pale, borderWidth: 1, borderColor: colors.line },
+  input: { minHeight: 48, borderColor: colors.fieldBorder, borderWidth: 1, backgroundColor: colors.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, fontSize: 16, color: colors.ink },
+  button: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.green, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  secondary: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.green },
+  accent: { backgroundColor: colors.accent },
   danger: { backgroundColor: '#FCEAE7' },
   disabled: { opacity: 0.45 },
   buttonText: { color: colors.white, fontSize: 15, fontWeight: '700', lineHeight: 22, textAlign: 'center' },
-  secondaryText: { color: colors.ink },
+  secondaryText: { color: colors.green },
+  dangerText: { color: colors.ink },
   item: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line, gap: 5 },
   pill: { borderRadius: 999, backgroundColor: colors.pale, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
   warning: { backgroundColor: '#FFF0DC' },
@@ -30,12 +37,12 @@ export const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: '#0B271B99', justifyContent: 'center', padding: 12 },
   modal: { width: '100%', maxWidth: 740, maxHeight: '94%', alignSelf: 'center', backgroundColor: colors.paper, borderRadius: 20, overflow: 'hidden' },
   modalHeader: { padding: 16, borderBottomWidth: 1, borderColor: colors.line, gap: 12 },
-  brand: { color: colors.green, fontWeight: '800', fontSize: 20, letterSpacing: -0.5 },
+  brand: { fontFamily: displayFont, color: colors.green, fontWeight: '400', fontSize: 26, letterSpacing: 0.5 },
 });
 
-export function Button({ title, onPress, secondary = false, danger = false, disabled = false, busy = false, testID }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean; busy?: boolean; testID?: string }) {
-  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, (disabled || busy) && styles.disabled, pressed && { opacity: 0.75 }]}>
-    {busy ? <ActivityIndicator color={secondary ? colors.green : colors.white} /> : <Text style={[styles.buttonText, (secondary || danger) && styles.secondaryText]}>{title}</Text>}
+export function Button({ title, onPress, secondary = false, danger = false, accent = false, disabled = false, busy = false, testID }: { title: string; onPress: () => void; secondary?: boolean; danger?: boolean; accent?: boolean; disabled?: boolean; busy?: boolean; testID?: string }) {
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [styles.button, accent && styles.accent, secondary && styles.secondary, danger && styles.danger, (disabled || busy) && styles.disabled, pressed && (accent ? { backgroundColor: colors.accentDark } : { opacity: 0.75 })]}>
+    {busy ? <ActivityIndicator color={secondary ? colors.green : colors.white} /> : <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{title}</Text>}
   </Pressable>;
 }
 

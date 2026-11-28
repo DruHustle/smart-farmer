@@ -1,0 +1,116 @@
+/*
+ * Vibrant field theme.
+ * Loaded after style.css: the Staatliches display face for headlines, a saturated field
+ * green with a magenta accent for the main call to action, crisp white surfaces and a
+ * crop-row hero on the signed-out page. Layout and spacing stay in style.css.
+ * Colours and the display face match the native app (mobile/src/ui.tsx). Staatliches
+ * draws capitals itself, so the text read by assistive technology is unchanged.
+ */
+:root{
+  --display:'Staatliches','Arial Narrow',Impact,sans-serif;
+  --ink:#1b2a21;--muted:#4b5a50;--line:#c9d2cb;--paper:#fff;--page:#f3f5f2;
+  --green:#007a3d;--green-dark:#005c2e;--green-soft:#e2f3e8;
+  --accent:#e5006f;--accent-dark:#b80059;--accent-soft:#fde6f1;
+  --sky:#0a6f8f;--sky-soft:#e1f5fb;--sun:#8a5a00;--sun-soft:#fff0d1;
+  --field-deep:#064d29;--field:#007a3d;--field-light:#1f9a4e;
+  color:var(--ink);background:var(--page);
+}
+
+/* Display type: short headlines only; body copy keeps the system sans-serif like the native app. */
+h1,.auth-card h2,.preview-head h2{font-family:var(--display);font-weight:400;letter-spacing:.02em;line-height:1.05}
+h1{font-size:clamp(2rem,4vw,2.75rem)}
+.page-head h1::after,.preview-head h2::after{content:'';display:block;width:56px;height:4px;margin-top:12px;border-radius:2px;background:var(--accent)}
+
+/* Buttons and links */
+.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
+.primary:hover{background:var(--green-dark);border-color:var(--green-dark)}
+.secondary{background:#fff;border-color:var(--green);color:var(--green)}
+.secondary:hover{background:var(--green-soft)}
+a,.text-button{color:var(--green)}
+.record-fab,.auth-card .onesa-signin{background:var(--accent);border-color:var(--accent);color:#fff;letter-spacing:.02em;font-weight:700}
+.record-fab:hover,.auth-card .onesa-signin:hover{background:var(--accent-dark);border-color:var(--accent-dark)}
+.record-fab{box-shadow:0 10px 26px #e5006f4d}
+.auth-card .onesa-signin{justify-content:center;border-radius:8px;min-height:52px}
+
+/* Brand wordmark */
+.brand strong{font-family:var(--display);font-weight:400;font-size:1.55rem;letter-spacing:.03em;color:var(--green);line-height:1}
+.brand-mark{background:var(--green);border-radius:10px}
+
+/* Signed-out page: field photograph behind a diagonal green panel with a magenta slash, then light sections. */
+.auth-screen{background:linear-gradient(100deg,#064d29f7 0,#007a3df2 58%,var(--accent) 58%,var(--accent) 59.4%,#06291500 59.4%) 0 0/100% 860px no-repeat,url('./assets/photos/farmer-hero-1600.webp') 100% 0/auto 860px no-repeat,var(--field)}
+/* Phones: no photograph behind the card (it would be almost fully covered); a diagonal magenta slash keeps the motif. */
+@media(max-width:780px){
+  .auth-screen{background:linear-gradient(172deg,var(--field-deep) 0 330px,var(--accent) 330px 337px,var(--field) 337px) 0 0/100% 520px no-repeat,var(--field)}
+}
+.auth-screen .brand strong,.auth-intro,.recovery-screen>.brand{color:#fff}
+.auth-screen .brand strong{color:#fff}
+.auth-screen .brand-mark{background:#fff;color:var(--green)}
+.auth-top select{color:#fff;border-color:#ffffffb3;background:#ffffff1f}
+.auth-top select option{color:var(--ink);background:#fff}
+.auth-top .field>span{color:#fff}
+/* The default gold focus ring is invisible on green; white is 5.45:1 or better on the hero. */
+.auth-top :focus-visible,.auth-intro :focus-visible{outline-color:#fff}
+@media(max-width:400px){.auth-top .brand strong{font-size:1.3rem}.auth-top select{min-width:8.5rem}}
+@media(max-width:350px){.auth-top{flex-wrap:wrap}}
+.auth-intro .eyebrow{display:inline-block;color:#fff;background:var(--accent-dark);border-radius:4px;padding:3px 9px;letter-spacing:.12em}
+.auth-intro h1{font-size:clamp(2.9rem,7vw,5rem);letter-spacing:.02em;line-height:1;max-width:540px;color:#fff}
+.auth-intro p{color:#fff;font-size:1.05rem}
+.intro-items>span{display:inline-flex;align-items:center;gap:7px;color:#fff;background:transparent;border:1px solid #ffffffb3;border-radius:999px;padding:6px 12px}
+.privacy-note,.auth-screen .privacy-note{color:#fff}
+.auth-intro .app-availability,.auth-intro .app-availability h2{color:#fff}
+.auth-intro .app-availability .store-listing>svg{color:#fff}
+.auth-intro .app-availability small{color:#fff}
+.auth-card{border:0;border-radius:14px;box-shadow:0 28px 70px #00281466,0 2px 6px #0028141f}
+.auth-card h2{font-size:2rem;margin:14px 0 18px;color:var(--ink)}
+.auth-card>a{color:var(--green)}
+.recovery-screen .auth-card{margin-top:8px}
+/* Light bands span the full width behind each section without changing the markup. */
+.public-preview,.guest-market,.auth-footer{background:var(--page);box-shadow:0 0 0 100vmax var(--page);clip-path:inset(-14px -100vmax -32px)}
+.auth-footer{clip-path:inset(-32px -100vmax -100vmax);color:var(--muted)}
+.public-preview{padding-top:34px}
+
+/* Feature cards lead with a photograph, edge to edge. */
+.preview-card{--card-pad:20px;padding:var(--card-pad);overflow:hidden}
+.preview-photo{display:block;width:calc(100% + 2 * var(--card-pad));max-width:none;aspect-ratio:2/1;margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) 4px;background:var(--green-soft);overflow:hidden}
+.preview-photo>img{display:block;width:100%;height:100%;object-fit:cover}
+/* Phones: no card photos (R3); a coloured top band and a larger icon carry each card instead. */
+@media(max-width:780px){
+  .preview-card{--card-pad:17px}
+  .preview-grid .preview-card{border-top:4px solid var(--tone,var(--green))}
+  .preview-photo{display:none}
+  .preview-grid>li:nth-child(4n+2) .preview-card{--tone:var(--accent)}
+  .preview-grid>li:nth-child(4n+3) .preview-card{--tone:var(--sky)}
+  .preview-grid>li:nth-child(4n+4) .preview-card{--tone:var(--sun)}
+  .preview-icon{width:48px;height:48px}
+}
+/* Feature samples: one colour family per card */
+.preview-card{border-color:var(--line);border-radius:12px;box-shadow:0 1px 2px #10281814;transition:transform .15s ease,box-shadow .15s ease}
+.preview-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px #1028181f}
+.preview-head h2{font-size:clamp(2.2rem,4.5vw,3rem)}
+.preview-grid>li:nth-child(4n+1) .preview-icon,.menu-panel>button:nth-child(4n+1) .menu-icon{background:var(--green-soft);color:var(--green)}
+.preview-grid>li:nth-child(4n+2) .preview-icon,.menu-panel>button:nth-child(4n+2) .menu-icon{background:var(--accent-soft);color:var(--accent-dark)}
+.preview-grid>li:nth-child(4n+3) .preview-icon,.menu-panel>button:nth-child(4n+3) .menu-icon{background:var(--sky-soft);color:var(--sky)}
+.preview-grid>li:nth-child(4n+4) .preview-icon,.menu-panel>button:nth-child(4n+4) .menu-icon{background:var(--sun-soft);color:var(--sun)}
+.preview-sample{background:#fff;border-color:#b9dcc6}
+.preview-sample figcaption{color:var(--green-dark)}
+.preview-meter{background:#dcefe2}
+.preview-meter>span{background:linear-gradient(90deg,var(--field),var(--field-light))}
+.preview-card.targeted{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.guest-tabs{background:#e4ebe6}
+
+/* Signed-in workspace */
+.app-header{background:#fff;border-bottom:3px solid var(--green)}
+.desktop-nav{background:#fff}
+.desktop-nav nav button.selected{background:var(--green-soft);color:var(--green-dark)}
+.mobile-nav{background:#fff;border-top:1px solid var(--line)}
+.mobile-nav>button.selected{background:var(--green-soft);color:var(--green-dark)}
+.panel,.menu-panel{border-color:var(--line);border-radius:12px;box-shadow:0 1px 2px #10281812}
+.menu-icon{background:var(--green-soft);color:var(--green)}
+.empty-icon{background:var(--green-soft);color:var(--green)}
+.badge{background:#e6eee9;color:#294635}
+.badge.warning{background:var(--sun-soft);color:#6f4700}
+.sync-pill{background:var(--green-soft);color:var(--green-dark)}
+.notice{background:#e8f6ee;border-color:#b9dcc6}
+.workspace-tabs button.selected{background:var(--green);border-color:var(--green)}
+/* Staatliches stays at 28px or more on phones. */
+@media(max-width:540px){.page-head h1{font-size:1.75rem}.app-header .brand strong{font-size:1.25rem}}

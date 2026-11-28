@@ -68,7 +68,7 @@ export function WorkspaceScreen({ session, repository, language, onLanguage, onE
         onPressIn={value === 'farm' ? () => traceSession('farm_press', 'start') : undefined}
         onPressOut={value === 'farm' ? () => traceSession('farm_press', 'complete') : undefined}
         onPress={() => { if (value === 'farm') traceSession('farm_press', 'received'); setTab(value); work.setNotice(''); work.setError(null); }}
-        style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, backgroundColor: tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }]}>{t[value]}</Text></Pressable>)}
+        style={{ flex: 1, minHeight: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, borderRadius: 12, borderTopWidth: 3, borderTopColor: tab === value ? (value === 'record' ? colors.ink : colors.green) : 'transparent', backgroundColor: value === 'record' ? colors.accent : tab === value ? colors.pale : colors.white }}><Text style={[styles.label, { textAlign: 'center' }, value === 'record' ? { color: colors.white, fontWeight: '700' } : tab === value && { color: colors.greenDark, fontWeight: '700' }]}>{t[value]}</Text></Pressable>)}
     </View>}
   </KeyboardAvoidingView>;
 }
