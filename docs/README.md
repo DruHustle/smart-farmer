@@ -10,6 +10,8 @@ The repository keeps the backend, responsive web, native Android/iPhone/iPad and
 - [Planning, finance, livestock, trading and services API](../smart-farmer-backend/docs/product-api.md)
 - [Equipment, private media and integration API](../smart-farmer-backend/docs/integrations-api.md)
 - [Farm settings, weather, notifications, cameras and operational API](../smart-farmer-backend/docs/operations-api.md)
+- [Forecasts, sensor dashboards and alert rules](../smart-farmer-backend/docs/monitoring-api.md)
+- [Market prices, support, trials, growing systems, advisor and basic phones](../smart-farmer-backend/docs/farm-tools.md)
 - [Development, release and recovery](../smart-farmer-backend/docs/operations.md)
 - [Provider activation, retention and independent backups](../smart-farmer-backend/docs/operational-integrations.md)
 - [Hardware mapping and commissioning](../smart-farmer-backend/docs/hardware-and-commissioning.md)

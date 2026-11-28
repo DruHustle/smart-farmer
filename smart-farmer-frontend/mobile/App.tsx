@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Platform, ScrollView, StatusBar, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ScreenCapture from 'expo-screen-capture';
+import { useFonts } from 'expo-font';
 import { apiOrigin, createApi } from './src/api';
 import { errorText, textFor } from './src/i18n';
 import { deviceUnlock, forgetSession, openRepository, readLanguage, readSession, saveLanguage, saveSession } from './src/native-storage';
@@ -18,6 +19,9 @@ function observeSignOutPhase(phase: 'entry' | 'session-delete-completed' | 'noti
 }
 
 function Root() {
+  // Runtime loading also updates existing development builds without waiting for
+  // another native prebuild. Release builds additionally embed the same file.
+  useFonts({ 'LeagueSpartan-Bold': require('./assets/fonts/LeagueSpartan-Bold.ttf') });
   const [language, setLanguage] = useState<Language>('sn');
   const [session, setSession] = useState<Session | null>(null);
   const [repository, setRepository] = useState<LocalRepository | null>(null);

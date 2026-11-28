@@ -21,6 +21,8 @@ The application includes active or new crop seasons; sourced planning and approv
 
 Field records and attachments use separate encrypted durable queues. Commercial commitments and equipment commands require current online authorisation. A manually recorded payment is never represented as automatic provider settlement, and simulator observations cannot establish hardware commissioning.
 
+Farm tools add sourced market prices, local support directories and visit requests, reviewed training guides, control/treatment field trials, and hydroponic/aquaponic water logs. Weather forecasts and sensor dashboards show freshness, source and missing data explicitly; threshold alerts use existing verified notification channels. The farm advisor and basic-phone gateway require the documented provider setup before live use. New Shona/Ndebele text remains pending fluent human approval.
+
 ## Verification and release preparation
 
 - [Complete Codex brief](smart-farmer-backend/docs/product-brief.txt)
@@ -28,6 +30,8 @@ Field records and attachments use separate encrypted durable queues. Commercial 
 - [All documentation](docs/README.md)
 - [Provider, backup and recovery setup](smart-farmer-backend/docs/operational-integrations.md)
 - [Hardware commissioning](smart-farmer-backend/docs/hardware-and-commissioning.md)
+- [Forecasts, sensor dashboards and alert rules](smart-farmer-backend/docs/monitoring-api.md)
+- [Farm tools, advisor and basic-phone setup](smart-farmer-backend/docs/farm-tools.md)
 
 CI exercises PostgreSQL workflows, browser journeys, edge transports, native storage rules and builds, container images, and encrypted isolated restore. Native acceptance separately compiles SQLCipher into Android and iOS simulator applications. Exact results are recorded with the review branch/PR and acceptance matrix.
 

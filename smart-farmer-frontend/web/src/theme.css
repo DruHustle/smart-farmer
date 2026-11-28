@@ -1,11 +1,4 @@
-/*
- * Field photo theme.
- * Loaded after style.css; layout and spacing stay there. Wide screens open on a field photograph
- * under a soft dark gradient (no colour panel) with a white header bar floating above it. Headings use
- * League Spartan in sentence case. Deep green carries actions, leaf green carries headings, and a calm
- * blue is kept for small accents. Sections sit on sage white. Phones show no photographs.
- * Colours and the heading face match the native app (mobile/src/ui.tsx). Every text pair is WCAG AA.
- */
+/* Smart Farmer: shared web/native colours. Display font is bundled, never fetched remotely. */
 :root{
   --display:'League Spartan',ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --ink:#14263a;--muted:#4a5866;--line:#d3dbcf;--paper:#fff;--page:#f3f6ef;
@@ -14,76 +7,57 @@
   --sky:#2f6da8;--sky-soft:#e3eef8;--sun:#8a5a00;--sun-soft:#fff0d1;
   color:var(--ink);background:var(--page);
 }
-
-/* Headings: League Spartan, sentence case. Body copy keeps the system sans-serif like the native app. */
-h1,.auth-card h2,.preview-head h2{font-family:var(--display);font-weight:700;letter-spacing:-.01em;line-height:1.08}
-h1{font-size:clamp(1.9rem,3.6vw,2.5rem)}
-.page-head h1,.preview-head h2{color:var(--leaf)}
-.page-head h1::after,.preview-head h2::after{content:'';display:block;width:48px;height:3px;margin-top:12px;border-radius:2px;background:var(--green)}
-
-/* Buttons and links */
-.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
-.primary:hover{background:var(--green-dark);border-color:var(--green-dark)}
+h1,h2,h3,h4,.brand strong{font-family:var(--display);font-weight:700;letter-spacing:-.025em;text-transform:none}
+h1{font-size:clamp(2rem,4vw,2.75rem);line-height:1.12}
+h2{font-size:1.35rem;line-height:1.2;color:var(--leaf)}
+h3{font-size:1.15rem;line-height:1.25}
+.page-head h1::after,.preview-head h2::after,.section-head h2::after{content:'';display:block;width:48px;height:3px;margin-top:10px;border-radius:2px;background:var(--leaf)}
+.section-head h2{display:block}
+.primary,.record-fab,.auth-card .onesa-signin{background:var(--green);border-color:var(--green);color:#fff;font-weight:700}
+.primary:hover,.record-fab:hover,.auth-card .onesa-signin:hover{background:var(--green-dark);border-color:var(--green-dark)}
 .secondary{background:#fff;border-color:var(--green);color:var(--green)}
 .secondary:hover{background:var(--green-soft)}
 a,.text-button{color:var(--green)}
-.record-fab{background:var(--green);color:#fff;font-weight:700;box-shadow:0 10px 24px #00703c40}
-.record-fab:hover{background:var(--green-dark)}
-.auth-card .onesa-signin{justify-content:center;border-radius:999px;min-height:52px;font-weight:700}
-
-/* Brand wordmark */
-.brand strong{font-family:var(--display);font-weight:700;font-size:1.35rem;letter-spacing:-.01em;color:var(--green-dark);line-height:1}
-.brand-mark{background:var(--green);border-radius:10px}
-
-/* Signed-out page. A white header bar floats on every width; phones get no photograph. */
-.auth-screen{background:var(--page);overflow-x:clip}
-.auth-top{width:calc(100% - 32px);margin:16px auto 0;padding:12px 22px;background:#fff;border-radius:16px;box-shadow:0 10px 30px #0b1f171f;position:relative;z-index:1}
-.auth-main{position:relative;isolation:isolate}
-.auth-intro .eyebrow{color:var(--leaf);letter-spacing:.12em}
-.auth-intro h1{font-size:clamp(2.3rem,5vw,3.6rem);line-height:1.02;max-width:560px}
-.auth-intro p{font-size:1.05rem}
-.intro-items>span{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 12px}
-.auth-card{border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px #0b1f1729}
-.auth-card h2{font-size:1.9rem;margin:12px 0 18px;color:var(--ink)}
+.record-fab{box-shadow:0 8px 24px #00703c33}
+.auth-card .onesa-signin{justify-content:center;border-radius:999px;min-height:52px;letter-spacing:normal}
+.brand strong{font-size:1.55rem;color:var(--green);line-height:1.1}
+.brand-mark{background:var(--green);border-radius:11px}
+input::placeholder,textarea::placeholder{color:var(--muted)}
+button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:var(--sky)}
+/* The desktop image spans the complete hero. Only its left edge receives a dark fade. */
+.auth-screen{background:var(--page)}
+.auth-hero{position:relative;isolation:isolate;padding:24px 0 48px;border-radius:0 0 32px 32px;overflow:hidden}
+.auth-top{position:relative;width:calc(100% - 64px);max-width:1256px;min-height:76px;margin:0 auto;padding:16px 24px;border-radius:20px;background:#fff;box-shadow:0 8px 32px #0b1f1714}
+.auth-top select{color:var(--ink);border-color:#7d8b80;background:#fff;font-size:.875rem}
+.auth-top select option{color:var(--ink);background:#fff}
+.auth-main{position:relative;width:100%;max-width:1256px;margin:54px auto 0;padding:0 24px;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:clamp(32px,7vw,112px);align-items:center;min-height:560px}
+.auth-intro{max-width:440px}
+.auth-intro .eyebrow{display:inline-block;color:var(--sky);font-size:.75rem;letter-spacing:.12em}
+.auth-intro h1{font-size:clamp(3rem,5vw,4.75rem);line-height:1.02;max-width:440px;margin:18px 0 22px}
+.auth-intro>p{font-size:1.0625rem;line-height:1.7;max-width:365px}
+.intro-items{gap:10px 14px;margin-top:26px;max-width:420px}
+.intro-items>span{display:inline-flex;align-items:center;gap:7px;border:1px solid currentColor;border-radius:999px;padding:7px 12px;font-size:.8125rem}
+.privacy-note{color:var(--muted);font-size:.8125rem;margin-top:28px}
+.auth-card{border:1px solid #ffffffb3;border-radius:22px;box-shadow:0 18px 56px #0b1f1729;background:#fff;padding:30px}
+.auth-card h2{font-size:2rem;margin:8px 0 22px;color:var(--ink)}
 .auth-card>a{color:var(--green)}
-@media(max-width:400px){.auth-top{padding:10px 14px}.auth-top .brand strong{font-size:1.15rem}.auth-top select{min-width:8.5rem}}
-@media(max-width:350px){.auth-top{flex-wrap:wrap}}
-
-/* Wide screens: the field photograph runs edge to edge behind the header and the sign-in row,
-   with rounded lower corners. The gradient keeps white text at AA on the left; the card is opaque. */
+.recovery-screen>.brand{color:var(--green)}
+.recovery-screen .auth-card{margin-top:8px}
+.public-preview{padding-top:44px;margin-top:0}
+.preview-head h2{font-size:clamp(2rem,3.8vw,2.8rem);color:var(--leaf);line-height:1.08}
+.preview-head p{color:var(--muted)}
+.auth-footer{color:var(--muted);line-height:1.7}
 @media(min-width:781px){
-  .auth-main::before{content:'';position:absolute;z-index:-1;top:-260px;bottom:-56px;left:calc(50% - 50vw);right:calc(50% - 50vw);border-radius:0 0 32px 32px;
-    background:linear-gradient(90deg,#0a1c14d1 0,#0a1c14b3 50%,#0a1c1440 82%,#0a1c1426 100%),url('./assets/photos/farmer-hero-1600.webp') 50% 35%/cover no-repeat,var(--green-dark)}
-  .auth-intro,.auth-intro h1,.auth-intro p,.auth-intro .app-availability,.auth-intro .app-availability h2,.auth-intro .privacy-note,.auth-intro .app-availability small{color:#fff}
-  .auth-intro .eyebrow{color:#fff}
-  .auth-intro .app-availability .store-listing>svg{color:#fff}
-  .intro-items>span{color:#fff;background:transparent;border-color:#ffffffb3}
+  .auth-hero{background:linear-gradient(90deg,#0a1c14e6 0,#0a1c14b3 30%,#0a1c1400 60%),url('./assets/photos/farmer-hero-1600.webp') left top/max(140%,1400px) auto no-repeat}
+  .auth-intro,.auth-intro h1,.auth-intro>p,.auth-intro .eyebrow,.intro-items>span,.auth-intro .privacy-note,.auth-intro .app-availability,.auth-intro .app-availability h2,.auth-intro .app-availability small,.auth-intro .app-availability .store-listing>svg{color:#fff}
+  .auth-intro{max-width:370px}
   .auth-intro :focus-visible{outline-color:#fff}
-  .public-preview{margin-top:96px}
 }
-
-/* Public policy pages (/privacy, /community-guidelines). */
-.store-policy{width:min(100% - 2rem,48rem);margin:clamp(1rem,4vw,3rem) auto}
-.store-policy h1{margin:0 0 1rem}
-.store-policy h2{margin:1.5rem 0 .5rem}
-.store-policy li+li{margin-top:.5rem}
-
-/* Feature cards lead with a photograph above 780px (see PublicPreview.tsx). */
-.preview-card{--card-pad:20px;padding:var(--card-pad);overflow:hidden;border-color:var(--line);border-radius:14px;box-shadow:0 1px 2px #10281812;transition:transform .15s ease,box-shadow .15s ease}
-.preview-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px #1028181f}
+/* Desktop feature photography is selected by picture media sources; phone users download none. */
+.preview-card{--card-pad:20px;padding:var(--card-pad);overflow:hidden;border-color:var(--line);border-radius:16px;box-shadow:0 1px 2px #1028180d;transition:transform .15s ease,box-shadow .15s ease}
 .preview-photo{display:block;width:calc(100% + 2 * var(--card-pad));max-width:none;aspect-ratio:2/1;margin:calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) 4px;background:var(--green-soft);overflow:hidden}
 .preview-photo>img{display:block;width:100%;height:100%;object-fit:cover}
-/* Phones: no card photos; a coloured top band and a larger icon carry each card instead. */
-@media(max-width:780px){
-  .preview-card{--card-pad:17px}
-  .preview-photo{display:none}
-  .preview-grid .preview-card{border-top:4px solid var(--tone,var(--green))}
-  .preview-grid>li:nth-child(4n+2) .preview-card{--tone:var(--sky)}
-  .preview-grid>li:nth-child(4n+3) .preview-card{--tone:var(--leaf)}
-  .preview-grid>li:nth-child(4n+4) .preview-card{--tone:var(--sun)}
-  .preview-icon{width:48px;height:48px}
-}
-.preview-head h2{font-size:clamp(1.9rem,4vw,2.6rem)}
+.preview-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px #10281814}
 .preview-grid>li:nth-child(4n+1) .preview-icon,.menu-panel>button:nth-child(4n+1) .menu-icon{background:var(--green-soft);color:var(--green)}
 .preview-grid>li:nth-child(4n+2) .preview-icon,.menu-panel>button:nth-child(4n+2) .menu-icon{background:var(--sky-soft);color:var(--sky)}
 .preview-grid>li:nth-child(4n+3) .preview-icon,.menu-panel>button:nth-child(4n+3) .menu-icon{background:var(--leaf-soft);color:var(--leaf)}
@@ -94,20 +68,69 @@ a,.text-button{color:var(--green)}
 .preview-meter>span{background:var(--green)}
 .preview-card.targeted{border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft)}
 .guest-tabs{background:#e4ebe0}
-
 /* Signed-in workspace */
-.app-header{background:#fff;border-bottom:1px solid var(--line);box-shadow:0 1px 8px #0b1f170d}
+.app-header{background:#fff;border-bottom:2px solid var(--green)}
 .desktop-nav{background:#fff}
-.desktop-nav nav button.selected{background:var(--green-soft);color:var(--green-dark)}
+.desktop-nav nav button.selected,.mobile-nav>button.selected{background:var(--green-soft);color:var(--green-dark)}
 .mobile-nav{background:#fff;border-top:1px solid var(--line)}
-.mobile-nav>button.selected{background:var(--green-soft);color:var(--green-dark)}
-.panel,.menu-panel{border-color:var(--line);border-radius:14px;box-shadow:0 1px 2px #10281812}
-.menu-icon{background:var(--green-soft);color:var(--green)}
-.empty-icon{background:var(--green-soft);color:var(--green)}
+.panel,.menu-panel{border-color:var(--line);border-radius:16px;box-shadow:0 1px 2px #1028180d}
+.menu-icon,.empty-icon{background:var(--green-soft);color:var(--green)}
 .badge{background:#e6eee9;color:#294635}
 .badge.warning{background:var(--sun-soft);color:#6f4700}
 .sync-pill{background:var(--green-soft);color:var(--green-dark)}
 .notice{background:#e8f6ee;border-color:#b9dcc6}
 .workspace-tabs button.selected{background:var(--green);border-color:var(--green)}
-/* League Spartan stays at 28px or more on phones. */
-@media(max-width:540px){.page-head h1{font-size:1.75rem}.app-header .brand strong{font-size:1.15rem}}
+.store-policy{width:min(100% - 2rem,48rem);margin:clamp(1rem,4vw,3rem) auto}
+.store-policy h1{margin:0 0 1rem}
+.store-policy h2{margin:1.5rem 0 .5rem}
+.store-policy li+li{margin-top:.5rem}
+@media(max-width:780px){
+  .auth-hero{background:var(--page);padding:0 0 30px;border-radius:0}
+  .auth-top{width:100%;max-width:none;border-radius:0;padding:18px 22px;box-shadow:none;border-bottom:1px solid var(--line);min-height:74px}
+  .auth-main{grid-template-columns:1fr;gap:26px;max-width:500px;min-height:0;margin:26px auto 0;padding:0 22px}
+  .auth-main .auth-intro{grid-row:1;margin:0}
+  .auth-main .auth-card{grid-row:2}
+  .auth-intro,.auth-intro h1{color:var(--ink)}
+  .auth-intro h1{font-size:clamp(2.25rem,8vw,3rem);max-width:440px;margin:14px 0}
+  .auth-intro>p{color:var(--muted);font-size:1rem;max-width:440px}
+  .auth-intro .eyebrow{color:var(--sky)}
+  .intro-items{margin-top:20px;gap:8px}
+  .intro-items>span{color:var(--green);font-size:.8125rem;padding:6px 10px}
+  .auth-card{padding:24px;border-color:var(--line);box-shadow:0 6px 24px #0b1f170a}
+  .auth-card h2{font-size:1.85rem}
+  .preview-card{--card-pad:18px}
+  .preview-grid .preview-card{border-top:5px solid var(--tone,var(--green))}
+  .preview-photo{display:none}
+  .preview-grid>li:nth-child(4n+2) .preview-card{--tone:var(--sky)}
+  .preview-grid>li:nth-child(4n+3) .preview-card{--tone:var(--leaf)}
+  .preview-grid>li:nth-child(4n+4) .preview-card{--tone:var(--sun)}
+  .preview-icon{width:46px;height:46px}
+  .public-preview{padding-top:12px;max-width:500px}
+  .page-head h1{font-size:2rem;color:var(--ink)}
+  .preview-head h2,.section-head h2,.store-policy h2{color:var(--ink)}
+}
+@media(max-width:400px){.auth-top .brand strong{font-size:1.3rem}.auth-top select{min-width:7rem}.auth-top{padding:16px}.auth-main{padding:0 16px}.auth-card{padding:20px}}
+@media(max-width:350px){.auth-top{flex-wrap:wrap}.auth-top .field{margin-left:auto}}
+@media(prefers-reduced-motion:reduce){.preview-card{transition:none}.preview-card:hover{transform:none}}
+
+/* New farm tools use the same cards, forms and readable colour palette as the workspace. */
+.tool-language-note{font-size:.875rem;color:var(--muted);margin:-8px 0 20px;line-height:1.5}
+.tool-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px}
+.tool-card{min-width:0;padding:18px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.tool-card h3{color:var(--green-dark);overflow-wrap:anywhere}
+.tool-card p{font-size:.9375rem}
+.tool-card .split{align-items:flex-start;flex-wrap:wrap}
+.tool-price,.tool-reading{font-size:1.75rem!important;font-weight:700;color:var(--green-dark);font-variant-numeric:tabular-nums;line-height:1.3}
+.tool-price>span,.tool-reading>span{font-size:.9375rem;font-weight:500;color:var(--muted)}
+.tool-metric{background:var(--green-soft);border-radius:12px;padding:18px;min-width:0}
+.tool-metric h3{font-size:1.0625rem;margin:0 0 12px;color:var(--green-dark)}
+.tool-metric>strong{font-size:1.7rem;display:block;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tool-metric p{color:var(--muted);font-size:.875rem}
+.tool-metric:nth-child(2){background:var(--sky-soft)}
+.tool-metric:nth-child(2) h3{color:var(--sky)}
+.tool-comparison,.tool-measurements{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:16px 0}
+.tool-forecast-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.tool-forecast-grid .tool-metric>strong{font-size:1.25rem}
+.tool-notes{padding-left:22px;line-height:1.7}
+.tool-notes>li{padding:4px 0}
+@media(max-width:540px){.tool-comparison,.tool-forecast-grid,.tool-measurements{grid-template-columns:1fr}.tool-card-grid{grid-template-columns:1fr}.tool-card{padding:16px}.tool-language-note{font-size:.8125rem}}

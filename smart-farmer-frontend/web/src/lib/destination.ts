@@ -1,6 +1,6 @@
 export const pages = ['today', 'farm', 'forum', 'market', 'services', 'more', 'stock', 'tasks',
   'equipment', 'people', 'reports', 'accounting', 'incidents', 'sync', 'security', 'weather', 'notifications',
-  'maintenance', 'locations', 'settings', 'account-deletion'] as const;
+  'maintenance', 'locations', 'settings', 'sensors', 'market-prices', 'support', 'trials', 'growing-systems', 'advisor', 'basic-phone', 'account-deletion'] as const;
 export type Page = typeof pages[number];
 
 export function destination(location: Pick<Location, 'pathname' | 'search'>) {
